@@ -44,13 +44,51 @@ Opção 1.
 - O zip do template **sai do controle de versão** e entra no `.gitignore`. Material
   licenciado não é redistribuído pelo repositório, e um binário de 16 MB não pertence ao git.
 
+## Licença — verificada
+
+A pendência levantada na primeira versão desta ADR está **resolvida**. O certificado
+apresentado é de **Envato Elements**, não de marketplace avulso, e por isso a preocupação
+original (licença Regular × Extended do ThemeForest) não se aplica.
+
+O que o certificado estabelece:
+
+- uso **comercial, não exclusivo e mundial**, como parte de **um projeto específico** para
+  criar um End Product;
+- a licença está **registrada no nome do projeto LAPATO**, que é o registro correto;
+- item de autoria da Stackbros, com código de licença mantido **fora do repositório**
+  (ver "Onde o certificado fica", abaixo).
+
+Um SaaS multi-instituição é **um End Product**: uma base de código, um produto. O modelo
+Elements licencia por projeto, não por cliente atendido — os laboratórios que usarem o
+LAPATO são usuários do produto, não destinatários do template. Não há on-selling: o item
+não é revendido nem redistribuído de forma que alguém possa extraí-lo.
+
+### Duas condições que precisam ser observadas
+
+1. **A assinatura Envato Elements precisa continuar ativa até o End Product estar
+   concluído.** O certificado é explícito: a licença só é válida se o End Product for
+   concluído com a assinatura vigente — e aí passa a valer pela vida do produto, mesmo
+   que a assinatura termine depois. Num projeto de 26 módulos, que leva tempo, deixar a
+   assinatura cair no meio do caminho é um risco real e silencioso. Vale tratar a
+   renovação como item de operação, não como despesa opcional.
+
+2. **O certificado nomeia a variante Angular do Taplox**, enquanto o pacote recebido é a
+   variante HTML/Bootstrap. Para esta ADR isso é indiferente — o que foi extraído são
+   tokens de identidade (cores, tipografia, métricas de layout), idênticos entre as
+   variantes e, isoladamente, não protegíveis da mesma forma que código e assets. Mas se
+   um dia a decisão mudar e algum **código ou asset** do template for usado, é preciso
+   confirmar que a variante correta está coberta.
+
+### Onde o certificado fica
+
+O PDF do certificado **não entra no repositório**, que é público: ele contém nome do
+licenciado e código de licença. Estes são dados do titular, não configuração do sistema.
+O certificado deve ser guardado com os demais documentos comerciais do projeto.
+
 ## Consequências
 
-- **Pendência para o dono do produto:** como o LAPATO é SaaS multi-instituição, uma licença
-  Regular de marketplace não cobre este uso — seria necessária a Extended License.
-  Extrair apenas tokens (cores, tipografia, métricas — que não são obra protegível da mesma
-  forma que o código e os assets) reduz muito a exposição, mas a licença adquirida precisa
-  ser confirmada. Enquanto não for, nenhum asset do template (imagens, ícones, fontes,
-  arquivos SCSS) entra no repositório.
+- Nenhum asset do template (imagens, ícones, fontes, arquivos SCSS) entra no repositório —
+  a regra continua valendo, agora por higiene e não por dúvida de licença.
 - A fidelidade ao template é de identidade e layout, não pixel a pixel.
 - Trocar a identidade visual depois custa alterar um pacote de tokens, não as telas.
+- Renovação da assinatura Envato Elements vira item de acompanhamento até o go-live.

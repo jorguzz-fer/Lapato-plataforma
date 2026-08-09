@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@lapato/shared": "workspace:*",
+    "@node-rs/argon2": "^2.0.2",
     "drizzle-orm": "^0.38.2",
     "postgres": "^3.4.5"
   },

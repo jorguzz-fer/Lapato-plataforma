@@ -31,8 +31,11 @@ Pré-requisitos: **Node 22 LTS**, **pnpm 10** e **Docker**.
 
 ```bash
 cp .env.example .env
-# Gere um segredo de sessão real:
-#   openssl rand -hex 32   → cole em SESSION_SECRET
+# O .env.example deixa os campos sensíveis VAZIOS de propósito — arquivo de
+# exemplo não carrega valor que pareça segredo. Preencha no seu .env:
+#   SESSION_SECRET  → openssl rand -hex 32   (mínimo 32 caracteres)
+#   POSTGRES_PASSWORD, POSTGRES_MIGRATOR_PASSWORD, S3_*
+# A API recusa subir com configuração incompleta, dizendo qual campo falta.
 
 pnpm install
 docker compose -f infra/docker-compose.yml up -d postgres redis minio minio-init

@@ -7,35 +7,17 @@ useDefault = true
 # ---------------------------------------------------------------------------
 # Por que só `[[allowlists]]` e nenhum `[[rules]]`
 #
-# A tentação era declarar `[[rules]] id = "generic-api-key"` com um allowlist
+# A tentação é declarar `[[rules]] id = "generic-api-key"` com um allowlist
 # dentro. Isso NÃO estende a regra padrão: substitui. Como o bloco não traria
 # `regex`, a regra passaria a não detectar nada — e o scanner ficaria verde por
 # estar cego, que é pior do que falhar.
 #
 # Allowlists globais são aditivas: as regras padrão continuam inteiras, e apenas
 # os casos descritos abaixo deixam de ser reportados.
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Placeholders do .env.example
 #
-# O arquivo existe para documentar quais variáveis o sistema precisa, com
-# valores fictícios. `SESSION_SECRET=troque-por-...` é instrução, não segredo.
-#
-# A permissão é ESTREITA de propósito — vale só para este arquivo e só para os
-# valores-placeholder conhecidos. O `.env.example` continua sendo varrido: um
-# segredo real colado ali não casa com nenhum destes padrões e quebra a CI.
+# Achados históricos pontuais ficam no `.gitleaksignore`, por fingerprint —
+# mecanismo mais preciso ainda, porque vale para um único commit.
 # ---------------------------------------------------------------------------
-[[allowlists]]
-description = "Valores-placeholder do .env.example"
-condition = "AND"
-paths = ['''^\.env\.example$''']
-regexTarget = "line"
-regexes = [
-  '''=troque-em-producao$''',
-  '''=troque-por-32-bytes-aleatorios-em-hex$''',
-  '''=lapato-dev$''',
-]
 
 # ---------------------------------------------------------------------------
 # Credenciais de banco efêmero
@@ -45,27 +27,26 @@ regexes = [
 # máquina do desenvolvedor. Não há segredo a proteger.
 #
 # Segredos de produção vêm do secret manager, nunca do repositório
-# (Blueprint seção 5).
+# (Blueprint seção 5). O `.env.example` não entra aqui: seus campos sensíveis
+# são deixados VAZIOS justamente para não haver o que permitir.
 # ---------------------------------------------------------------------------
 [[allowlists]]
 description = "Credenciais de banco efêmero usadas em CI e testes de integração"
-condition = "AND"
 paths = [
   '''^\.github/workflows/ci\.yml$''',
   '''^infra/docker-compose\.yml$''',
   '''.*\.test\.ts$''',
 ]
-regexTarget = "line"
-regexes = ['''lapato_(app|owner):lapato@''']
 
 # ---------------------------------------------------------------------------
-# Segredo de sessão do ambiente de CI
+# Documentação
 #
-# Valor descartável, criado e usado apenas dentro do runner.
+# Os ADRs e o README citam nomes de variáveis e exemplos de configuração. São
+# arquivos de texto explicativo, sem credencial.
 # ---------------------------------------------------------------------------
 [[allowlists]]
-description = "SESSION_SECRET descartável do runner de CI"
-condition = "AND"
-paths = ['''^\.github/workflows/ci\.yml$''']
-regexTarget = "line"
-regexes = ['''SESSION_SECRET: ci-secret-com-mais-de-32-caracteres-para-passar''']
+description = "Documentação de arquitetura"
+paths = [
+  '''^docs/.*\.md$''',
+  '''^README\.md$''',
+]

@@ -1,0 +1,19 @@
+# Achados historicos aceitos, por fingerprint exato (commit:arquivo:regra:linha).
+#
+# Este mecanismo e cirurgico: aceita UMA ocorrencia num commit especifico. A
+# mesma linha num commit novo gera outro fingerprint e volta a quebrar a CI -
+# que e exatamente o comportamento desejado.
+#
+# ---------------------------------------------------------------------------
+# 23d7aec .env.example linha 44
+#
+# O commit de bootstrap trazia `SESSION_SECRET=troque-por-32-bytes-aleatorios-em-hex`,
+# que o gitleaks classificou como generic-api-key por entropia. Era placeholder,
+# nao segredo - o valor e a propria instrucao de trocar.
+#
+# O arquivo ja foi corrigido: os campos sensiveis do `.env.example` agora ficam
+# VAZIOS, porque arquivo de exemplo nao deve carregar valor que pareca segredo.
+# Esta entrada existe so para o commit historico, que nao da para reescrever sem
+# force-push num PR ja aberto.
+# ---------------------------------------------------------------------------
+23d7aec0d3425375c4bd4c2a78dae403161a6d48:.env.example:generic-api-key:44

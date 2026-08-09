@@ -148,6 +148,16 @@ describe('modo sem IA (M17 seções 110-112)', () => {
 });
 
 describe('fatia vertical: histopatologia de ponta a ponta', () => {
+  /**
+   * Microchip unico por execucao.
+   *
+   * O banco de teste nao e recriado entre rodadas, e o Guardian trata
+   * "mesmo microchip em outro paciente" como problema critico de identidade
+   * (M05). Reusar um valor fixo faria a segunda rodada ser bloqueada - pelo
+   * motivo certo, mas atrapalhando o teste do caminho feliz.
+   */
+  const microchip = `9001${Date.now().toString().slice(-11)}`;
+
   let servicoId: string;
   let clienteId: string;
   let casoId: string;
@@ -174,7 +184,7 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
       paciente: {
         nome: 'Thor',
         sexo: 'macho',
-        microchip: '900112000123456',
+        microchip,
         tutorNome: 'Helena Braga',
       },
       historicoClinico: 'Nódulo cutâneo em região escapular direita, evolução de 3 meses.',

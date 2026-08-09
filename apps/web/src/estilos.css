@@ -1,0 +1,43 @@
+@import '@lapato/design-tokens/tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: var(--lapato-fonte, 'Roboto', system-ui, sans-serif);
+  }
+
+  body {
+    background-color: var(--lapato-fundo);
+    color: var(--lapato-texto);
+    font-size: 0.875rem;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /**
+   * Acessibilidade (Blueprint secao 15): foco sempre visivel. O laboratorio
+   * opera muito por teclado, com leitor de codigo de barras entre as maos.
+   */
+  :focus-visible {
+    outline: 2px solid var(--lapato-primaria);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .cartao {
+    background-color: var(--lapato-superficie);
+    border: 1px solid var(--lapato-borda);
+    border-radius: var(--lapato-raio);
+    box-shadow: var(--lapato-sombra);
+  }
+
+  .rotulo {
+    color: var(--lapato-texto-suave);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+}

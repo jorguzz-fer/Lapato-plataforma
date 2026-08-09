@@ -1,0 +1,27 @@
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Material de UI licenciado (Taplox). Os tokens vivem em packages/design-tokens;
+# o pacote-fonte comercial nao e redistribuido neste repositorio. Ver docs/adr/0006.
+*.zip
+design/vendor/
+
+playwright-report/
+test-results/

@@ -4,16 +4,33 @@
 # mesma linha num commit novo gera outro fingerprint e volta a quebrar a CI -
 # que e exatamente o comportamento desejado.
 #
+# ATENCAO ao comentar aqui: o scanner varre este arquivo como qualquer outro.
+# Nao reproduza o valor que motivou a excecao - o comentario vira um novo
+# achado. (Aconteceu: a primeira versao deste arquivo citava o placeholder e
+# derrubou a CI por si so.) Descreva, nao cite.
+#
 # ---------------------------------------------------------------------------
 # 23d7aec .env.example linha 44
 #
-# O commit de bootstrap trazia `SESSION_SECRET=troque-por-32-bytes-aleatorios-em-hex`,
-# que o gitleaks classificou como generic-api-key por entropia. Era placeholder,
-# nao segredo - o valor e a propria instrucao de trocar.
+# O commit de bootstrap trazia, no campo do segredo de sessao, um texto-instrucao
+# pedindo que o valor fosse trocado. Tinha entropia suficiente para a regra
+# generic-api-key classificar como chave, mas era placeholder, nao credencial.
 #
-# O arquivo ja foi corrigido: os campos sensiveis do `.env.example` agora ficam
+# O arquivo ja foi corrigido: os campos sensiveis do .env.example agora ficam
 # VAZIOS, porque arquivo de exemplo nao deve carregar valor que pareca segredo.
 # Esta entrada existe so para o commit historico, que nao da para reescrever sem
 # force-push num PR ja aberto.
 # ---------------------------------------------------------------------------
 23d7aec0d3425375c4bd4c2a78dae403161a6d48:.env.example:generic-api-key:44
+
+# ---------------------------------------------------------------------------
+# a033d2f .gitleaksignore linha 10
+#
+# Auto-infligido: a primeira versao DESTE arquivo citava o valor do placeholder
+# dentro do comentario que explicava a excecao. O scanner varre o arquivo de
+# ignore como qualquer outro, entao o comentario virou achado.
+#
+# O comentario ja foi reescrito para descrever sem citar. Esta entrada cobre o
+# commit em que a versao antiga existiu.
+# ---------------------------------------------------------------------------
+a033d2f2ea8b59abbf9d201628eb4267245c371d:.gitleaksignore:generic-api-key:10

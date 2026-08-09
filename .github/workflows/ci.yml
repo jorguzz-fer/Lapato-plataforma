@@ -1,0 +1,145 @@
+name: CI
+
+# Blueprint seção 12: a CI bloqueia merge sem lint, tipos e testes verdes.
+# Blueprint seção 6: SAST, SCA e secret scanning antes do merge.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Valores de teste. Segredos reais vivem no secret manager, nunca no repo.
+  POSTGRES_DB: lapato
+  POSTGRES_MIGRATOR_USER: lapato_owner
+  POSTGRES_MIGRATOR_PASSWORD: lapato
+  POSTGRES_USER: lapato_app
+  POSTGRES_PASSWORD: lapato
+
+jobs:
+  qualidade:
+    name: Lint, tipos e testes
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: lapato
+          POSTGRES_USER: lapato_owner
+          POSTGRES_PASSWORD: lapato
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U lapato_owner -d lapato"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Preparar usuário de aplicação
+        # ADR 0002: o usuário da aplicação NÃO pode ter BYPASSRLS. O teste de
+        # isolamento só prova alguma coisa se rodar com esse usuário.
+        env:
+          PGPASSWORD: lapato
+        run: |
+          psql -h localhost -U lapato_owner -d lapato -v ON_ERROR_STOP=1 <<'SQL'
+            CREATE ROLE lapato_app LOGIN PASSWORD 'lapato'
+              NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+            GRANT CONNECT ON DATABASE lapato TO lapato_app;
+            GRANT USAGE ON SCHEMA public TO lapato_app;
+            ALTER DEFAULT PRIVILEGES FOR ROLE lapato_owner IN SCHEMA public
+              GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lapato_app;
+            ALTER DEFAULT PRIVILEGES FOR ROLE lapato_owner IN SCHEMA public
+              GRANT USAGE, SELECT ON SEQUENCES TO lapato_app;
+            CREATE EXTENSION IF NOT EXISTS pgcrypto;
+          SQL
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Verificação de tipos
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Migrations e RLS
+        env:
+          DATABASE_MIGRATION_URL: postgres://lapato_owner:lapato@localhost:5432/lapato
+        run: pnpm db:migrate
+
+      - name: Seed
+        env:
+          DATABASE_MIGRATION_URL: postgres://lapato_owner:lapato@localhost:5432/lapato
+        run: pnpm db:seed
+
+      - name: Testes
+        env:
+          DATABASE_URL: postgres://lapato_app:lapato@localhost:5432/lapato
+          DATABASE_URL_TESTE: postgres://lapato_app:lapato@localhost:5432/lapato
+          DATABASE_MIGRATION_URL_TESTE: postgres://lapato_owner:lapato@localhost:5432/lapato
+          SESSION_SECRET: ci-secret-com-mais-de-32-caracteres-para-passar
+          COPILOT_PROVIDER: stub
+        run: pnpm test
+
+  seguranca:
+    name: SCA, SAST e secret scanning
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # O gitleaks precisa do histórico para varrer commits anteriores.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: SCA — vulnerabilidades em dependências
+        # Falha a partir de "high". Vulnerabilidade moderada vira issue, não bloqueio.
+        run: pnpm audit --audit-level high
+
+      - name: Secret scanning
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Configuração em .gitleaks.toml: regras padrão + allowlists estreitos
+          # para os placeholders do .env.example e credenciais de banco efêmero.
+          GITLEAKS_CONFIG: .gitleaks.toml
+          # A action tentaria comentar no PR e o token do workflow não tem essa
+          # permissão; o resultado já aparece no resumo do job e no artefato.
+          GITLEAKS_ENABLE_COMMENTS: false
+
+      - name: SAST — CodeQL (inicialização)
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      - name: SAST — CodeQL (análise)
+        uses: github/codeql-action/analyze@v3

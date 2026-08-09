@@ -1,0 +1,31 @@
+# Ingress unico do LAPATO (Engineering Blueprint secao 5).
+# Em producao, troque `:80` pelo dominio real para que o Caddy emita TLS
+# automaticamente, e mantenha esta como a unica porta publica do host.
+
+{
+	# Em producao: admin off e email para o ACME
+	admin off
+}
+
+:80 {
+	encode gzip zstd
+
+	# Cabecalhos de seguranca (Blueprint secao 6)
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# API: unica superficie de negocio exposta
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+
+	# Front web (SPA)
+	handle {
+		reverse_proxy web:8080
+	}
+}

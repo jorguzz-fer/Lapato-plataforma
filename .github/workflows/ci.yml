@@ -129,6 +129,12 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Configuração em .gitleaks.toml: regras padrão + allowlists estreitos
+          # para os placeholders do .env.example e credenciais de banco efêmero.
+          GITLEAKS_CONFIG: .gitleaks.toml
+          # A action tentaria comentar no PR e o token do workflow não tem essa
+          # permissão; o resultado já aparece no resumo do job e no artefato.
+          GITLEAKS_ENABLE_COMMENTS: false
 
       - name: SAST — CodeQL (inicialização)
         uses: github/codeql-action/init@v3

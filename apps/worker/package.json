@@ -13,7 +13,7 @@
   "dependencies": {
     "@lapato/db": "workspace:*",
     "@lapato/shared": "workspace:*",
-    "drizzle-orm": "^0.38.2"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

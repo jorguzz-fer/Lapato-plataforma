@@ -27,6 +27,29 @@ let dbOwner: Database;
 let encerrarApp: () => Promise<void>;
 let encerrarOwner: () => Promise<void>;
 
+/**
+ * Concatena a mensagem do erro e de toda a cadeia de `cause`.
+ *
+ * A partir do Drizzle 0.45 o erro do driver vem embrulhado num
+ * `Failed query: ...`, com o erro real do Postgres em `cause`. Asserir apenas
+ * sobre `message` faria o teste passar com QUALQUER falha de query - inclusive
+ * um typo - em vez de provar que foi a RLS ou o trigger que barrou.
+ */
+async function mensagemCompleta(fn: () => Promise<unknown>): Promise<string> {
+  try {
+    await fn();
+    return '';
+  } catch (erro) {
+    const partes: string[] = [];
+    let atual: unknown = erro;
+    while (atual instanceof Error) {
+      partes.push(atual.message);
+      atual = (atual as Error).cause;
+    }
+    return partes.join(' | ');
+  }
+}
+
 let tenantA: string;
 let tenantB: string;
 
@@ -151,7 +174,7 @@ describe('isolamento entre instituicoes', () => {
    * tenant_id.
    */
   test('nao e possivel inserir registro no tenant alheio', async () => {
-    await expect(
+    const mensagem = await mensagemCompleta(() =>
       comTenant(dbApp, tenantA, async (tx) => {
         await tx.insert(cliente).values({
           tenantId: tenantB,
@@ -160,7 +183,9 @@ describe('isolamento entre instituicoes', () => {
           codigo: 'XX',
         });
       }),
-    ).rejects.toThrow(/row-level security/i);
+    );
+
+    expect(mensagem).toMatch(/row-level security/i);
   });
 
   test('nao e possivel atualizar registro do tenant alheio', async () => {
@@ -214,17 +239,19 @@ describe('imutabilidade da trilha de auditoria', () => {
       `);
     });
 
-    await expect(
+    const aoAtualizar = await mensagemCompleta(() =>
       comTenant(dbApp, tenantA, async (tx) => {
         await tx.execute(sql`UPDATE evento_dominio SET tipo = 'adulterado'`);
       }),
-    ).rejects.toThrow(/append-only/i);
+    );
+    expect(aoAtualizar).toMatch(/append-only/i);
 
-    await expect(
+    const aoRemover = await mensagemCompleta(() =>
       comTenant(dbApp, tenantA, async (tx) => {
         await tx.execute(sql`DELETE FROM evento_dominio`);
       }),
-    ).rejects.toThrow(/append-only/i);
+    );
+    expect(aoRemover).toMatch(/append-only/i);
   });
 
   test('registro de auditoria nao pode ser alterado', async () => {
@@ -235,10 +262,11 @@ describe('imutabilidade da trilha de auditoria', () => {
       `);
     });
 
-    await expect(
+    const mensagem = await mensagemCompleta(() =>
       comTenant(dbApp, tenantA, async (tx) => {
         await tx.execute(sql`UPDATE audit_log SET acao = 'adulterado'`);
       }),
-    ).rejects.toThrow(/append-only/i);
+    );
+    expect(mensagem).toMatch(/append-only/i);
   });
 });

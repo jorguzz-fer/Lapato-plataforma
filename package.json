@@ -31,5 +31,12 @@
     "turbo": "^2.3.3",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.1"
+  },
+  "pnpm": {
+    "//": "Overrides de seguranca: dependencias transitivas que os pacotes pais ainda nao atualizaram. Revisar a cada bump de NestJS e Vitest; remover assim que o pai passar a exigir a versao corrigida.",
+    "overrides": {
+      "vite": "^6.4.3",
+      "js-yaml": "^4.3.1"
+    }
   }
 }

@@ -15,13 +15,13 @@
   "dependencies": {
     "@lapato/db": "workspace:*",
     "@lapato/shared": "workspace:*",
-    "@nestjs/common": "^10.4.15",
-    "@nestjs/core": "^10.4.15",
-    "@nestjs/platform-express": "^10.4.15",
-    "@nestjs/swagger": "^8.1.0",
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/core": "^11.1.28",
+    "@nestjs/platform-express": "^11.1.28",
+    "@nestjs/swagger": "^11.4.6",
     "@node-rs/argon2": "^2.0.2",
     "cookie-parser": "^1.4.7",
-    "drizzle-orm": "^0.38.2",
+    "drizzle-orm": "^0.45.2",
     "helmet": "^8.0.0",
     "otpauth": "^9.3.6",
     "pino": "^9.5.0",
@@ -30,7 +30,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@nestjs/testing": "^10.4.22",
+    "@nestjs/testing": "^11.1.28",
     "@swc/core": "^1.15.47",
     "@types/cookie-parser": "^1.4.8",
     "@types/express": "^5.0.0",
@@ -38,6 +38,6 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "unplugin-swc": "^1.5.10",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.7"
   }
 }

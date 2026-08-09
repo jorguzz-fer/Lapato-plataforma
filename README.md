@@ -185,11 +185,13 @@ Os testes de integração precisam de um Postgres com migrations e seed aplicado
 
 ## Pendências para o dono do produto
 
-1. **Licença do Taplox.** É template comercial. Como o produto é SaaS
-   multi-instituição, uma licença Regular de marketplace não cobre este uso.
-   Extraímos apenas tokens (cores, tipografia, métricas) e o pacote-fonte foi
-   removido do repositório, o que reduz muito a exposição — mas confirme a
-   licença adquirida.
+1. **Assinatura Envato Elements ativa até o go-live.** A licença do Taplox foi
+   verificada e cobre este uso: é Envato Elements, registrada no projeto LAPATO,
+   com uso comercial para um End Product — e um SaaS multi-instituição é um End
+   Product só. Mas o certificado condiciona a validade a concluir o End Product
+   **com a assinatura vigente**. Num projeto de 26 módulos isso leva tempo:
+   deixar a assinatura cair no meio do caminho invalida a licença de forma
+   silenciosa. Ver [ADR 0006](docs/adr/0006-taplox-como-fonte-de-tokens.md).
 2. **Documentação dos módulos 19 a 26** (Logística, Financeiro, Biblioteca,
    Qualidade e Auditoria, Ensino e Pesquisa, Perícia, Relatórios, Integrações e
    Notificações). Financeiro, Qualidade e Notificações são citados por quase

@@ -27,6 +27,13 @@ export const TABELAS_SEM_RLS = [
   // dominio. O worker precisa varrer a fila de todos os tenants; ao processar
   // cada item, abre `comTenant` antes de tocar em dado real.
   'outbox_evento',
+  // Sessao: e consultada pelo token ANTES de existir tenant no contexto - e
+  // justamente ela que revela a qual instituicao o request pertence. Sob RLS,
+  // nenhuma sessao seria encontrada e ninguem conseguiria autenticar.
+  // Nao guarda dado clinico: apenas hash do token, usuario, tenant, IP e
+  // user-agent. O isolamento aqui vem do proprio token, que e aleatorio de 32
+  // bytes e cuja forma em claro nunca e persistida.
+  'sessao',
   // Controle de versao de schema do Drizzle.
   '__drizzle_migrations',
 ] as const;
@@ -52,8 +59,23 @@ export const SQL_APLICAR_RLS = `
 DO $$
 DECLARE
   r RECORD;
-  excecoes TEXT[] := ARRAY['tenant', 'outbox_evento', '__drizzle_migrations'];
+  excecoes TEXT[] := ARRAY['tenant', 'outbox_evento', 'sessao', '__drizzle_migrations'];
 BEGIN
+  -- Idempotencia nos dois sentidos: se uma tabela passou a ser excecao depois
+  -- de ja ter recebido policy, a policy antiga precisa sair. Sem isto, mudar a
+  -- lista de excecoes nao teria efeito num banco ja migrado.
+  FOR r IN
+    SELECT c.relname AS tabela
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind = 'r'
+      AND c.relname = ANY(excecoes)
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS isolamento_tenant ON public.%I', r.tabela);
+    EXECUTE format('ALTER TABLE public.%I NO FORCE ROW LEVEL SECURITY', r.tabela);
+    EXECUTE format('ALTER TABLE public.%I DISABLE ROW LEVEL SECURITY', r.tabela);
+  END LOOP;
   FOR r IN
     SELECT c.relname AS tabela
     FROM pg_class c

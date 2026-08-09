@@ -50,6 +50,10 @@ export function criarConexao(opcoes: OpcoesConexao): {
  * - **Login:** o tenant e resolvido antes, pelo slug (subdominio), consultando a
  *   tabela `tenant` - que nao tem `tenant_id` e por isso fica fora da RLS por
  *   tenant. Com o tenant em maos, a busca do usuario ja roda escopada.
+ * - **Resolucao de sessao a cada request:** a tabela `sessao` tambem fica fora
+ *   da RLS por tenant, porque e ela que revela a qual instituicao o request
+ *   pertence - sob policy, nenhuma sessao seria encontrada. Ela guarda apenas
+ *   hash de token, usuario, tenant, IP e user-agent; nenhum dado clinico.
  * - **Worker do outbox:** `outbox_evento` e tabela de infraestrutura, sem
  *   conteudo de dominio (guarda apenas FK e estado de retry) e por isso nao
  *   entra na RLS. O worker le a fila, descobre o `tenant_id` da linha e so

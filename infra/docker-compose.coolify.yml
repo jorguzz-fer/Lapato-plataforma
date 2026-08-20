@@ -1,0 +1,135 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lapato
+      POSTGRES_USER: ${POSTGRES_MIGRATOR_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_MIGRATOR_PASSWORD}
+      APP_DB_USER: ${POSTGRES_USER}
+      APP_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [coolify]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_MIGRATOR_USER} -d lapato"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis-data:/data
+    networks: [coolify]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY}
+    volumes:
+      - minio-data:/data
+    networks: [coolify]
+
+  api:
+    image: lapato-api:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: lapato
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/lapato
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_BUCKET: lapato
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_FORCE_PATH_STYLE: "true"
+      SESSION_SECRET: ${SESSION_SECRET}
+      SESSION_TTL_HOURS: "12"
+      SESSION_COOKIE_NAME: lapato_session
+      SESSION_COOKIE_SECURE: "true"
+      MFA_ISSUER: LAPATO
+      COPILOT_PROVIDER: stub
+      API_CORS_ORIGINS: https://app.lapato.com.br,https://76.13.169.213.nip.io
+    networks: [coolify]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.lapato-api.loadbalancer.server.port=3000"
+      - "traefik.http.routers.lapato-api-https.entryPoints=https"
+      - "traefik.http.routers.lapato-api-https.rule=Host(`app.lapato.com.br`) || Host(`76.13.169.213.nip.io`)"
+      - "traefik.http.routers.lapato-api-https.priority=20"
+      - "traefik.http.routers.lapato-api-https.tls=true"
+      - "traefik.http.routers.lapato-api-https.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.lapato-api-http.entryPoints=http"
+      - "traefik.http.routers.lapato-api-http.rule=Host(`app.lapato.com.br`) || Host(`76.13.169.213.nip.io`)"
+      - "traefik.http.routers.lapato-api-http.middlewares=redirect-to-https"
+
+  worker:
+    image: lapato-worker:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: lapato
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/lapato
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_BUCKET: lapato
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_FORCE_PATH_STYLE: "true"
+    networks: [coolify]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    image: lapato-web:latest
+    restart: unless-stopped
+    networks: [coolify]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.lapato-web.loadbalancer.server.port=8080"
+      - "traefik.http.routers.lapato-web-https.entryPoints=https"
+      - "traefik.http.routers.lapato-web-https.rule=Host(`app.lapato.com.br`) || Host(`76.13.169.213.nip.io`)"
+      - "traefik.http.routers.lapato-web-https.priority=10"
+      - "traefik.http.routers.lapato-web-https.tls=true"
+      - "traefik.http.routers.lapato-web-https.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.lapato-web-http.entryPoints=http"
+      - "traefik.http.routers.lapato-web-http.rule=Host(`app.lapato.com.br`) || Host(`76.13.169.213.nip.io`)"
+      - "traefik.http.routers.lapato-web-http.middlewares=redirect-to-https"
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+
+networks:
+  coolify:
+    external: true

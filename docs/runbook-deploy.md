@@ -208,12 +208,26 @@ veterinário, paciente ou caso fictício é criado.
 - a **URI do TOTP** (`otpauth://...`), que precisa ser cadastrada no aplicativo
   autenticador antes do primeiro login.
 
-MFA vem ligado porque o Blueprint §6 exige TOTP para administradores. Como ainda
-não existe rota de auto-cadastro nem de recuperação de MFA, **perder esse
-segredo é perder a conta** — só resta rodar um `UPDATE` direto no banco. Guarde
-os dois no cofre antes de fechar o terminal.
+MFA vem ligado porque o Blueprint §6 exige TOTP para administradores. Não existe
+recuperação de segundo fator, então **perder esse segredo é perder a conta** — só
+resta rodar um `UPDATE` direto no banco. Guarde os dois no cofre antes de fechar
+o terminal.
 
 O `slug` é o que os usuários digitam no login. Anote-o.
+
+#### O primeiro login tem duas etapas obrigatórias
+
+A senha entregue pelo `provision` vale para **um acesso só**. A sequência é:
+
+1. instituição + e-mail + senha inicial;
+2. código de 6 dígitos do aplicativo autenticador;
+3. **definir a senha definitiva** — a tela aparece sozinha e nenhuma outra parte
+   do sistema responde antes disso.
+
+Se a conta administrativa tiver sido criada com `PROVISION_MFA=off`, a etapa 2
+não acontece, mas o sistema exige o cadastro do TOTP logo depois da troca de
+senha: o Blueprint §6 vale para quem administra permissões ou assina laudo,
+independentemente de como a conta nasceu.
 
 #### Variáveis aceitas
 
@@ -381,24 +395,27 @@ teste de um deploy acontece em produção.
 Nenhuma bloqueia o primeiro deploy, mas todas aparecem no primeiro mês de uso
 real. Estão aqui para que ninguém descubra na hora errada.
 
-**Não existe troca de senha pelo próprio usuário.** O `provision` entrega uma
-senha sorteada e não há rota para o administrador trocá-la depois. Enquanto isso
-não existir, a senha inicial é a senha permanente.
-
-**Não existe auto-cadastro nem recuperação de MFA.** O único caminho para
-cadastrar TOTP é o `provision`, e o único caminho de recuperação é `UPDATE` no
-banco. Um administrador que troque de celular sem migrar o segredo perde a
-conta.
+**Não existe recuperação de MFA.** Um administrador que troque de celular sem
+migrar o segredo perde a conta, e o único conserto é `UPDATE` no banco. Também
+não existe rota para *substituir* um segundo fator já ativo — isso exigiria
+provar posse do fator antigo, e sem essa prova um cookie roubado trocaria o MFA
+da vítima. A rota devolve `409` até que essa prova exista.
 
 **Não existe convite de usuário.** O schema já prevê `status =
 'aguardando_ativacao'` e `senha_hash` nulo, mas não há fluxo que ative a conta —
 uma conta criada assim fica inacessível. Por isso o `provision` cria o
-administrador já `ativo`.
+administrador já `ativo`, e por isso ainda não há como um administrador criar o
+segundo usuário pela interface. Hoje isso é `INSERT` manual.
+
+**Não existe recuperação de senha esquecida.** Há troca de senha (com a senha
+atual em mãos), mas não há "esqueci minha senha" — que depende do M26
+(Notificações) para enviar o link.
 
 **O segredo TOTP está em claro no banco.** Quem consegue ler `usuario` consegue
 gerar códigos válidos. Cifrar com chave fora do banco é o conserto; enquanto
 isso, o backup do banco (que já é cifrado por GPG, ver §5) carrega segredos de
 MFA e precisa do mesmo cuidado das credenciais.
 
-Os três primeiros itens são o mesmo módulo: autoatendimento de conta no M02. É a
-recomendação de próximo passo depois do go-live.
+O caminho para fechar as três primeiras é o mesmo: gestão de usuários no M02
+(convite, ativação, reset administrativo), que por sua vez depende do M26 para
+entregar os e-mails.

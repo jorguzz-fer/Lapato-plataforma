@@ -54,6 +54,8 @@ export class ContextoMiddleware implements NestMiddleware {
       permissoes: sessao.permissoes.permissoes,
       unidadesPermitidas: sessao.permissoes.unidadesPermitidas,
       exigeSupervisao: sessao.permissoes.exigeSupervisao,
+      estagio: sessao.estagio,
+      mfaAtivo: sessao.mfaAtivo,
       ip: req.ip ?? null,
       userAgent: req.get('user-agent') ?? null,
     };

@@ -1,9 +1,13 @@
-import { StrictMode, useEffect, useState } from 'react';
+import { StrictMode, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { api, type Sessao } from './api';
+import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import type { EstagioSessao } from '@lapato/shared';
+import { api, observarEstagio, type Sessao } from './api';
 import { Shell } from './componentes/Shell';
 import { Entrar } from './paginas/Entrar';
+import { SegundoFator } from './paginas/SegundoFator';
+import { TrocarSenha } from './paginas/TrocarSenha';
+import { CadastrarMfa } from './paginas/CadastrarMfa';
 import { CentralDeCasos } from './paginas/CentralDeCasos';
 import { Dossie } from './paginas/Dossie';
 import './estilos.css';
@@ -11,40 +15,89 @@ import './estilos.css';
 /**
  * Shell da aplicacao.
  *
- * A sessao e resolvida perguntando `GET /auth/eu`: o cookie e httpOnly, entao o
+ * A sessao e resolvida perguntando ao servidor: o cookie e httpOnly, entao o
  * front nao consegue - nem deve - inspecionar o token. As permissoes vem
  * resolvidas do servidor e servem apenas para ESCONDER o que o usuario nao pode
  * fazer; a autorizacao de verdade acontece na API a cada request
  * (Blueprint secao 6).
+ *
+ * Entrar nao e um passo so. `GET /auth/estado` diz em que ponto do funil a
+ * sessao parou, e cada estagio tem uma tela. Perguntar isso no boot - e nao so
+ * depois do login - faz o F5 no meio do segundo fator cair na tela certa em vez
+ * de voltar ao comeco.
  */
 function App() {
+  const [estagio, setEstagio] = useState<EstagioSessao | 'carregando'>('carregando');
   const [sessao, setSessao] = useState<Sessao | null>(null);
-  const [carregando, setCarregando] = useState(true);
 
-  function carregarSessao() {
-    return api
-      .get<Sessao>('/auth/eu')
-      .then(setSessao)
-      .catch(() => setSessao(null))
-      .finally(() => setCarregando(false));
-  }
+  /**
+   * Leva a sessao ao estagio informado. Em `ativa`, e so aqui, busca-se o
+   * perfil completo - nos demais estagios `/auth/eu` responderia 401 ou 403.
+   */
+  const irPara = useCallback(async (novo: EstagioSessao) => {
+    if (novo !== 'ativa') {
+      setSessao(null);
+      setEstagio(novo);
+      return;
+    }
 
-  useEffect(() => {
-    void carregarSessao();
+    try {
+      setSessao(await api.get<Sessao>('/auth/eu'));
+      setEstagio('ativa');
+    } catch {
+      // Estagio e sessao discordaram (revogacao entre as duas chamadas):
+      // trata-se como nao autenticado, que e o lado seguro.
+      setSessao(null);
+      setEstagio('anonimo');
+    }
   }, []);
 
-  if (carregando) {
+  useEffect(() => {
+    // Qualquer 403 que traga estágio redireciona a aplicação inteira: a
+    // exigência pode surgir depois do login, com a sessão já aberta.
+    observarEstagio((novo) => void irPara(novo));
+
+    api
+      .get<{ estagio: EstagioSessao }>('/auth/estado')
+      .then((r) => irPara(r.estagio))
+      .catch(() => irPara('anonimo'));
+  }, [irPara]);
+
+  if (estagio === 'carregando') {
     return <p className="p-6 rotulo">Carregando…</p>;
   }
 
-  if (!sessao) {
+  if (estagio === 'anonimo') {
     return (
       <Routes>
-        <Route path="/entrar" element={<Entrar aoEntrar={carregarSessao} />} />
+        <Route path="/entrar" element={<Entrar aoEntrar={irPara} />} />
         <Route path="*" element={<Navigate to="/entrar" replace />} />
       </Routes>
     );
   }
+
+  /**
+   * Estagios intermediarios ocupam a tela inteira e ignoram a rota corrente.
+   * Nao ha para onde navegar enquanto a pendencia existir, e a API recusaria
+   * qualquer outra chamada de qualquer forma.
+   */
+  if (estagio === 'mfa_pendente') {
+    return <SegundoFator aoAvancar={irPara} />;
+  }
+
+  if (estagio === 'troca_senha_obrigatoria') {
+    return <TrocarSenha obrigatoria aoConcluir={irPara} />;
+  }
+
+  if (estagio === 'mfa_cadastro_obrigatorio') {
+    return <CadastrarMfa obrigatorio aoConcluir={irPara} />;
+  }
+
+  if (!sessao) {
+    return <p className="p-6 rotulo">Carregando…</p>;
+  }
+
+  const sair = () => irPara('anonimo');
 
   return (
     <Routes>
@@ -52,7 +105,7 @@ function App() {
       <Route
         path="/casos"
         element={
-          <Shell sessao={sessao} modulo="Rastreamento e Gestão de Fluxo">
+          <Shell sessao={sessao} aoSair={sair} modulo="Rastreamento e Gestão de Fluxo">
             <CentralDeCasos />
           </Shell>
         }
@@ -60,14 +113,47 @@ function App() {
       <Route
         path="/casos/:id"
         element={
-          <Shell sessao={sessao} modulo="Dossiê do caso" etapa="visão geral">
+          <Shell sessao={sessao} aoSair={sair} modulo="Dossiê do caso" etapa="visão geral">
             <Dossie />
+          </Shell>
+        }
+      />
+      <Route
+        path="/conta/senha"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Identidade e Permissões">
+            <VoltarAoSistema>
+              {(concluir) => <TrocarSenha obrigatoria={false} aoConcluir={concluir} />}
+            </VoltarAoSistema>
+          </Shell>
+        }
+      />
+      <Route
+        path="/conta/mfa"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Identidade e Permissões">
+            <VoltarAoSistema>
+              {(concluir) => <CadastrarMfa obrigatorio={false} aoConcluir={concluir} />}
+            </VoltarAoSistema>
           </Shell>
         }
       />
       <Route path="*" element={<Navigate to="/casos" replace />} />
     </Routes>
   );
+}
+
+/**
+ * Adapta as telas do funil de entrada ao uso voluntario: elas avisam o estagio
+ * resultante, e aqui isso vira "volte para a central de casos".
+ */
+function VoltarAoSistema({
+  children,
+}: {
+  children: (concluir: (estagio: EstagioSessao) => void) => React.ReactNode;
+}) {
+  const navegar = useNavigate();
+  return <>{children(() => navegar('/casos'))}</>;
 }
 
 createRoot(document.getElementById('root')!).render(

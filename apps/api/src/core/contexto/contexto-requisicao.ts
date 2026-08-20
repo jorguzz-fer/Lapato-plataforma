@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { Permissao } from '@lapato/shared';
+import type { EstagioSessao, Permissao } from '@lapato/shared';
 
 /**
  * Contexto do request, resolvido SEMPRE no servidor.
@@ -25,6 +25,13 @@ export interface ContextoRequisicao {
   exigeSupervisao: boolean;
   /** M03/M04: preenchido quando o usuario e externo, para isolar por cliente. */
   clienteId: string | null;
+  /**
+   * Ate onde esta sessao chegou no funil de entrada. Rotas de negocio so
+   * respondem em `ativa`; o `SessaoGuard` aplica a regra.
+   */
+  estagio: EstagioSessao;
+  /** Se a conta ja tem segundo fator ativo. A tela oferece o cadastro quando nao tem. */
+  mfaAtivo: boolean;
   ip: string | null;
   userAgent: string | null;
 }

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import type { EstagioSessao } from '@lapato/shared';
 import { api, ErroApi } from '../api';
 
 /**
@@ -8,14 +8,18 @@ import { api, ErroApi } from '../api';
  * A instituicao e pedida explicitamente porque o tenant e resolvido antes de
  * qualquer consulta a dado de dominio (ADR 0002) - o que dispensa uma funcao de
  * bypass da RLS no backend.
+ *
+ * Aceitar a senha nao significa entrar: a resposta diz em que estagio a sessao
+ * ficou, e quem decide a proxima tela e o `App`. Antes, o front ignorava esse
+ * campo e mandava todo mundo para `/casos` - com MFA ativo isso produzia um
+ * laco: `/auth/eu` respondia 401 e a tela de login voltava, sem explicacao.
  */
-export function Entrar({ aoEntrar }: { aoEntrar: () => void }) {
-  const [instituicao, setInstituicao] = useState('demo');
+export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => void }) {
+  const [instituicao, setInstituicao] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
-  const navegar = useNavigate();
 
   async function submeter(e: FormEvent) {
     e.preventDefault();
@@ -23,9 +27,13 @@ export function Entrar({ aoEntrar }: { aoEntrar: () => void }) {
     setEnviando(true);
 
     try {
-      await api.post('/auth/login', { instituicao, email, senha });
-      aoEntrar();
-      navegar('/casos');
+      const { estagio } = await api.post<{ estagio: EstagioSessao }>('/auth/login', {
+        instituicao,
+        email,
+        senha,
+      });
+      setSenha('');
+      aoEntrar(estagio);
     } catch (err) {
       setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível entrar.');
     } finally {

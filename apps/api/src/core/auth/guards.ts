@@ -8,12 +8,26 @@ import {
   createParamDecorator,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { Permissao } from '@lapato/shared';
+import type { EstagioSessao, Permissao } from '@lapato/shared';
 import { contextoAtual, exigirContexto } from '../contexto/contexto-requisicao.js';
 
 /** Marca a rota como publica (login, health, validacao de laudo). */
 export const PUBLICA = 'rota_publica';
 export const Publica = () => SetMetadata(PUBLICA, true);
+
+/**
+ * Estagios de sessao que a rota aceita.
+ *
+ * O padrao, quando a rota nao declara nada, e aceitar apenas `ativa`. Isso faz
+ * com que uma rota nova nasca fechada para sessao incompleta: esquecer o
+ * decorador nega acesso, nunca concede.
+ *
+ * Usado pelas rotas que existem justamente para destravar a sessao - trocar a
+ * senha provisoria, cadastrar o segundo fator.
+ */
+export const ESTAGIOS_META = 'estagios_permitidos';
+export const PermiteEstagio = (...estagios: EstagioSessao[]) =>
+  SetMetadata(ESTAGIOS_META, estagios);
 
 /** Exige as permissoes indicadas (M02 secao 12: controle granular por acao). */
 export const PERMISSOES_META = 'permissoes_exigidas';
@@ -44,8 +58,23 @@ export class SessaoGuard implements CanActivate {
     ]);
     if (publica) return true;
 
-    if (!contextoAtual()) {
+    const ctx = contextoAtual();
+    if (!ctx) {
       throw new UnauthorizedException('Sessao ausente, invalida ou expirada.');
+    }
+
+    const permitidos = this.reflector.getAllAndOverride<EstagioSessao[]>(ESTAGIOS_META, [
+      contextoExec.getHandler(),
+      contextoExec.getClass(),
+    ]);
+
+    // Sem declaracao explicita, so sessao completa passa.
+    if (!(permitidos ?? ['ativa']).includes(ctx.estagio)) {
+      throw new ForbiddenException({
+        title: 'Sessão incompleta',
+        detail: 'Conclua a etapa pendente de acesso antes de usar o sistema.',
+        estagio: ctx.estagio,
+      });
     }
 
     return true;

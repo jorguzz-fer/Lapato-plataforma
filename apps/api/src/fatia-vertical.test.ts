@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
+import * as TOTP from 'otpauth';
 import { AppModule } from './app.module.js';
 import { ProblemaFilter } from './core/http/problema.filter.js';
 
@@ -54,6 +55,22 @@ async function req(
   return { status: resposta.status, body: texto ? JSON.parse(texto) : null };
 }
 
+/** O mesmo segredo que o seed grava nos usuarios que exigem MFA. */
+const SEGREDO_MFA_DEMO = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
+
+export function codigoTotp(segredo = SEGREDO_MFA_DEMO): string {
+  return new TOTP.TOTP({
+    issuer: process.env.MFA_ISSUER ?? 'LAPATO',
+    secret: TOTP.Secret.fromBase32(segredo),
+  }).generate();
+}
+
+/**
+ * Login completo: senha e, quando o perfil exige, o segundo fator.
+ *
+ * Atravessar o funil inteiro aqui e proposital - se algum estagio deixar de
+ * destravar, todos os testes de fluxo quebram junto, e nao so um teste de auth.
+ */
 async function entrar(email: string): Promise<void> {
   cookie = '';
   const r = await req('POST', '/auth/login', {
@@ -62,6 +79,15 @@ async function entrar(email: string): Promise<void> {
     senha: 'lapato123',
   });
   expect(r.status, `login de ${email}: ${JSON.stringify(r.body)}`).toBe(200);
+
+  if (r.body.estagio === 'mfa_pendente') {
+    const mfa = await req('POST', '/auth/mfa', { codigo: codigoTotp() });
+    expect(mfa.status, `mfa de ${email}: ${JSON.stringify(mfa.body)}`).toBe(200);
+    expect(mfa.body.estagio).toBe('ativa');
+    return;
+  }
+
+  expect(r.body.estagio, `estagio inesperado para ${email}`).toBe('ativa');
 }
 
 beforeAll(async () => {

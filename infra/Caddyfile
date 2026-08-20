@@ -1,31 +1,53 @@
-# Ingress unico do LAPATO (Engineering Blueprint secao 5).
-# Em producao, troque `:80` pelo dominio real para que o Caddy emita TLS
-# automaticamente, e mantenha esta como a unica porta publica do host.
+# Ingress único do LAPATO (Engineering Blueprint seção 5).
+#
+# O endereço vem de `SITE_ADDRESS`:
+#   - produção:      SITE_ADDRESS=app.lapato.com.br   → TLS automático (Let's Encrypt)
+#   - desenvolvimento: sem a variável                 → :80 em texto claro, local
+#
+# Com um domínio real, o Caddy resolve o desafio ACME sozinho e passa a redirecionar
+# HTTP para HTTPS. Não há passo manual de certificado nem renovação para lembrar.
 
 {
-	# Em producao: admin off e email para o ACME
+	# Painel de administração do Caddy desligado: ele não deve existir num host público.
 	admin off
+
+	# E-mail usado pelo Let's Encrypt para avisos de expiração e mudanças de política.
+	email {$ACME_EMAIL}
 }
 
-:80 {
+{$SITE_ADDRESS::80} {
 	encode gzip zstd
 
-	# Cabecalhos de seguranca (Blueprint secao 6)
+	# Blueprint seção 6: cabeçalhos de segurança.
 	header {
+		# HSTS com preload: só entra quando o domínio já serve HTTPS de forma estável.
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
+		# Não anuncia o servidor nem sua versão.
 		-Server
 	}
 
-	# API: unica superficie de negocio exposta
+	# API: única superfície de negócio exposta.
+	#
+	# Front e API no MESMO host de propósito (ver README). Isso mantém o cookie de
+	# sessão host-only, dispensa CORS e preserva a proteção de CSRF do SameSite=Lax.
 	handle /api/* {
-		reverse_proxy api:3000
+		reverse_proxy api:3000 {
+			# Repassa o IP real do cliente, usado no registro de auditoria.
+			header_up X-Real-IP {remote_host}
+		}
 	}
 
-	# Front web (SPA)
+	# Front web (SPA).
 	handle {
 		reverse_proxy web:8080
+	}
+
+	# Blueprint seção 11: logs estruturados em JSON, para correlação por request.
+	log {
+		output stdout
+		format json
 	}
 }

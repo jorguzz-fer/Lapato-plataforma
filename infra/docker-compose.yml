@@ -12,12 +12,21 @@ services:
   caddy:
     image: caddy:2.8-alpine
     restart: unless-stopped
-    # UNICO servico com portas publicadas (Blueprint secao 5: "so 443 publico")
+    # UNICO servico com portas publicadas (Blueprint secao 5: "so 443 publico").
+    # A 80 fica aberta porque o Let's Encrypt usa o desafio HTTP-01 e o Caddy
+    # redireciona todo o resto para HTTPS.
     ports:
       - '80:80'
       - '443:443'
+    environment:
+      # Producao: app.lapato.com.br  -> TLS automatico
+      # Desenvolvimento: sem valor   -> :80 local, sem TLS
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      ACME_EMAIL: ${ACME_EMAIL:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificados emitidos. Perder este volume = reemitir tudo e esbarrar no
+      # limite de emissoes do Let's Encrypt. E o volume mais facil de esquecer no backup.
       - caddy-data:/data
       - caddy-config:/config
     networks: [lapato-interna]

@@ -22,12 +22,14 @@
     "generate": "pnpm build && drizzle-kit generate",
     "migrate": "tsx src/cli/migrate.ts",
     "seed": "tsx src/cli/seed.ts",
+    "provision": "tsx src/cli/provision.ts",
     "test": "vitest run"
   },
   "dependencies": {
     "@lapato/shared": "workspace:*",
     "@node-rs/argon2": "^2.0.2",
     "drizzle-orm": "^0.45.2",
+    "otpauth": "^9.3.6",
     "postgres": "^3.4.5"
   },
   "devDependencies": {

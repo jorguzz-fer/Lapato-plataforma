@@ -43,7 +43,14 @@ export const usuario = pgTable(
 
     /** Argon2id (Blueprint secao 6). Nulo enquanto o convite nao for aceito. */
     senhaHash: text('senha_hash'),
-    /** Segredo TOTP cifrado. MFA e obrigatorio para papeis sensiveis. */
+    /**
+     * Segredo TOTP em base32. MFA e obrigatorio para papeis sensiveis.
+     *
+     * PENDENTE: hoje esta em claro na coluna. Quem le a tabela consegue gerar
+     * codigos validos, o que reduz o MFA a um segundo fator so contra quem nao
+     * tem acesso ao banco. Cifrar com chave fora do banco (envelope encryption)
+     * esta na lista de lacunas em docs/runbook-deploy.md.
+     */
     mfaSegredo: text('mfa_segredo'),
     mfaAtivo: boolean('mfa_ativo').notNull().default(false),
 

@@ -192,6 +192,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(gel@2.2.0)(postgres@3.4.9)
+      otpauth:
+        specifier: ^9.3.6
+        version: 9.5.1
       postgres:
         specifier: ^3.4.5
         version: 3.4.9

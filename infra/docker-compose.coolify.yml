@@ -40,6 +40,31 @@ services:
     volumes:
       - minio-data:/data
     networks: [coolify]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Cria o bucket privado uma vez e encerra. Sem este passo o bucket nao existe
+  # e todo upload de imagem do M16 falha - silenciosamente, ate alguem tentar.
+  minio-init:
+    image: minio/mc:RELEASE.2024-10-08T09-37-26Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${S3_ACCESS_KEY_ID} $${S3_SECRET_ACCESS_KEY} &&
+      mc mb --ignore-existing local/lapato &&
+      mc anonymous set none local/lapato &&
+      echo 'bucket privado pronto'
+      "
+    networks: [coolify]
+    restart: "no"
 
   api:
     image: lapato-api:latest
@@ -52,6 +77,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/lapato
+      # A aplicacao nunca usa esta URL para atender request: ela existe para que
+      # `migrate` e `provision` possam ser executados de dentro do container
+      # (`docker exec`), com o usuario dono do schema. Ver docs/runbook-deploy.md.
+      DATABASE_MIGRATION_URL: postgres://${POSTGRES_MIGRATOR_USER}:${POSTGRES_MIGRATOR_PASSWORD}@postgres:5432/lapato
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
       S3_REGION: us-east-1

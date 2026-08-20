@@ -168,29 +168,81 @@ nano .env && chmod 600 .env
 docker compose -f infra/docker-compose.yml up -d postgres redis minio minio-init
 
 # Schema, RLS e triggers de imutabilidade
-docker compose -f infra/docker-compose.yml run --rm api node dist/cli/migrate.js
+docker compose -f infra/docker-compose.yml run --rm api \
+  node node_modules/@lapato/db/dist/cli/migrate.js
 
 # Sobe a aplicação
 docker compose -f infra/docker-compose.yml up -d --build
 ```
 
+O caminho `node_modules/@lapato/db/dist/cli/` não é engano: a imagem da API é
+montada com `pnpm deploy`, que instala `@lapato/db` como dependência. Os
+comandos de banco vivem lá dentro, junto com a pasta `drizzle/` das migrations.
+
 ### Criando a primeira instituição
 
 O `pnpm db:seed` **não serve para produção** — ele cria senhas conhecidas e
-recusa rodar com `NODE_ENV=production`. A instituição real é criada à mão:
+recusa rodar com `NODE_ENV=production`. A instituição real é criada pelo
+comando de provisionamento:
 
 ```bash
-docker compose -f infra/docker-compose.yml exec postgres \
-  psql -U lapato_owner -d lapato -c \
-  "INSERT INTO tenant (slug, razao_social, nome_fantasia)
-   VALUES ('lapato', 'LAPATO Necropsia Veterinária LTDA', 'LAPATO');"
+docker compose -f infra/docker-compose.yml run --rm \
+  -e PROVISION_TENANT_SLUG=lapato \
+  -e PROVISION_RAZAO_SOCIAL="LAPATO Necropsia Veterinária LTDA" \
+  -e PROVISION_NOME_FANTASIA="LAPATO" \
+  -e PROVISION_ADMIN_NOME="Nome do administrador" \
+  -e PROVISION_ADMIN_EMAIL="administrador@lapato.com.br" \
+  api node node_modules/@lapato/db/dist/cli/provision.js
 ```
+
+Ele cria, numa transação só: a instituição, a unidade sede, os cinco setores, as
+tabelas mestres, os três serviços, os modelos de etiqueta, o workflow da
+histopatologia, os seis perfis com suas permissões, a política de IA
+conservadora e **um único usuário administrador**. Nenhum cliente,
+veterinário, paciente ou caso fictício é criado.
+
+**A saída aparece uma única vez e não é recuperável:**
+
+- a **senha inicial**, sorteada com 144 bits de entropia — o banco guarda só o
+  hash Argon2id;
+- a **URI do TOTP** (`otpauth://...`), que precisa ser cadastrada no aplicativo
+  autenticador antes do primeiro login.
+
+MFA vem ligado porque o Blueprint §6 exige TOTP para administradores. Como ainda
+não existe rota de auto-cadastro nem de recuperação de MFA, **perder esse
+segredo é perder a conta** — só resta rodar um `UPDATE` direto no banco. Guarde
+os dois no cofre antes de fechar o terminal.
 
 O `slug` é o que os usuários digitam no login. Anote-o.
 
-Depois: criar unidade, perfis, permissões e o primeiro administrador. Um comando
-de provisionamento (`pnpm db:provision`) ainda não existe — é o primeiro item da
-lista de melhorias operacionais.
+#### Variáveis aceitas
+
+| Variável | Obrigatória | Padrão |
+|---|---|---|
+| `PROVISION_TENANT_SLUG` | Sim | — (minúsculas, números e hífen) |
+| `PROVISION_RAZAO_SOCIAL` | Sim | — |
+| `PROVISION_ADMIN_NOME` | Sim | — |
+| `PROVISION_ADMIN_EMAIL` | Sim | — |
+| `PROVISION_NOME_FANTASIA` | Não | a razão social |
+| `PROVISION_CNPJ` | Não | vazio |
+| `PROVISION_FUSO` | Não | `America/Fortaleza` |
+| `PROVISION_UNIDADE_NOME` | Não | `Unidade Sede` |
+| `PROVISION_LAB_APOIO_NOME` | Não | não cria a unidade parceira |
+| `PROVISION_ADMIN_CONSELHO` | Não | sem assinatura profissional |
+| `PROVISION_ADMIN_SENHA` | Não | senha sorteada (mín. 16 caracteres se informada) |
+| `PROVISION_MFA` | Não | ligado; `off` desliga e avisa |
+
+Rodar o comando duas vezes com o mesmo `slug` **falha de propósito**: ele não
+sobrescreve dados nem duplica perfis e serviços.
+
+`PROVISION_ADMIN_CONSELHO` só é preenchido para um administrador que também
+assina laudo. Sem registro profissional não há assinatura — criar uma vazia
+seria dado falso.
+
+#### Provisionando as instituições seguintes
+
+O mesmo comando, com outro `slug`. Cada instituição é um tenant isolado por RLS;
+nada é compartilhado entre elas além do schema.
 
 ### Verificação
 
@@ -203,6 +255,30 @@ curl -sI http://app.lapato.com.br | head -1           # 308, redirecionando para
 O `401` é sinal de saúde, não de erro: significa que a rota protegida está
 negando por padrão.
 
+### Se o deploy for pelo Coolify
+
+O `infra/docker-compose.coolify.yml` deixa o Traefik do Coolify no lugar do
+Caddy e recebe os segredos pela interface, não por arquivo `.env` no repositório.
+Migrations e provisionamento continuam sendo os mesmos comandos, executados
+dentro do container que já está de pé:
+
+```bash
+docker exec -it <container-da-api> \
+  node node_modules/@lapato/db/dist/cli/migrate.js
+
+docker exec -it \
+  -e PROVISION_TENANT_SLUG=lapato \
+  -e PROVISION_RAZAO_SOCIAL="LAPATO Necropsia Veterinária LTDA" \
+  -e PROVISION_ADMIN_NOME="Nome do administrador" \
+  -e PROVISION_ADMIN_EMAIL="administrador@lapato.com.br" \
+  <container-da-api> node node_modules/@lapato/db/dist/cli/provision.js
+```
+
+Isso depende de `DATABASE_MIGRATION_URL` estar no ambiente do container — o
+compose do Coolify a monta a partir de `POSTGRES_MIGRATOR_USER` e
+`POSTGRES_MIGRATOR_PASSWORD`. A aplicação nunca usa essa URL para atender
+request: quem atende é `lapato_app`, sem `BYPASSRLS` (ADR 0002).
+
 ---
 
 ## 4. Deploys seguintes
@@ -212,7 +288,8 @@ cd Lapato-plataforma
 git pull
 
 # Migrations antes do código novo: o schema precisa ser compatível com as duas versões.
-docker compose -f infra/docker-compose.yml run --rm api node dist/cli/migrate.js
+docker compose -f infra/docker-compose.yml run --rm api \
+  node node_modules/@lapato/db/dist/cli/migrate.js
 docker compose -f infra/docker-compose.yml up -d --build
 
 docker compose -f infra/docker-compose.yml ps
@@ -296,3 +373,32 @@ entrarem, ficam atrás de VPN — nunca em subdomínio público.
 **Staging.** `staging.lapato.com.br` numa VPS menor, com a mesma configuração
 parametrizada. O Blueprint §5 pede paridade dev/prod; sem staging, o primeiro
 teste de um deploy acontece em produção.
+
+---
+
+## 7. Lacunas conhecidas de gestão de contas
+
+Nenhuma bloqueia o primeiro deploy, mas todas aparecem no primeiro mês de uso
+real. Estão aqui para que ninguém descubra na hora errada.
+
+**Não existe troca de senha pelo próprio usuário.** O `provision` entrega uma
+senha sorteada e não há rota para o administrador trocá-la depois. Enquanto isso
+não existir, a senha inicial é a senha permanente.
+
+**Não existe auto-cadastro nem recuperação de MFA.** O único caminho para
+cadastrar TOTP é o `provision`, e o único caminho de recuperação é `UPDATE` no
+banco. Um administrador que troque de celular sem migrar o segredo perde a
+conta.
+
+**Não existe convite de usuário.** O schema já prevê `status =
+'aguardando_ativacao'` e `senha_hash` nulo, mas não há fluxo que ative a conta —
+uma conta criada assim fica inacessível. Por isso o `provision` cria o
+administrador já `ativo`.
+
+**O segredo TOTP está em claro no banco.** Quem consegue ler `usuario` consegue
+gerar códigos válidos. Cifrar com chave fora do banco é o conserto; enquanto
+isso, o backup do banco (que já é cifrado por GPG, ver §5) carrega segredos de
+MFA e precisa do mesmo cuidado das credenciais.
+
+Os três primeiros itens são o mesmo módulo: autoatendimento de conta no M02. É a
+recomendação de próximo passo depois do go-live.

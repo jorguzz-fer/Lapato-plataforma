@@ -23,7 +23,7 @@ async function bootstrap(): Promise<void> {
    */
   app.enableCors({ origin: env.API_CORS_ORIGINS, credentials: true });
 
-  app.setGlobalPrefix('api/v1');
+  app.setGlobalPrefix(env.API_GLOBAL_PREFIX);
   // Sem ValidationPipe do Nest: a validacao e feita com Zod em `validarCorpo`,
   // o mesmo vocabulario de schema usado no restante do monorepo.
   app.useGlobalFilters(new ProblemaFilter());
@@ -40,7 +40,9 @@ async function bootstrap(): Promise<void> {
     .build();
 
   const documento = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, documento);
+  // Sob o mesmo prefixo das rotas: um proxy que roteia por caminho leva as duas
+  // coisas junto. Fora dele, a documentacao daria 404 justamente em producao.
+  SwaggerModule.setup(`${env.API_GLOBAL_PREFIX}/docs`, app, documento);
 
   await app.listen(env.API_PORT);
   Logger.log(`API ouvindo em :${env.API_PORT} (${env.NODE_ENV})`, 'Bootstrap');

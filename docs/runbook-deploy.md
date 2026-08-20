@@ -1,7 +1,12 @@
-# Runbook — deploy do LAPATO
+# Runbook — operação do LAPATO
 
-Blueprint §16, item 12. Cobre o primeiro deploy, os deploys seguintes, backup,
-restauração e rollback.
+Blueprint §16, item 12. Cobre provisionamento, backup, restauração, rollback e as
+lacunas conhecidas.
+
+**A topologia de produção mora em [`deploy-coolify.md`](deploy-coolify.md).**
+Produção não usa Docker Compose: cada peça é um recurso próprio no Coolify,
+construído a partir do seu Dockerfile. Este documento cuida do que vem depois de
+a infraestrutura existir.
 
 Domínio de produção: **`app.lapato.com.br`**.
 
@@ -11,31 +16,32 @@ Domínio de produção: **`app.lapato.com.br`**.
 
 ### Servidor
 
-VPS única com Docker, rodando tudo via Compose (Blueprint §5: começar simples,
-orquestrar só quando a escala justificar).
+Um host com Coolify. Os quatro recursos — Postgres gerenciado, `lapato-api`,
+`lapato-web` e `lapato-worker` — rodam nele.
 
 | | Mínimo (piloto) | Recomendado (produção) |
 |---|---|---|
 | vCPU | 2 | 4 |
 | RAM | 4 GB | 8 GB |
-| Disco | 80 GB SSD | 160 GB SSD ou mais |
+| Disco | 60 GB SSD | 120 GB SSD ou mais |
 | SO | Ubuntu 24.04 LTS | Ubuntu 24.04 LTS |
 
-**Por que a RAM importa mais que a CPU:** Postgres, Redis, MinIO, API, worker,
-front e Caddy sobem no mesmo host. Com 2 GB o Postgres começa a competir por
-memória e a latência das filas do M07 aparece na tela do usuário.
+**Por que a RAM importa mais que a CPU:** Postgres, API, worker e front dividem o
+host com o próprio Coolify, que também constrói as imagens ali. Build de imagem
+com 2 GB compete com o Postgres em produção — é o momento em que a latência
+aparece na tela do usuário.
 
-**Por que o disco cresce:** imagens do M16 são o maior consumidor. Fotografia de
-macroscopia e microfotografia acumulam por caso e nunca são apagadas — o M16
-proíbe sobrescrever o original. Estime o volume real do laboratório antes de
-dimensionar, e monitore o uso desde o primeiro mês.
+**Por que o disco vai crescer:** hoje o consumo é modesto (banco pequeno, três
+imagens Docker). Quando o M16 entrar, fotografia de macroscopia e microfotografia
+acumulam por caso e nunca são apagadas — o M16 proíbe sobrescrever o original.
+Nessa hora, object storage externo passa a valer mais que disco local (§6).
 
 ### DNS
 
 Um registro só:
 
 ```
-app.lapato.com.br    A    <IP-da-VPS>
+app.lapato.com.br    A    <IP-do-host>
 ```
 
 Se o provedor der IPv6, acrescente o `AAAA` para o mesmo host.
@@ -45,7 +51,7 @@ a porta 80. DNS ainda propagando faz a emissão falhar, e o Let's Encrypt tem
 limite de tentativas por semana.
 
 ```bash
-dig +short app.lapato.com.br     # deve devolver o IP da VPS
+dig +short app.lapato.com.br     # deve devolver o IP do host
 ```
 
 ### Firewall
@@ -60,140 +66,75 @@ ufw allow 443/tcp
 ufw enable
 ```
 
-Postgres, Redis e MinIO **não** publicam portas: vivem na rede interna do
-Compose. Se algum dia aparecer `5432` aberta no host, é regressão de segurança.
+Mais a porta da interface do Coolify, restrita ao seu IP.
+
+O Postgres **não** publica porta: fica na rede interna do Coolify, com a URL
+pública desligada. Se algum dia aparecer `5432` aberta no host, é regressão de
+segurança.
 
 ### Contas e serviços externos
 
 | Serviço | Para quê | Quando |
 |---|---|---|
-| Provedor de VPS | Hospedagem | Agora |
+| Provedor de VPS | Hospedagem do Coolify | Agora |
 | DNS do domínio | Registro `A` | Agora |
-| Object storage S3 (opcional) | Alternativa ao MinIO local | Ver §6 |
+| Destino S3 do backup | Cópia off-site do banco | Antes do go-live |
+| Object storage S3 | Imagens do M16 | Quando o M16 entrar |
 | Provedor de e-mail | Notificações do M26 | Quando o M26 entrar |
 | Anthropic API | Copiloto real (M17) | Quando o Copiloto for ligado |
 
 ---
 
-## 2. Variáveis de ambiente de produção
+## 2. Variáveis de ambiente
 
-Crie o `.env` **na VPS**, nunca no repositório.
-
-```bash
-# --- Ambiente ---
-NODE_ENV=production
-LOG_LEVEL=info
-
-# --- Domínio e TLS ---
-SITE_ADDRESS=app.lapato.com.br
-ACME_EMAIL=<seu-e-mail-para-avisos-do-lets-encrypt>
-
-# --- API ---
-API_PORT=3000
-API_CORS_ORIGINS=https://app.lapato.com.br
-
-# --- Banco ---
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
-POSTGRES_DB=lapato
-POSTGRES_USER=lapato_app
-POSTGRES_PASSWORD=<gerar>
-DATABASE_URL=postgres://lapato_app:<a-mesma-senha>@postgres:5432/lapato
-
-POSTGRES_MIGRATOR_USER=lapato_owner
-POSTGRES_MIGRATOR_PASSWORD=<gerar>
-DATABASE_MIGRATION_URL=postgres://lapato_owner:<a-mesma-senha>@postgres:5432/lapato
-
-# --- Redis ---
-REDIS_URL=redis://redis:6379
-
-# --- Object storage ---
-S3_ENDPOINT=http://minio:9000
-S3_REGION=us-east-1
-S3_BUCKET=lapato
-S3_ACCESS_KEY_ID=<gerar>
-S3_SECRET_ACCESS_KEY=<gerar>
-S3_FORCE_PATH_STYLE=true
-S3_SIGNED_URL_TTL=300
-
-# --- Sessão ---
-SESSION_SECRET=<gerar com: openssl rand -hex 32>
-SESSION_TTL_HOURS=12
-SESSION_COOKIE_NAME=lapato_session
-SESSION_COOKIE_SECURE=true
-MFA_ISSUER=LAPATO
-
-# --- IA ---
-COPILOT_PROVIDER=stub
-```
+A lista por aplicativo, com os valores de produção, está em
+[`deploy-coolify.md` §4](deploy-coolify.md). Em produção elas vivem na interface
+do Coolify — nunca em arquivo no repositório.
 
 Gerando os segredos:
 
 ```bash
 openssl rand -hex 32     # SESSION_SECRET
-openssl rand -base64 24  # cada senha e chave
+openssl rand -base64 24  # senha do usuário de banco
 ```
 
-Permissão do arquivo:
+**Redis e S3 não são configurados hoje.** Apareciam aqui e no Compose, mas
+nenhuma linha de código os lê — não estão nas dependências nem no schema de
+validação do `env.ts`. Voltam quando o M16 e as filas do M07 existirem.
 
-```bash
-chmod 600 .env
-```
-
-### O que a aplicação recusa
-
-A validação de ambiente derruba o processo na subida, com a mensagem do campo
-que falta, se:
-
-- `SESSION_SECRET` tiver menos de 32 caracteres;
-- `NODE_ENV=production` e `SESSION_COOKIE_SECURE=false`;
-- `COPILOT_PROVIDER=claude` sem `ANTHROPIC_API_KEY`.
-
-É deliberado: melhor o container morrer imediato do que atender request com
-sessão insegura.
+Para desenvolvimento local, copie `.env.example` para `.env` e use
+`infra/docker-compose.yml`, que sobe Postgres, os três serviços e o Caddy
+mantendo front e API no mesmo host — a mesma origem que produção tem.
 
 ---
 
-## 3. Primeiro deploy
+## 3. Provisionamento
 
-```bash
-# Na VPS
-git clone https://github.com/jorguzz-fer/Lapato-plataforma.git
-cd Lapato-plataforma
-
-# Crie o .env com o conteúdo da seção 2
-nano .env && chmod 600 .env
-
-# Sobe a infraestrutura primeiro
-docker compose -f infra/docker-compose.yml up -d postgres redis minio minio-init
-
-# Schema, RLS e triggers de imutabilidade
-docker compose -f infra/docker-compose.yml run --rm api \
-  node node_modules/@lapato/db/dist/cli/migrate.js
-
-# Sobe a aplicação
-docker compose -f infra/docker-compose.yml up -d --build
-```
-
-O caminho `node_modules/@lapato/db/dist/cli/` não é engano: a imagem da API é
-montada com `pnpm deploy`, que instala `@lapato/db` como dependência. Os
-comandos de banco vivem lá dentro, junto com a pasta `drizzle/` das migrations.
+A subida da infraestrutura está em [`deploy-coolify.md` §6](deploy-coolify.md).
+O que segue é o que fazer depois que ela responde.
 
 ### Criando a primeira instituição
 
 O `pnpm db:seed` **não serve para produção** — ele cria senhas conhecidas e
-recusa rodar com `NODE_ENV=production`. A instituição real é criada pelo
-comando de provisionamento:
+recusa rodar com `NODE_ENV=production`. A instituição real é criada pelo comando
+de provisionamento, no terminal do `lapato-api` dentro do Coolify:
 
 ```bash
-docker compose -f infra/docker-compose.yml run --rm \
-  -e PROVISION_TENANT_SLUG=lapato \
-  -e PROVISION_RAZAO_SOCIAL="LAPATO Necropsia Veterinária LTDA" \
-  -e PROVISION_NOME_FANTASIA="LAPATO" \
-  -e PROVISION_ADMIN_NOME="Nome do administrador" \
-  -e PROVISION_ADMIN_EMAIL="administrador@lapato.com.br" \
-  api node node_modules/@lapato/db/dist/cli/provision.js
+PROVISION_TENANT_SLUG=lapato \
+PROVISION_RAZAO_SOCIAL="LAPATO Necropsia Veterinária LTDA" \
+PROVISION_NOME_FANTASIA="LAPATO" \
+PROVISION_ADMIN_NOME="Nome do administrador" \
+PROVISION_ADMIN_EMAIL="administrador@lapato.com.br" \
+node node_modules/@lapato/db/dist/cli/provision.js
 ```
+
+O caminho `node_modules/@lapato/db/dist/cli/` não é engano: a imagem é montada
+com `pnpm deploy`, que instala `@lapato/db` como dependência. Os comandos de
+banco vivem lá dentro, junto com a pasta `drizzle/` das migrations.
+
+O comando usa `DATABASE_MIGRATION_URL` — a URL do dono do schema. A aplicação
+nunca usa essa URL para atender request: quem atende é `lapato_app`, sem
+`BYPASSRLS` (ADR 0002).
 
 Ele cria, numa transação só: a instituição, a unidade sede, os cinco setores, as
 tabelas mestres, os três serviços, os modelos de etiqueta, o workflow da
@@ -215,7 +156,7 @@ o terminal.
 
 O `slug` é o que os usuários digitam no login. Anote-o.
 
-#### O primeiro login tem duas etapas obrigatórias
+#### O primeiro login tem três etapas
 
 A senha entregue pelo `provision` vale para **um acesso só**. A sequência é:
 
@@ -263,64 +204,47 @@ nada é compartilhado entre elas além do schema.
 ```bash
 curl -fsS https://app.lapato.com.br/api/v1/health     # {"status":"ok","banco":"ok"}
 curl -o /dev/null -w '%{http_code}\n' https://app.lapato.com.br/api/v1/fluxo/casos   # 401
-curl -sI http://app.lapato.com.br | head -1           # 308, redirecionando para HTTPS
+curl -sI http://app.lapato.com.br | head -1           # 301/308, redirecionando para HTTPS
 ```
 
 O `401` é sinal de saúde, não de erro: significa que a rota protegida está
 negando por padrão.
 
-### Se o deploy for pelo Coolify
+Se o `/health` devolver **404**, o problema é o `API_GLOBAL_PREFIX`: o proxy do
+Coolify consome o `/api` ao rotear por caminho. Ver
+[`deploy-coolify.md` §3](deploy-coolify.md).
 
-O `infra/docker-compose.coolify.yml` deixa o Traefik do Coolify no lugar do
-Caddy e recebe os segredos pela interface, não por arquivo `.env` no repositório.
-Migrations e provisionamento continuam sendo os mesmos comandos, executados
-dentro do container que já está de pé:
-
-```bash
-docker exec -it <container-da-api> \
-  node node_modules/@lapato/db/dist/cli/migrate.js
-
-docker exec -it \
-  -e PROVISION_TENANT_SLUG=lapato \
-  -e PROVISION_RAZAO_SOCIAL="LAPATO Necropsia Veterinária LTDA" \
-  -e PROVISION_ADMIN_NOME="Nome do administrador" \
-  -e PROVISION_ADMIN_EMAIL="administrador@lapato.com.br" \
-  <container-da-api> node node_modules/@lapato/db/dist/cli/provision.js
-```
-
-Isso depende de `DATABASE_MIGRATION_URL` estar no ambiente do container — o
-compose do Coolify a monta a partir de `POSTGRES_MIGRATOR_USER` e
-`POSTGRES_MIGRATOR_PASSWORD`. A aplicação nunca usa essa URL para atender
-request: quem atende é `lapato_app`, sem `BYPASSRLS` (ADR 0002).
+> **Apague o tenant `demo` se ele existir em produção.** Ele vem do
+> `pnpm db:seed`, cujo usuário e senha (`admin@lapato.local` / `lapato123`) estão
+> em texto puro num repositório público. Enquanto o tenant existir, essa
+> credencial vale.
 
 ---
 
-## 4. Deploys seguintes
+## 4. Deploys seguintes e rollback
+
+O Coolify reimplanta a cada push na branch configurada, ou pelo botão da
+interface. Cada aplicativo é independente: mudança só no front reimplanta só o
+`lapato-web`.
+
+O **Pre-deployment Command** do `lapato-api` roda as migrations antes de o código
+novo subir. Isso não é ordem arbitrária — é o que torna o rollback possível.
+
+Depois de cada deploy:
 
 ```bash
-cd Lapato-plataforma
-git pull
-
-# Migrations antes do código novo: o schema precisa ser compatível com as duas versões.
-docker compose -f infra/docker-compose.yml run --rm api \
-  node node_modules/@lapato/db/dist/cli/migrate.js
-docker compose -f infra/docker-compose.yml up -d --build
-
-docker compose -f infra/docker-compose.yml ps
 curl -fsS https://app.lapato.com.br/api/v1/health
 ```
 
 ### Rollback
 
-```bash
-git checkout <tag-ou-commit-anterior>
-docker compose -f infra/docker-compose.yml up -d --build
-```
+Pelo Coolify: abrir o aplicativo, escolher o deployment anterior, reimplantar.
 
-**Migrations não voltam sozinhas.** Por isso toda migration deve ser compatível
-com a versão anterior do código: adicionar coluna nullable em vez de renomear,
-criar antes de remover. Se a migration for destrutiva, o rollback exige restaurar
-o backup — e aí a perda é o intervalo desde o último dump.
+**Migrations não voltam sozinhas.** Por isso toda migration precisa ser
+compatível com a versão anterior do código: coluna nova sempre opcional, criar
+antes de remover, nunca renomear em um passo só. Se a migration for destrutiva, o
+rollback exige restaurar o backup — e aí a perda é o intervalo desde a última
+cópia.
 
 ---
 
@@ -333,36 +257,34 @@ testada**. Backup que nunca foi restaurado não é backup.
 
 | Item | Onde | Crítico |
 |---|---|---|
-| Banco Postgres | volume `postgres-data` | **Sim** |
-| Imagens e documentos | volume `minio-data` | **Sim** |
-| Certificados TLS | volume `caddy-data` | Não, mas evita reemissão |
-| `.env` | disco da VPS | **Sim** — guarde no cofre, não junto do backup |
+| Banco Postgres | recurso gerenciado do Coolify | **Sim** |
+| Variáveis de ambiente | interface do Coolify | **Sim** — copie para o cofre |
+| Imagens e documentos | ainda não existem (M16) | Quando o M16 entrar |
 
-### Dump diário
+As variáveis são o item que se esquece: elas não estão no repositório, por
+decisão, e vivem só no Coolify. Perder o host sem uma cópia delas significa
+reconstruir `SESSION_SECRET` e senhas do zero — e um `SESSION_SECRET` novo
+derruba todas as sessões.
 
-```bash
-# /etc/cron.d/lapato-backup
-0 3 * * * root /opt/lapato/infra/backup.sh >> /var/log/lapato-backup.log 2>&1
-```
+### Backup agendado
 
-Ver `infra/backup.sh`. Ele gera dump comprimido, cifra com GPG e remove locais
-com mais de 7 dias. **Copiar para fora da VPS é passo obrigatório** — backup no
-mesmo disco não protege contra perda do servidor.
+Ligue o backup do PostgreSQL na interface do Coolify, com destino S3. Ele cuida
+de agendamento, retenção e cópia off-site.
+
+`infra/backup.sh` continua servindo para uma cópia independente do Coolify: gera
+dump comprimido, cifra com GPG e descarta locais com mais de 7 dias. Ele recusa
+rodar sem `BACKUP_GPG_RECIPIENT` — o dump carrega dados clínicos, pessoais e
+segredos de MFA.
 
 ### Restauração — teste antes de precisar
 
-```bash
-gpg --decrypt lapato-2026-08-09.sql.gz.gpg | gunzip | \
-  docker compose -f infra/docker-compose.yml exec -T postgres \
-  psql -U lapato_owner -d lapato
-```
-
-Faça isso numa VPS descartável, com um dump real, **antes do go-live**. Anote
-quanto tempo levou: esse número é o seu RTO.
+Restaure um dump real num banco descartável **antes do go-live**, e anote quanto
+tempo levou: esse número é o seu RTO. Um backup nunca restaurado é uma suposição,
+não uma garantia.
 
 ### RPO e RTO — a definir
 
-- **RPO** (perda aceitável): com dump diário, até 24 h. Se o laboratório não
+- **RPO** (perda aceitável): com backup diário, até 24 h. Se o laboratório não
   aceitar perder um dia de laudos, é preciso PITR com WAL archiving.
 - **RTO** (tempo até voltar): medido no teste de restauração.
 
@@ -372,21 +294,23 @@ Ambos precisam de decisão do dono do produto antes do go-live.
 
 ## 6. Decisões em aberto
 
-**Object storage.** O MinIO local funciona e simplifica o começo, mas o volume
-de imagens do M16 cresce sem parar e fica no mesmo disco do banco. Migrar para
-S3-compatível gerenciado (Cloudflare R2, sem egress) é troca de variáveis de
-ambiente, sem mudança de código. Revisar quando o volume passar de ~50 GB.
+**Object storage.** Não existe hoje, e não faz falta: nenhum código grava
+arquivo. Quando o M16 entrar, o volume de imagens cresce sem parar, e a escolha
+é entre disco do host e S3 gerenciado (Cloudflare R2 não cobra egress). É troca
+de variável de ambiente, sem mudança de arquitetura — decida na hora, com o
+volume real do laboratório na mão.
 
 **Residência de dados.** Recomendação: região Brasil, pela LGPD. Confirmar com o
 provedor escolhido e registrar como ADR (`docs/dados-pessoais.md`).
 
-**Observabilidade.** Logs estruturados já saem em JSON. Métricas, tracing e
-error tracking (Blueprint §11) ainda não estão instalados. Painéis, quando
-entrarem, ficam atrás de VPN — nunca em subdomínio público.
+**Observabilidade.** Logs estruturados já saem em JSON e o Coolify os agrega.
+Métricas, tracing e error tracking (Blueprint §11) ainda não estão instalados.
+Painéis, quando entrarem, ficam atrás de VPN — nunca em subdomínio público.
 
-**Staging.** `staging.lapato.com.br` numa VPS menor, com a mesma configuração
-parametrizada. O Blueprint §5 pede paridade dev/prod; sem staging, o primeiro
-teste de um deploy acontece em produção.
+**Staging.** Um segundo conjunto de recursos no mesmo Coolify, apontando para
+outra branch e outro banco. O Blueprint §5 pede paridade dev/prod; sem staging,
+o primeiro teste de um deploy acontece em produção. Com recursos independentes
+isso ficou mais barato do que era com Compose.
 
 ---
 

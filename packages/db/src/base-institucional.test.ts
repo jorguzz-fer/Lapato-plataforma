@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { PERFIS_PADRAO, TODAS_PERMISSOES } from '@lapato/shared';
 import { criarBaseInstitucional, PERFIS } from './base-institucional.js';
 import { comTenant, criarConexao, type Database } from './client.js';
@@ -151,7 +151,16 @@ describe('configuracao institucional minima', () => {
         .select({ permissao: s.perfilPermissao.permissao, escopo: s.perfilPermissao.escopo })
         .from(s.perfilPermissao)
         .innerJoin(s.perfil, eq(s.perfil.id, s.perfilPermissao.perfilId))
-        .where(eq(s.perfil.chave, PERFIS_PADRAO.ADMINISTRADOR_GERAL)),
+        // O filtro por tenant e explicito de proposito. Este arquivo roda com o
+        // dono do schema, que no Postgres do CI e superusuario - e superusuario
+        // ignora RLS. Depender da policy aqui faria o teste somar os perfis de
+        // TODAS as instituicoes do banco, inclusive a `demo` do seed.
+        .where(
+          and(
+            eq(s.perfil.tenantId, tenantId),
+            eq(s.perfil.chave, PERFIS_PADRAO.ADMINISTRADOR_GERAL),
+          ),
+        ),
     );
 
     expect(permissoes).toHaveLength(TODAS_PERMISSOES.length);
@@ -164,7 +173,7 @@ describe('configuracao institucional minima', () => {
         .select({ permissao: s.perfilPermissao.permissao })
         .from(s.perfilPermissao)
         .innerJoin(s.perfil, eq(s.perfil.id, s.perfilPermissao.perfilId))
-        .where(eq(s.perfil.chave, PERFIS_PADRAO.RESIDENTE)),
+        .where(and(eq(s.perfil.tenantId, tenantId), eq(s.perfil.chave, PERFIS_PADRAO.RESIDENTE))),
     );
 
     const chaves = permissoes.map((x) => x.permissao);

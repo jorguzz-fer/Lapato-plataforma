@@ -46,6 +46,11 @@ pnpm db:seed      # instituição de demonstração
 pnpm dev          # API em :3000, front em :5173
 ```
 
+Para criar uma instituição **real** — em produção ou num ambiente que não deva
+ter dados fictícios — use `pnpm db:provision`. Ele parte da mesma configuração
+institucional do seed, mas cria só um administrador, com senha sorteada e MFA
+ligado. Ver [`docs/runbook-deploy.md`](docs/runbook-deploy.md).
+
 A documentação da API fica em `http://localhost:3000/api/docs`.
 
 ### Usuários de demonstração

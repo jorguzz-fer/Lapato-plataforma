@@ -21,13 +21,15 @@ const MENU = [
 
 interface Props {
   sessao: Sessao;
+  /** Devolve o controle ao `App`, que zera o estagio e volta ao login. */
+  aoSair: () => void;
   modulo: string;
   etapa?: string;
   cartoes?: CartaoPainel[];
   children: ReactNode;
 }
 
-export function Shell({ sessao, modulo, etapa, cartoes, children }: Props) {
+export function Shell({ sessao, aoSair, modulo, etapa, cartoes, children }: Props) {
   const [painelRecolhido, setPainelRecolhido] = useState(false);
   const [tema, setTema] = useState<'claro' | 'escuro'>('claro');
   const navegar = useNavigate();
@@ -41,6 +43,8 @@ export function Shell({ sessao, modulo, etapa, cartoes, children }: Props) {
   async function sair() {
     await api.post('/auth/logout');
     navegar('/entrar');
+    // Só depois de navegar: zerar o estágio antes desmontaria esta tela no meio.
+    aoSair();
   }
 
   return (
@@ -110,6 +114,19 @@ export function Shell({ sessao, modulo, etapa, cartoes, children }: Props) {
               </li>
             ))}
           </ul>
+
+          <div className="mt-4 space-y-1 border-t pt-3" style={{ borderColor: 'var(--lapato-sidebar-borda)' }}>
+            <NavLink to="/conta/senha" className="block rounded px-3 py-2 text-sm">
+              Trocar senha
+            </NavLink>
+            {!sessao.mfaAtivo && (
+              /* Blueprint secao 6: oferecer o segundo fator a quem ainda nao tem,
+                 mesmo quando o perfil nao o torna obrigatorio. */
+              <NavLink to="/conta/mfa" className="block rounded px-3 py-2 text-sm">
+                Ativar verificação em 2 etapas
+              </NavLink>
+            )}
+          </div>
 
           {sessao.exigeSupervisao && (
             /* M02/M11: o perfil em supervisão precisa saber disso o tempo todo. */

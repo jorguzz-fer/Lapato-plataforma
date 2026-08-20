@@ -182,6 +182,13 @@ async function main(): Promise<void> {
           nomeCompleto: entrada.adminNome,
           email: entrada.adminEmail,
           senhaHash,
+          /**
+           * A senha inicial vale para um acesso so, tenha sido sorteada aqui ou
+           * vinda de `PROVISION_ADMIN_SENHA`: nos dois casos ela passou por
+           * terminal e provavelmente por historico de shell. O primeiro login
+           * cai em `troca_senha_obrigatoria`.
+           */
+          senhaTrocaObrigatoria: true,
           mfaSegredo: segredoMfa,
           mfaAtivo: segredoMfa !== null,
           status: 'ativo',

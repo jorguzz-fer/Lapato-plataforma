@@ -1,4 +1,4 @@
-import type { AchadoGuardian } from '@lapato/shared';
+import type { AchadoGuardian, EstagioSessao } from '@lapato/shared';
 
 /**
  * Cliente HTTP do front.
@@ -18,6 +18,8 @@ export class ErroApi extends Error {
     readonly detalhe: string,
     /** Presente quando a acao foi barrada pelo Guardian (M17). */
     readonly achados?: AchadoGuardian[],
+    /** Presente quando a sessao parou num estagio do funil de entrada. */
+    readonly estagio?: EstagioSessao,
   ) {
     super(detalhe || titulo);
     this.name = 'ErroApi';
@@ -26,6 +28,19 @@ export class ErroApi extends Error {
   get bloqueadoPeloGuardian(): boolean {
     return this.status === 409 && Array.isArray(this.achados);
   }
+}
+
+/**
+ * Aviso de que a sessao regrediu de estagio no meio do uso.
+ *
+ * Acontece quando a exigencia muda com a sessao aberta - por exemplo, um
+ * administrador concede permissao de assinar laudo a alguem que ainda nao tem
+ * segundo fator. Sem isto, a proxima acao viraria um 403 seco na tela.
+ */
+let observadorDeEstagio: ((estagio: EstagioSessao) => void) | null = null;
+
+export function observarEstagio(fn: (estagio: EstagioSessao) => void): void {
+  observadorDeEstagio = fn;
 }
 
 async function requisitar<T>(
@@ -44,11 +59,16 @@ async function requisitar<T>(
   const dados = texto ? JSON.parse(texto) : null;
 
   if (!resposta.ok) {
+    if (resposta.status === 403 && dados?.estagio) {
+      observadorDeEstagio?.(dados.estagio as EstagioSessao);
+    }
+
     throw new ErroApi(
       resposta.status,
       dados?.title ?? 'Erro',
       dados?.detail ?? 'Não foi possível concluir a operação.',
       dados?.achados,
+      dados?.estagio,
     );
   }
 
@@ -68,6 +88,8 @@ export interface Sessao {
   unidadeId: string | null;
   exigeSupervisao: boolean;
   permissoes: string[];
+  /** Falso quando a conta ainda não cadastrou o segundo fator. */
+  mfaAtivo: boolean;
 }
 
 export interface CasoNaFila {

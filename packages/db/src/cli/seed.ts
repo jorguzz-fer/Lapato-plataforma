@@ -1,7 +1,7 @@
 import { hash } from '@node-rs/argon2';
 import { eq } from 'drizzle-orm';
-import { PERFIS_PADRAO } from '@lapato/shared';
-import { criarBaseInstitucional } from '../base-institucional.js';
+import { exigeMfa, PERFIS_PADRAO, TODAS_PERMISSOES } from '@lapato/shared';
+import { criarBaseInstitucional, PERFIS } from '../base-institucional.js';
 import { comTenant, criarConexao, type Transacao } from '../client.js';
 import * as s from '../schema/index.js';
 
@@ -18,6 +18,38 @@ import * as s from '../schema/index.js';
  */
 
 const SENHA_DEMO = 'lapato123';
+
+/**
+ * Segredo TOTP fixo dos usuarios de demonstracao que exigem MFA.
+ *
+ * O Blueprint secao 6 exige segundo fator para quem administra e para quem
+ * assina laudo, e essa regra vale igual em desenvolvimento - nao existe flag de
+ * ambiente que a desligue, porque uma regra de seguranca que some em dev deixa
+ * de ser testada justamente onde os testes rodam.
+ *
+ * A conciliacao e este segredo conhecido: o fluxo executado e exatamente o de
+ * producao, so o segredo e publico. Serve ao mesmo proposito da senha
+ * `lapato123` - e, como ela, so existe porque o seed recusa rodar em producao.
+ *
+ * Para entrar no ambiente de demonstracao, gere o codigo com:
+ *   npx otpauth totp generate --secret JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP
+ * ou cadastre o segredo em qualquer aplicativo autenticador.
+ */
+const SEGREDO_MFA_DEMO = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
+
+/**
+ * O perfil concede alguma permissao que obriga segundo fator?
+ *
+ * Deriva da mesma lista que a API consulta em tempo de execucao, entao mudar
+ * `PERMISSOES_QUE_EXIGEM_MFA` ajusta o seed sozinho - nao ha segunda copia da
+ * regra para sair de sincronia.
+ */
+function perfilExigeMfa(chave: string): boolean {
+  const def = PERFIS.find((p) => p.chave === chave);
+  if (!def) return false;
+  const permissoes = def.permissoes === 'todas' ? TODAS_PERMISSOES : def.permissoes;
+  return exigeMfa(permissoes);
+}
 
 async function semear(tx: Transacao, tenantId: string): Promise<void> {
   const senhaHash = await hash(SENHA_DEMO);
@@ -77,6 +109,8 @@ async function semear(tx: Transacao, tenantId: string): Promise<void> {
   ];
 
   for (const def of usuariosDemo) {
+    const comMfa = perfilExigeMfa(def.perfil);
+
     const [u] = await tx
       .insert(s.usuario)
       .values({
@@ -84,6 +118,8 @@ async function semear(tx: Transacao, tenantId: string): Promise<void> {
         nomeCompleto: def.nome,
         email: def.email,
         senhaHash,
+        mfaSegredo: comMfa ? SEGREDO_MFA_DEMO : null,
+        mfaAtivo: comMfa,
         status: 'ativo',
         categoria: def.perfil === PERFIS_PADRAO.LABORATORIO_APOIO ? 'externo' : 'interno',
         unidadePrincipalId: def.unidade,
@@ -199,12 +235,14 @@ async function main(): Promise<void> {
 
     console.warn(`instituicao "${slug}" criada.`);
     console.warn(`usuarios de demonstracao (senha: ${SENHA_DEMO}):`);
-    console.warn('  admin@lapato.local        Administrador Geral');
+    console.warn('  admin@lapato.local        Administrador Geral        [MFA]');
     console.warn('  recepcao@lapato.local     Recepção');
     console.warn('  tecnico@lapato.local      Técnico de Laboratório');
-    console.warn('  patologista@lapato.local  Patologista');
+    console.warn('  patologista@lapato.local  Patologista                [MFA]');
     console.warn('  residente@lapato.local    Residente (sem assinar/liberar)');
     console.warn('  apoio@lapato.local        Laboratório de Apoio (externo)');
+    console.warn('');
+    console.warn(`  [MFA] segredo TOTP de demonstracao: ${SEGREDO_MFA_DEMO}`);
   } finally {
     await encerrar();
   }

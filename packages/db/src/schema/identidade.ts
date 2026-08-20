@@ -54,6 +54,18 @@ export const usuario = pgTable(
     mfaSegredo: text('mfa_segredo'),
     mfaAtivo: boolean('mfa_ativo').notNull().default(false),
 
+    /**
+     * M02: senha definida por terceiro (provisionamento, reset administrativo)
+     * vale para um acesso so. Enquanto for `true`, a sessao fica presa no
+     * estagio `troca_senha_obrigatoria` e nenhuma rota de negocio responde.
+     *
+     * O padrao e `false` porque a maior parte das criacoes de usuario nao passa
+     * por senha de terceiro; quem cria com senha provisoria marca explicitamente.
+     */
+    senhaTrocaObrigatoria: boolean('senha_troca_obrigatoria').notNull().default(false),
+    /** Quando a senha atual passou a valer. Base para politica de expiracao. */
+    senhaAlteradaEm: timestamp('senha_alterada_em', { withTimezone: true }),
+
     status: statusUsuarioEnum('status').notNull().default('aguardando_ativacao'),
     categoria: categoriaUsuarioEnum('categoria').notNull().default('interno'),
 

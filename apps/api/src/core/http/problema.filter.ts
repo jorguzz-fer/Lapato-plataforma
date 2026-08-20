@@ -51,6 +51,12 @@ export class ProblemaFilter implements ExceptionFilter {
         status,
         detail: (detalhes.detail as string) ?? (detalhes.message as string) ?? excecao.message,
         ...(detalhes.errors ? { errors: detalhes.errors } : {}),
+        /**
+         * O estagio acompanha o 403 do `SessaoGuard`: sem ele o front so saberia
+         * que foi proibido, e mandaria o usuario para a tela de "sem permissao"
+         * quando o que falta e concluir uma etapa de acesso.
+         */
+        ...(detalhes.estagio ? { estagio: detalhes.estagio } : {}),
         requestId,
       });
       return;

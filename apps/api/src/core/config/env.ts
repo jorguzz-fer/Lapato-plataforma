@@ -11,6 +11,18 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
   API_PORT: z.coerce.number().int().positive().default(3000),
+  /**
+   * Prefixo das rotas, do ponto de vista do processo.
+   *
+   * O navegador sempre chama `/api/v1/...`. O que varia e quanto disso sobra
+   * quando o request chega aqui: um proxy que roteia por caminho pode consumir
+   * o `/api` antes de repassar. Coolify e Traefik fazem isso por padrao; o Caddy
+   * do compose local nao faz.
+   *
+   * Padrao `api/v1` (nada e consumido). Com um proxy que remove o `/api`, use
+   * `v1`. Errar isso da 404 em tudo - e o primeiro `curl` do runbook detecta.
+   */
+  API_GLOBAL_PREFIX: z.string().default('api/v1'),
   API_CORS_ORIGINS: z
     .string()
     .default('http://localhost:5173')

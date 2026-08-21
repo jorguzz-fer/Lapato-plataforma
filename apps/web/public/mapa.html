@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Acompanhamento do desenvolvimento do LAPATO — Sistema Integrado de Gestão Anatomopatológica Veterinária. Estado de cada um dos 26 módulos.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#fafafc" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0f15" media="(prefers-color-scheme: dark)">
+<title>Mapa dos Módulos LAPATO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600&display=swap">
+
+<style>
+  /* Paleta clara — completa, no :root puro. */
+  :root {
+    --ground: #fafafc;
+    --surface: #ffffff;
+    --surface-2: #f3f4f8;
+    --ink: #14161d;
+    --ink-soft: #5b6070;
+    --ink-faint: #878ca0;
+    --border: #e3e5ee;
+    --border-firm: #cfd3e0;
+
+    --accent: #1a80f8;
+    --accent-deep: #0b57b8;
+    --accent-wash: #eaf3ff;
+
+    /* Violeta de hematoxilina: separa os grupos funcionais sem virar acento. */
+    --group: #574a94;
+
+    --pronto: #17743a;
+    --pronto-wash: #e6f5ec;
+    --parcial: #9a6410;
+    --parcial-wash: #fdf3e0;
+    --ausente: #6b7080;
+    --ausente-wash: #eef0f5;
+    --semdoc: #a1382a;
+    --semdoc-wash: #fcecea;
+    --adiado: #6b7080;
+
+    --radius: 10px;
+    --shadow: 0 1px 2px rgba(20, 22, 29, .05), 0 8px 24px -16px rgba(20, 22, 29, .3);
+  }
+
+  /* Tema do sistema, sem escolha explícita do leitor. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0d0f15;
+      --surface: #151822;
+      --surface-2: #1c202c;
+      --ink: #e9ebf3;
+      --ink-soft: #9ba1b5;
+      --ink-faint: #767c90;
+      --border: #262a37;
+      --border-firm: #343a4b;
+
+      --accent: #58a2ff;
+      --accent-deep: #8dbeff;
+      --accent-wash: #16243a;
+
+      --group: #9b8ee0;
+
+      --pronto: #5ec98a;
+      --pronto-wash: #13291c;
+      --parcial: #e0ac52;
+      --parcial-wash: #2c2213;
+      --ausente: #8d93a6;
+      --ausente-wash: #1e222e;
+      --semdoc: #f08b7c;
+      --semdoc-wash: #2e1a17;
+      --adiado: #8d93a6;
+
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+    }
+  }
+
+  /* Escolha explícita do leitor vence nos dois sentidos. */
+  :root[data-theme="dark"] {
+    --ground: #0d0f15;
+    --surface: #151822;
+    --surface-2: #1c202c;
+    --ink: #e9ebf3;
+    --ink-soft: #9ba1b5;
+    --ink-faint: #767c90;
+    --border: #262a37;
+    --border-firm: #343a4b;
+
+    --accent: #58a2ff;
+    --accent-deep: #8dbeff;
+    --accent-wash: #16243a;
+
+    --group: #9b8ee0;
+
+    --pronto: #5ec98a;
+    --pronto-wash: #13291c;
+    --parcial: #e0ac52;
+    --parcial-wash: #2c2213;
+    --ausente: #8d93a6;
+    --ausente-wash: #1e222e;
+    --semdoc: #f08b7c;
+    --semdoc-wash: #2e1a17;
+    --adiado: #8d93a6;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .pagina {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: clamp(28px, 5vw, 64px) clamp(16px, 4vw, 40px) 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  /* --- cabeçalho --- */
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 10px;
+  }
+
+  h1 {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(30px, 4.6vw, 44px);
+    line-height: 1.12;
+    letter-spacing: -.015em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+
+  .resumo-texto {
+    margin: 0;
+    max-width: 66ch;
+    color: var(--ink-soft);
+    font-size: 15.5px;
+  }
+
+  .resumo-texto strong { color: var(--ink); font-weight: 600; }
+
+  /* --- placar --- */
+
+  .placar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }
+
+  .metrica {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    box-shadow: var(--shadow);
+  }
+
+  .metrica .n {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    display: block;
+    margin-bottom: 7px;
+  }
+
+  .metrica .r {
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    display: block;
+  }
+
+  .metrica.is-pronto .n { color: var(--pronto); }
+  .metrica.is-parcial .n { color: var(--parcial); }
+  .metrica.is-ausente .n { color: var(--ausente); }
+  .metrica.is-semdoc .n { color: var(--semdoc); }
+
+  /* --- legenda --- */
+
+  .legenda {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    padding: 14px 18px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    color: var(--ink-soft);
+    align-items: center;
+  }
+
+  .legenda .titulo-legenda {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  /* --- selos de estado: símbolo + rótulo, nunca só cor --- */
+
+  .selo {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 3px 9px 3px 7px;
+    border-radius: 100px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+
+  .selo .glifo {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  .selo-pronto  { color: var(--pronto);  background: var(--pronto-wash);  border-color: color-mix(in srgb, var(--pronto) 26%, transparent); }
+  .selo-parcial { color: var(--parcial); background: var(--parcial-wash); border-color: color-mix(in srgb, var(--parcial) 30%, transparent); }
+  .selo-ausente { color: var(--ausente); background: var(--ausente-wash); border-color: color-mix(in srgb, var(--ausente) 26%, transparent); }
+  .selo-semdoc  { color: var(--semdoc);  background: var(--semdoc-wash);  border-color: color-mix(in srgb, var(--semdoc) 28%, transparent); }
+  .selo-adiado  { color: var(--adiado);  background: transparent;         border-color: var(--border-firm); border-style: dashed; }
+
+  /* --- grupos e módulos --- */
+
+  .grupo { display: flex; flex-direction: column; gap: 0; }
+
+  .grupo-cabeca {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding-bottom: 10px;
+    margin-bottom: 2px;
+    border-bottom: 2px solid var(--group);
+  }
+
+  .grupo-cabeca h2 {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: 19px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--group);
+    letter-spacing: -.005em;
+  }
+
+  .grupo-cabeca .conta {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cabecalho-colunas {
+    display: grid;
+    grid-template-columns: 46px minmax(190px, 1.5fr) 132px 132px minmax(200px, 2fr);
+    gap: 14px;
+    padding: 10px 14px 8px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .modulo {
+    display: grid;
+    grid-template-columns: 46px minmax(190px, 1.5fr) 132px 132px minmax(200px, 2fr);
+    gap: 14px;
+    align-items: center;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .modulo:first-of-type { border-top: 1px solid var(--border); border-radius: var(--radius) var(--radius) 0 0; }
+  .modulo:last-of-type  { border-radius: 0 0 var(--radius) var(--radius); }
+
+  .modulo.destaque {
+    background: var(--accent-wash);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  .num {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .nome { font-weight: 600; font-size: 14.5px; line-height: 1.35; }
+
+  .nota { font-size: 13px; color: var(--ink-soft); line-height: 1.45; }
+
+  .nota code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    background: var(--surface-2);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  .rotulo-movel { display: none; }
+
+  /* --- blocos de texto --- */
+
+  .bloco {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: clamp(20px, 3vw, 30px);
+    box-shadow: var(--shadow);
+  }
+
+  .bloco h2 {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    letter-spacing: -.01em;
+  }
+
+  .bloco > p.intro {
+    margin: 0 0 22px;
+    color: var(--ink-soft);
+    max-width: 68ch;
+  }
+
+  .bloco.alerta { border-left: 3px solid var(--semdoc); }
+
+  /* --- sequência do que vem a seguir --- */
+
+  .passos { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; counter-reset: passo; }
+
+  .passo {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: start;
+  }
+
+  .passo:last-child { border-bottom: none; padding-bottom: 0; }
+
+  .passo::before {
+    counter-increment: passo;
+    content: counter(passo);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-deep);
+    background: var(--accent-wash);
+    border-radius: 100px;
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    font-variant-numeric: tabular-nums;
+    margin-top: 1px;
+  }
+
+  .passo h3 { font-size: 15px; font-weight: 600; margin: 0 0 3px; }
+  .passo p  { margin: 0; font-size: 13.5px; color: var(--ink-soft); }
+  .passo .marca {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--ink-faint);
+    letter-spacing: .06em;
+  }
+
+  /* --- lista de módulos sem documentação --- */
+
+  .semdoc-lista {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .semdoc-lista li {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    padding: 10px 12px;
+    background: var(--surface-2);
+    border-radius: 8px;
+    font-size: 13.5px;
+  }
+
+  .semdoc-lista .n {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--semdoc);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rodape {
+    font-size: 12.5px;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--border);
+    padding-top: 18px;
+  }
+
+  .rodape code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+  }
+
+  /* --- telas estreitas: a grade de 5 colunas vira cartão --- */
+
+  @media (max-width: 780px) {
+    .cabecalho-colunas { display: none; }
+
+    .modulo {
+      grid-template-columns: 46px 1fr;
+      gap: 6px 14px;
+      padding: 16px 14px;
+    }
+
+    .nome { grid-column: 2; }
+    .num  { grid-row: 1; }
+
+    .celula-estado {
+      grid-column: 2;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .rotulo-movel {
+      display: inline;
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 10px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      min-width: 64px;
+    }
+
+    .nota { grid-column: 2; margin-top: 4px; }
+  }
+</style>
+
+</head>
+<body>
+<div class="pagina">
+
+  <header>
+    <p class="eyebrow">LAPATO · Gestão Anatomopatológica Veterinária</p>
+    <h1>Os 26 módulos, e onde estamos em cada um</h1>
+    <p class="resumo-texto">
+      Cada módulo é medido em <strong>dois eixos</strong>, porque eles avançam separados: o
+      <strong>domínio</strong> — dados, regras de negócio e API — normalmente fica pronto antes da
+      <strong>tela</strong> que o operador usa. Um módulo com domínio pronto já funciona e já é
+      testado; só ainda não tem interface própria.
+    </p>
+  </header>
+
+  <section class="placar" aria-label="Resumo do estado dos módulos">
+    <div class="metrica is-pronto">
+      <span class="n">7</span>
+      <span class="r">Prontos de ponta a ponta</span>
+    </div>
+    <div class="metrica is-parcial">
+      <span class="n">6</span>
+      <span class="r">Domínio pronto, sem tela</span>
+    </div>
+    <div class="metrica is-ausente">
+      <span class="n">5</span>
+      <span class="r">Adiados por decisão</span>
+    </div>
+    <div class="metrica is-semdoc">
+      <span class="n">8</span>
+      <span class="r">Aguardando documentação</span>
+    </div>
+  </section>
+
+  <div class="legenda">
+    <span class="titulo-legenda">Legenda</span>
+    <span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span>
+    <span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Parcial</span>
+    <span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciado</span>
+    <span class="selo selo-adiado"><span class="glifo" aria-hidden="true">—</span> Adiado</span>
+    <span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span>
+  </div>
+
+  <!-- ================= OPERAÇÃO LABORATORIAL ================= -->
+  <section class="grupo">
+    <div class="grupo-cabeca">
+      <h2>Operação laboratorial</h2>
+      <span class="conta">05 · 06 · 07 · 08 · 09 · 10</span>
+    </div>
+
+    <div class="cabecalho-colunas" aria-hidden="true">
+      <span>Nº</span><span>Módulo</span><span>Domínio</span><span>Tela</span><span>Onde está</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">05</span>
+      <span class="nome">Recebimento e Cadastro de Amostras</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="nota">Duas telas: cadastro e recebimento. A conferência nasce com o campo vazio, de propósito.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">06</span>
+      <span class="nome">Triagem de Amostras</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="nota">Bloqueio trava o caso de verdade: cria pendência e suspende o prazo.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">07</span>
+      <span class="nome">Rastreamento e Gestão de Fluxo</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="nota">Central de Casos e dossiê único. É o único módulo que escreve o estado do caso.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">08</span>
+      <span class="nome">Macroscopia</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="nota">Uma ficha por amostra. É onde nasce o cassete, primeiro elo da rastreabilidade.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">09</span>
+      <span class="nome">Processamento Histológico e Colorações</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="nota">Terceirizado. Lado interno e portal do parceiro, com isolamento por unidade — ele só vê os próprios lotes.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">10</span>
+      <span class="nome">Solicitações e Pendências</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
+      <span class="nota">A triagem já cria pendências e elas já travam o fluxo. Falta a tela para acompanhá-las e resolvê-las.</span>
+    </div>
+  </section>
+
+  <!-- ================= DIAGNÓSTICO ================= -->
+  <section class="grupo">
+    <div class="grupo-cabeca">
+      <h2>Diagnóstico</h2>
+      <span class="conta">11 · 12 · 13 · 14</span>
+    </div>
+
+    <div class="cabecalho-colunas" aria-hidden="true">
+      <span>Nº</span><span>Módulo</span><span>Domínio</span><span>Tela</span><span>Onde está</span>
+    </div>
+
+    <div class="modulo destaque">
+      <span class="num">11</span>
+      <span class="nome">Laudos e Microscopia</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
+      <span class="nota"><strong>Próxima peça.</strong> Versionamento, adendo ≠ correção, assinatura e liberação já existem na API.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">13</span>
+      <span class="nome">Histopatologia</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
+      <span class="nota">Margens e diagnóstico estruturado. Vem junto com a tela do 11 — são o mesmo ato.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">12</span>
+      <span class="nome">Citopatologia</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-adiado"><span class="glifo" aria-hidden="true">—</span> Adiado</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-adiado"><span class="glifo" aria-hidden="true">—</span> Adiado</span></span>
+      <span class="nota">Fora da fatia vertical. O modelo de amostra já comporta.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">14</span>
+      <span class="nome">Necropsia</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-adiado"><span class="glifo" aria-hidden="true">—</span> Adiado</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-adiado"><span class="glifo" aria-hidden="true">—</span> Adiado</span></span>
+      <span class="nota">Inclui captura por voz — escopo próprio, grande.</span>
+    </div>
+  </section>
+
+  <!-- ================= GOVERNANÇA ================= -->
+  <section class="grupo">
+    <div class="grupo-cabeca">
+      <h2>Governança</h2>
+      <span class="conta">01 · 02 · 22</span>
+    </div>
+
+    <div class="cabecalho-colunas" aria-hidden="true">
+      <span>Nº</span><span>Módulo</span><span>Domínio</span><span>Tela</span><span>Onde está</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">01</span>
+      <span class="nome">Administração e Configurações</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Parcial</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
+      <span class="nota">Serviços, tabelas mestres e numeração já funcionam. A configuração ainda é feita pela equipe técnica; a tela de administração vem depois.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">02</span>
+      <span class="nome">Usuários, Perfis e Permissões</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Parcial</span></span>
+      <span class="nota">Login, MFA e troca de senha prontos. A gestão de usuários — criar, atribuir perfil, delegar — vem com as telas administrativas.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">22</span>
+      <span class="nome">Qualidade e Auditoria</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Parcial</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
+      <span class="nota">A trilha imutável já grava tudo. O módulo que a consome depende de documentação.</span>
+    </div>
+  </section>
+
+  <!-- ================= RELACIONAMENTO E ENTRADA ================= -->
+  <section class="grupo">
+    <div class="grupo-cabeca">
+      <h2>Relacionamento e entrada</h2>
+      <span class="conta">03 · 04 · 19</span>
+    </div>
+
+    <div class="cabecalho-colunas" aria-hidden="true">
+      <span>Nº</span><span>Módulo</span><span>Domínio</span><span>Tela</span><span>Onde está</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">03</span>
+      <span class="nome">Cadastro de Clientes e Veterinários</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
+      <span class="nota">Já é consultado no cadastro de caso. A tela para cadastrar clientes novos vem junto com as administrativas.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">04</span>
+      <span class="nome">Portal do Cliente</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Preparado</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-adiado"><span class="glifo" aria-hidden="true">—</span> Adiado</span></span>
+      <span class="nota">Identidade externa já existe no modelo, para encaixar sem refatoração.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">19</span>
+      <span class="nome">Logística</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
+      <span class="nota">Coleta e transporte de material.</span>
+    </div>
+  </section>
+
+  <!-- ================= MATERIAIS E IMAGENS ================= -->
+  <section class="grupo">
+    <div class="grupo-cabeca">
+      <h2>Materiais e imagens</h2>
+      <span class="conta">15 · 16 · 18</span>
+    </div>
+
+    <div class="cabecalho-colunas" aria-hidden="true">
+      <span>Nº</span><span>Módulo</span><span>Domínio</span><span>Tela</span><span>Onde está</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">16</span>
+      <span class="nome">Imagens e Scanner de Lâminas</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Base pronta</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
+      <span class="nota">Original nunca sobrescrito, anotação em camada separada. WSI fora do escopo v1 (ADR-0004).</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">15</span>
+      <span class="nome">Controle de Cadáveres</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-adiado"><span class="glifo" aria-hidden="true">—</span> Adiado</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-adiado"><span class="glifo" aria-hidden="true">—</span> Adiado</span></span>
+      <span class="nota">Depende da necropsia (14).</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">18</span>
+      <span class="nome">Bioteca e Acervo Biológico</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-adiado"><span class="glifo" aria-hidden="true">—</span> Adiado</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-adiado"><span class="glifo" aria-hidden="true">—</span> Adiado</span></span>
+      <span class="nota">A macroscopia já registra “material totalmente incluído”, que é o gatilho do acervo.</span>
+    </div>
+  </section>
+
+  <!-- ================= CONHECIMENTO ================= -->
+  <section class="grupo">
+    <div class="grupo-cabeca">
+      <h2>Conhecimento</h2>
+      <span class="conta">17 · 23 · 24</span>
+    </div>
+
+    <div class="cabecalho-colunas" aria-hidden="true">
+      <span>Nº</span><span>Módulo</span><span>Domínio</span><span>Tela</span><span>Onde está</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">17</span>
+      <span class="nome">Inteligência Artificial</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Parcial</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronta</span></span>
+      <span class="nota">Guardian determinístico ativo e painel flutuante prontos. Copiloto ainda é <code>stub</code> — falta o LLM real.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">23</span>
+      <span class="nome">Ensino e Pesquisa</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
+      <span class="nota">Perfil acadêmico já previsto no modelo de identidade.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">24</span>
+      <span class="nome">Perícia e Patologia Forense</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
+      <span class="nota">A classificação “pericial” já existe nos eventos de domínio.</span>
+    </div>
+  </section>
+
+  <!-- ================= GESTÃO E COMUNICAÇÃO ================= -->
+  <section class="grupo">
+    <div class="grupo-cabeca">
+      <h2>Gestão institucional e comunicação</h2>
+      <span class="conta">20 · 21 · 25 · 26</span>
+    </div>
+
+    <div class="cabecalho-colunas" aria-hidden="true">
+      <span>Nº</span><span>Módulo</span><span>Domínio</span><span>Tela</span><span>Onde está</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">26</span>
+      <span class="nome">Integrações e Notificações</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Outbox pronto</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
+      <span class="nota">Nenhum módulo manda e-mail por conta própria. Faltam os canais reais — hoje o adaptador só registra em log.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">20</span>
+      <span class="nome">Financeiro</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
+      <span class="nota">Referenciado por quase todos os demais módulos.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">21</span>
+      <span class="nome">Biblioteca</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
+      <span class="nota">Aguardando documentação.</span>
+    </div>
+
+    <div class="modulo">
+      <span class="num">25</span>
+      <span class="nome">Relatórios e Indicadores</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
+      <span class="nota">Consome os eventos de domínio, que já são gravados.</span>
+    </div>
+  </section>
+
+  <!-- ================= O QUE VEM A SEGUIR ================= -->
+  <section class="bloco">
+    <h2>O que vem a seguir</h2>
+    <p class="intro">
+      Esta é a ordem acordada. Os quatro primeiros passos fecham a fatia vertical — o caminho
+      completo de uma amostra até o laudo liberado.
+    </p>
+
+    <ol class="passos">
+      <li class="passo">
+        <div>
+          <h3>Microscopia e laudo</h3>
+          <p class="marca">M11 + M13 · maior peça restante</p>
+          <p>Diagnóstico estruturado, margens, versionamento, revisão, assinatura e liberação. A API já faz tudo isso — falta a tela.</p>
+        </div>
+      </li>
+      <li class="passo">
+        <div>
+          <h3>PDF do laudo com QR de validação</h3>
+          <p class="marca">M11</p>
+          <p>Lembrando que o PDF <em>não</em> é o laudo: o laudo é o dado estruturado e versionado. O PDF é a representação documental.</p>
+        </div>
+      </li>
+      <li class="passo">
+        <div>
+          <h3>Pendências, clientes e administração</h3>
+          <p class="marca">M10 · M03 · M01</p>
+          <p>As três telas que faltam para o laboratório operar o sistema sem apoio da equipe técnica.</p>
+        </div>
+      </li>
+      <li class="passo">
+        <div>
+          <h3>Copiloto com LLM real</h3>
+          <p class="marca">M17</p>
+          <p>O contrato e o painel já existem, e o sistema funciona sem IA por exigência do próprio módulo. É trocar o provedor.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ================= BLOQUEADO ================= -->
+  <section class="bloco alerta">
+    <h2>Oito módulos aguardando documentação</h2>
+    <p class="intro">
+      São os módulos que ainda não têm especificação escrita — e nenhum deles é construído por
+      suposição: uma regra inventada agora vira retrabalho depois. <strong>A documentação de cada um
+      é o que destrava sua construção.</strong>
+    </p>
+    <p class="intro">
+      O que já existe são os <strong>pontos de extensão</strong> que eles vão usar quando chegarem —
+      eventos de domínio, trilha de auditoria imutável e fila de notificações. Por isso escrever a
+      documentação destes oito não implica mexer no que já está pronto.
+    </p>
+
+    <ul class="semdoc-lista">
+      <li><span class="n">19</span> Logística</li>
+      <li><span class="n">20</span> Financeiro</li>
+      <li><span class="n">21</span> Biblioteca</li>
+      <li><span class="n">22</span> Qualidade e Auditoria</li>
+      <li><span class="n">23</span> Ensino e Pesquisa</li>
+      <li><span class="n">24</span> Perícia e Patologia Forense</li>
+      <li><span class="n">25</span> Relatórios e Indicadores</li>
+      <li><span class="n">26</span> Integrações e Notificações</li>
+    </ul>
+  </section>
+
+  <footer class="rodape">
+    Página de acompanhamento do desenvolvimento do LAPATO — Sistema Integrado de Gestão
+    Anatomopatológica Veterinária. Atualizada a cada entrega. Última atualização: 21 de agosto de 2026.
+  </footer>
+
+</div>
+
+</body>
+</html>

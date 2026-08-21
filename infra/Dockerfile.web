@@ -18,9 +18,20 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --filter @lapato/web...
 
 FROM base AS build
+# Os tres COPY sao necessarios, e nao um so.
+#
+# Num workspace pnpm as dependencias de cada pacote ficam em
+# `packages/<nome>/node_modules`, com links para o store da raiz - nao apenas em
+# `/repo/node_modules`. Copiar so a raiz deixa `packages/shared` sem o proprio
+# `node_modules`, e o `tsc` falha com "Cannot find module 'zod'".
+#
+# O `COPY . .` depois sobrepoe o codigo-fonte por cima, preservando esses
+# diretorios porque `.dockerignore` exclui `node_modules` do contexto.
 COPY --from=deps /repo/node_modules ./node_modules
+COPY --from=deps /repo/packages ./packages
+COPY --from=deps /repo/apps ./apps
 COPY . .
-# A SPA fala com a API pelo mesmo host, atras do Caddy.
+# A SPA fala com a API pelo mesmo host - por isso o caminho e relativo.
 ENV VITE_API_BASE_URL=/api/v1
 RUN pnpm --filter @lapato/web... build
 

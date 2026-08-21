@@ -1,0 +1,33 @@
+# O que NAO entra no contexto de build.
+#
+# Duas razoes, e a primeira e de correcao, nao de desempenho:
+#
+# 1. `node_modules` precisa ficar de fora. Os Dockerfiles instalam as
+#    dependencias num estagio proprio e depois fazem `COPY . .` por cima do
+#    codigo. Se o contexto trouxesse o `node_modules` da maquina, ele
+#    sobrescreveria a instalacao feita para linux - e um `docker build` local
+#    passaria a depender do sistema operacional de quem construiu.
+#
+# 2. `.env` precisa ficar de fora. Sem isto, um `.env` real na maquina de quem
+#    constroi vai parar dentro da imagem, e imagem circula.
+
+node_modules
+**/node_modules
+
+dist
+**/dist
+**/.turbo
+coverage
+**/coverage
+
+.git
+.gitignore
+.github
+
+# Segredos: o exemplo pode entrar, o arquivo real nunca.
+.env
+.env.*
+!.env.example
+
+*.log
+.DS_Store

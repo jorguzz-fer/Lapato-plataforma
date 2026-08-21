@@ -40,20 +40,50 @@ ADR 0002 e o Blueprint §7 exigem que a aplicação rode com um usuário **sem
 `BYPASSRLS`** — caso contrário a RLS não isola nada, porque o dono do schema
 passa por cima de qualquer policy.
 
-Abra o terminal do banco no Coolify e rode uma vez:
+#### Antes: gere a senha em hexadecimal
 
-```sql
-CREATE ROLE lapato_app LOGIN PASSWORD '<gere-uma-senha>'
-  NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
-
-GRANT CONNECT ON DATABASE <nome-do-banco> TO lapato_app;
-GRANT USAGE ON SCHEMA public TO lapato_app;
-
-ALTER DEFAULT PRIVILEGES FOR ROLE <usuario-do-coolify> IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lapato_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE <usuario-do-coolify> IN SCHEMA public
-  GRANT USAGE, SELECT ON SEQUENCES TO lapato_app;
+```bash
+openssl rand -hex 32
 ```
+
+**Não use um gerador de senha com símbolos.** Esta senha vai dentro de uma URI
+(`postgres://usuario:SENHA@host/banco`), e ali `#` corta a string no meio — o que
+vier depois vira fragmento e some — enquanto `%` inicia escape percentual e `@`,
+`/` e `:` mudam o significado da URL. Hexadecimal tem 128 bits de entropia em 32
+caracteres e não precisa de escape nem no shell nem na URL.
+
+#### Rodando o SQL
+
+O terminal do Coolify abre um **shell dentro do container** (`/ #`), não uma
+sessão `psql`. Colar SQL direto ali faz o `sh` tentar executar `CREATE` como
+programa e responder `not found` — o banco não é tocado.
+
+Descubra os nomes reais, que o Coolify gerou:
+
+```sh
+env | grep POSTGRES
+```
+
+Depois rode cada comando usando essas variáveis — assim não há placeholder para
+substituir à mão:
+
+```sh
+psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 \
+  -c "CREATE ROLE lapato_app LOGIN PASSWORD 'COLE_A_SENHA_HEX' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;"
+
+psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 \
+  -c "GRANT CONNECT ON DATABASE \"$POSTGRES_DB\" TO lapato_app;" \
+  -c "GRANT USAGE ON SCHEMA public TO lapato_app;" \
+  -c "ALTER DEFAULT PRIVILEGES FOR ROLE \"$POSTGRES_USER\" IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lapato_app;" \
+  -c "ALTER DEFAULT PRIVILEGES FOR ROLE \"$POSTGRES_USER\" IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO lapato_app;"
+```
+
+Cada comando responde `CREATE ROLE`, `GRANT` ou `ALTER DEFAULT PRIVILEGES`.
+Qualquer outra coisa é erro — `ON_ERROR_STOP=1` interrompe na primeira falha em
+vez de seguir e deixar metade aplicada.
+
+Se preferir uma sessão interativa, `psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"`
+abre o prompt `=#`, onde o SQL pode ser colado normalmente. Saia com `\q`.
 
 A partir daí existem **duas** URLs, e a diferença entre elas é a fronteira de
 segurança do sistema:
@@ -62,13 +92,15 @@ segurança do sistema:
 - `DATABASE_MIGRATION_URL` → usuário do Coolify (dono do schema). Só migrations
   e provisionamento.
 
-Confira depois de aplicar as migrations — este comando precisa devolver `f`:
+Confira depois de aplicar as migrations — precisa devolver `f`:
 
-```sql
-SELECT rolbypassrls FROM pg_roles WHERE rolname = 'lapato_app';
+```sh
+psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  -c "SELECT rolbypassrls FROM pg_roles WHERE rolname = 'lapato_app';"
 ```
 
-Se devolver `t`, o isolamento entre instituições não existe. Pare e corrija.
+Se devolver `t`, ou se a consulta não devolver linha nenhuma, o isolamento entre
+instituições não existe. Pare e corrija.
 
 ---
 

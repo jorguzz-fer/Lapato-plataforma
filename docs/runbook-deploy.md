@@ -95,8 +95,13 @@ Gerando os segredos:
 
 ```bash
 openssl rand -hex 32     # SESSION_SECRET
-openssl rand -base64 24  # senha do usuário de banco
+openssl rand -hex 32     # senha do usuário de banco
 ```
+
+**Hexadecimal, não base64, para a senha do banco.** Ela viaja dentro de uma URI
+(`postgres://usuario:SENHA@host/banco`), e ali `/` e `+` do base64 mudam o
+significado da URL — assim como `#`, `%` e `@` de um gerador com símbolos. Hex
+tem 128 bits de entropia em 32 caracteres e não precisa de escape em lugar nenhum.
 
 **Redis e S3 não são configurados hoje.** Apareciam aqui e no Compose, mas
 nenhuma linha de código os lê — não estão nas dependências nem no schema de

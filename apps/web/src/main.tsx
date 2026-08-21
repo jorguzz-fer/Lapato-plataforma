@@ -16,6 +16,7 @@ import { NovoCaso } from './paginas/NovoCaso';
 import { Recebimento } from './paginas/Recebimento';
 import { Triagem } from './paginas/Triagem';
 import { Macroscopia } from './paginas/Macroscopia';
+import { Processamento } from './paginas/Processamento';
 import { Dossie } from './paginas/Dossie';
 import './estilos.css';
 
@@ -138,6 +139,15 @@ function App() {
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Triagem de Amostras" etapa="triagem">
             <Triagem />
+          </Shell>
+        }
+      />
+      {/* Fora de /casos: o lote é do dia e atravessa vários casos (M09). */}
+      <Route
+        path="/processamento"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Processamento e Colorações">
+            <Processamento />
           </Shell>
         }
       />

@@ -332,6 +332,37 @@ const laminasSchema = z.object({
 export class ProcessamentoController {
   constructor(private readonly processamento: ProcessamentoService) {}
 
+  @Get('cassetes-pendentes')
+  @ExigePermissao(PERMISSOES.PROCESSAMENTO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Cassetes prontos para envio, de todos os casos',
+    description:
+      'A bancada monta o lote do dia, que atravessa vários casos — por isso a ' +
+      'listagem não é por caso (M09).',
+  })
+  async cassetesPendentes() {
+    return this.processamento.cassetesPendentes();
+  }
+
+  @Get('lotes')
+  @ExigePermissao(PERMISSOES.PROCESSAMENTO_VISUALIZAR)
+  @ApiOperation({ summary: 'Lotes enviados, do mais recente para o mais antigo' })
+  async listarLotes() {
+    return this.processamento.listarLotes();
+  }
+
+  @Get('lotes/:id')
+  @ExigePermissao(PERMISSOES.PROCESSAMENTO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Detalhe do lote',
+    description:
+      'Cassetes, conferência, divergências e lâminas. As lâminas são alcançadas ' +
+      'pela genealogia Cassete → Bloco → Lâmina.',
+  })
+  async detalharLote(@Param('id', ParseUUIDPipe) id: string) {
+    return this.processamento.detalharLote(id);
+  }
+
   @Post('lotes')
   @ExigePermissao(PERMISSOES.PROCESSAMENTO_ENVIAR_LOTE)
   @ApiOperation({

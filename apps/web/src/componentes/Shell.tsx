@@ -22,6 +22,7 @@ import Logout from '@mui/icons-material/LogoutOutlined';
 import MenuIcon from '@mui/icons-material/MenuOutlined';
 import AddCircle from '@mui/icons-material/AddCircleOutlineOutlined';
 import ViewList from '@mui/icons-material/ViewListOutlined';
+import LocalShipping from '@mui/icons-material/LocalShippingOutlined';
 import Password from '@mui/icons-material/PasswordOutlined';
 import Security from '@mui/icons-material/SecurityOutlined';
 import { shell } from '@lapato/design-tokens';
@@ -64,6 +65,13 @@ const MENU = [
     icone: <AddCircle fontSize="small" />,
     rotulo: 'Novo caso',
     permissao: 'caso:criar',
+  },
+  {
+    /* M09: o lote é do dia e atravessa casos, então não mora dentro de um. */
+    para: '/processamento',
+    icone: <LocalShipping fontSize="small" />,
+    rotulo: MODULO_LABEL[MODULOS.M09_PROCESSAMENTO],
+    permissao: 'processamento:visualizar',
   },
 ] as const;
 

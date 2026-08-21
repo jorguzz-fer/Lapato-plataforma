@@ -107,9 +107,16 @@ function App() {
 
   const sair = () => irPara('anonimo');
 
+  /**
+   * M09/M02: o parceiro do laboratorio de apoio nao tem `fluxo:visualizar`, e
+   * mandar todo mundo para `/casos` faria a tela inicial dele ser um 403. A casa
+   * de cada usuario e a primeira coisa que ele pode de fato ver.
+   */
+  const inicio = sessao.laboratorioApoioId ? '/processamento' : '/casos';
+
   return (
     <Routes>
-      <Route path="/entrar" element={<Navigate to="/casos" replace />} />
+      <Route path="/entrar" element={<Navigate to={inicio} replace />} />
       <Route
         path="/casos"
         element={
@@ -147,7 +154,10 @@ function App() {
         path="/processamento"
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Processamento e Colorações">
-            <Processamento />
+            <Processamento
+              parceiro={sessao.laboratorioApoioId !== null}
+              podeEnviarLote={sessao.permissoes.includes('processamento:enviar_lote')}
+            />
           </Shell>
         }
       />
@@ -187,7 +197,7 @@ function App() {
           </Shell>
         }
       />
-      <Route path="*" element={<Navigate to="/casos" replace />} />
+      <Route path="*" element={<Navigate to={inicio} replace />} />
     </Routes>
   );
 }

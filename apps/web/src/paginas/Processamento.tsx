@@ -25,6 +25,7 @@ import {
   api,
   ErroApi,
   type CassetePendente,
+  type LaboratorioApoio,
   type LoteDetalhe,
   type LoteResumo,
 } from '../api';
@@ -87,23 +88,35 @@ interface LaminaNova {
 
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
 
-export function Processamento() {
-  const [aba, setAba] = useState<'montar' | 'lotes'>('montar');
+interface PropsProcessamento {
+  /**
+   * M09: quando o usuario opera de dentro de um laboratorio de apoio, a tela e
+   * outra - ele nao monta lote, recebe. O servidor ja filtra os dados; isto
+   * apenas evita mostrar uma aba que voltaria vazia.
+   */
+  parceiro: boolean;
+  podeEnviarLote: boolean;
+}
+
+export function Processamento({ parceiro, podeEnviarLote }: PropsProcessamento) {
+  const montaLote = podeEnviarLote && !parceiro;
+  const [aba, setAba] = useState<'montar' | 'lotes'>(montaLote ? 'montar' : 'lotes');
   const [loteAberto, setLoteAberto] = useState<string | null>(null);
 
   return (
     <Box sx={{ maxWidth: 980 }}>
       <Typography variant="h2" sx={{ mb: 0.5 }}>
-        Processamento
+        {parceiro ? 'Lotes recebidos' : 'Processamento'}
       </Typography>
       <Typography sx={{ fontSize: 13, color: 'text.secondary', mb: 3 }}>
-        O processamento é terceirizado. Aqui o material sai em lote, o parceiro confere e as
-        lâminas voltam.
+        {parceiro
+          ? 'Os lotes enviados a este laboratório. Confira o que chegou e registre as lâminas produzidas.'
+          : 'O processamento é terceirizado. Aqui o material sai em lote, o parceiro confere e as lâminas voltam.'}
       </Typography>
 
       {loteAberto ? (
-        <DetalheLote id={loteAberto} aoVoltar={() => setLoteAberto(null)} />
-      ) : (
+        <DetalheLote id={loteAberto} parceiro={parceiro} aoVoltar={() => setLoteAberto(null)} />
+      ) : montaLote ? (
         <>
           <Tabs
             value={aba}
@@ -120,6 +133,8 @@ export function Processamento() {
             <ListaLotes aoAbrir={setLoteAberto} />
           )}
         </>
+      ) : (
+        <ListaLotes aoAbrir={setLoteAberto} />
       )}
     </Box>
   );
@@ -129,6 +144,8 @@ export function Processamento() {
 
 function MontarLote({ aoEnviar }: { aoEnviar: () => void }) {
   const [pendentes, setPendentes] = useState<CassetePendente[] | null>(null);
+  const [laboratorios, setLaboratorios] = useState<LaboratorioApoio[]>([]);
+  const [destino, setDestino] = useState('');
   const [marcados, setMarcados] = useState<Set<string>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -138,6 +155,15 @@ function MontarLote({ aoEnviar }: { aoEnviar: () => void }) {
       .get<CassetePendente[]>('/processamento/cassetes-pendentes')
       .then(setPendentes)
       .catch(() => setErro('Não foi possível carregar os cassetes pendentes.'));
+
+    api
+      .get<LaboratorioApoio[]>('/catalogo/laboratorios-apoio')
+      .then((lista) => {
+        setLaboratorios(lista);
+        // Com um só laboratório, escolher não é decisão — é digitação.
+        if (lista.length === 1) setDestino(lista[0]!.id);
+      })
+      .catch(() => setLaboratorios([]));
   }, []);
 
   /** Agrupado por caso: o lote é uma remessa, mas quem confere lê por caso. */
@@ -176,7 +202,10 @@ function MontarLote({ aoEnviar }: { aoEnviar: () => void }) {
     setEnviando(true);
     setErro(null);
     try {
-      await api.post('/processamento/lotes', { casseteIds: [...marcados] });
+      await api.post('/processamento/lotes', {
+        casseteIds: [...marcados],
+        laboratorioApoioId: destino,
+      });
       aoEnviar();
     } catch (err) {
       setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível enviar o lote.');
@@ -271,18 +300,38 @@ function MontarLote({ aoEnviar }: { aoEnviar: () => void }) {
       )}
 
       <Stack
-        direction="row"
+        direction={{ xs: 'column', sm: 'row' }}
         spacing={2}
-        sx={{ mt: 3, alignItems: 'center', justifyContent: 'flex-end' }}
+        sx={{ mt: 3, alignItems: { sm: 'center' }, justifyContent: 'flex-end' }}
       >
         <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
           {marcados.size} de {pendentes.length} selecionados
         </Typography>
+
+        {/* O destino decide quem vê o lote do outro lado — por isso é obrigatório. */}
+        <TextField
+          select
+          required
+          label="Laboratório de apoio"
+          value={destino}
+          onChange={(e) => setDestino(e.target.value)}
+          sx={{ minWidth: 240 }}
+          helperText={
+            laboratorios.length === 0 ? 'Nenhum laboratório de apoio cadastrado.' : ' '
+          }
+        >
+          {laboratorios.map((l) => (
+            <MenuItem key={l.id} value={l.id}>
+              {l.codigo ? `${l.nome} (${l.codigo})` : l.nome}
+            </MenuItem>
+          ))}
+        </TextField>
+
         <Button
           variant="contained"
           startIcon={<LocalShippingOutlined />}
           onClick={() => void enviar()}
-          disabled={enviando || marcados.size === 0}
+          disabled={enviando || marcados.size === 0 || destino === ''}
         >
           {enviando ? 'Enviando…' : 'Enviar lote'}
         </Button>
@@ -366,7 +415,15 @@ function ListaLotes({ aoAbrir }: { aoAbrir: (id: string) => void }) {
 
 // --- detalhe do lote: conferência e lâminas ----------------------------------
 
-function DetalheLote({ id, aoVoltar }: { id: string; aoVoltar: () => void }) {
+function DetalheLote({
+  id,
+  parceiro,
+  aoVoltar,
+}: {
+  id: string;
+  parceiro: boolean;
+  aoVoltar: () => void;
+}) {
   const [lote, setLote] = useState<LoteDetalhe | null>(null);
   const [confirmados, setConfirmados] = useState<Set<string>>(new Set());
   const [divergencias, setDivergencias] = useState<DivergenciaNova[]>([]);
@@ -473,10 +530,10 @@ function DetalheLote({ id, aoVoltar }: { id: string; aoVoltar: () => void }) {
         * externo não existe, quem lança é o laboratório — e o registro grava o
         * usuário interno. Dizer isso evita que o dado pareça vir do parceiro.
         */}
-      {!conferido && (
+      {!conferido && !parceiro && (
         <Alert severity="info" sx={{ mb: 2.5 }}>
-          A conferência abaixo está sendo lançada por você, em nome do laboratório de apoio. Quando
-          o acesso externo existir, o parceiro fará isso diretamente e o registro passará a ser dele.
+          Você está lançando esta conferência em nome do laboratório de apoio, e o registro ficará
+          no seu nome. O parceiro pode conferir ele mesmo, entrando no sistema — aí o registro é dele.
         </Alert>
       )}
 

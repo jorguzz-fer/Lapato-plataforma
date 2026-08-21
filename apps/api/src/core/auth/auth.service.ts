@@ -11,7 +11,7 @@ import {
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import * as TOTP from 'otpauth';
 import { exigeMfa, SENHA_TAMANHO_MINIMO, type EstagioSessao } from '@lapato/shared';
-import { sessao, tenant, usuario, type Transacao } from '@lapato/db';
+import { sessao, tenant, unidade, usuario, type Transacao } from '@lapato/db';
 import { DbService } from '../db/db.service.js';
 import { ENV, type Env } from '../config/env.js';
 import { resolverPermissoes, type PermissoesResolvidas } from './permissoes.resolver.js';
@@ -35,6 +35,8 @@ export interface SessaoResolvida {
   unidadeId: string | null;
   setorId: string | null;
   clienteId: string | null;
+  /** M09: preenchido quando a unidade ativa e um laboratorio de apoio. */
+  laboratorioApoioId: string | null;
   permissoes: PermissoesResolvidas;
   estagio: EstagioSessao;
   mfaAtivo: boolean;
@@ -419,6 +421,26 @@ export class AuthService {
 
       const permissoes = await resolverPermissoes(tx, bruta.tenantId, bruta.usuarioId);
 
+      /**
+       * M09: o parceiro e isolado pela unidade dele, e o tipo vem do banco.
+       *
+       * Ler o tipo aqui - e nao confiar no perfil - mantem a regra ancorada no
+       * dado: quem opera de dentro de um laboratorio de apoio ve os lotes
+       * daquele laboratorio, independentemente de que perfil lhe deram.
+       */
+      const unidadeAtiva = bruta.unidadeAtivaId ?? conta.unidadePrincipalId;
+      let laboratorioApoioId: string | null = null;
+
+      if (unidadeAtiva) {
+        const [dadosUnidade] = await tx
+          .select({ tipo: unidade.tipo })
+          .from(unidade)
+          .where(eq(unidade.id, unidadeAtiva))
+          .limit(1);
+
+        if (dadosUnidade?.tipo === 'laboratorio_apoio') laboratorioApoioId = unidadeAtiva;
+      }
+
       await tx
         .update(sessao)
         .set({ ultimoUsoEm: new Date() })
@@ -427,9 +449,10 @@ export class AuthService {
       return {
         tenantId: bruta.tenantId,
         usuarioId: bruta.usuarioId,
-        unidadeId: bruta.unidadeAtivaId ?? conta.unidadePrincipalId,
+        unidadeId: unidadeAtiva,
         setorId: conta.setorPrincipalId,
         clienteId: conta.clienteId,
+        laboratorioApoioId,
         permissoes,
         mfaAtivo: conta.mfaAtivo,
         estagio: this.estagioComPermissoes(

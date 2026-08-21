@@ -298,7 +298,11 @@ export class MacroscopiaController {
 
 const loteSchema = z.object({
   casseteIds: z.array(z.string().uuid()).min(1),
-  laboratorioApoioId: z.string().uuid().optional(),
+  /**
+   * Obrigatorio desde que o parceiro passou a ver os proprios lotes: sem
+   * destino, o lote fica invisivel do outro lado.
+   */
+  laboratorioApoioId: z.string().uuid(),
 });
 
 const conferenciaSchema = z.object({

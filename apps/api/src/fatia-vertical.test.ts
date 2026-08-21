@@ -195,6 +195,22 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
   let laudoId: string;
   let versaoId: string;
 
+  /**
+   * A rota declara `:chave` no caminho e por um tempo leu o valor da query, o
+   * que fazia `/catalogo/tabelas/especie` responder 500 - a URL que qualquer
+   * tela usaria. Passou despercebido porque nenhum teste a exercitava e nenhuma
+   * tela a consumia ainda.
+   */
+  test('0. tabela mestre responde pelo caminho, não pela query', async () => {
+    await entrar('admin@lapato.local');
+
+    const r = await req('GET', '/catalogo/tabelas/especie');
+
+    expect(r.status).toBe(200);
+    expect(Array.isArray(r.body)).toBe(true);
+    expect(r.body.map((t: any) => t.valor)).toContain('Canina');
+  });
+
   test('1. recepção cadastra o caso', async () => {
     await entrar('admin@lapato.local');
 

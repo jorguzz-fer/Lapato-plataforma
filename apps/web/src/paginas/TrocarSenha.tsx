@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { SENHA_TAMANHO_MINIMO, type EstagioSessao } from '@lapato/shared';
 import { api, ErroApi } from '../api';
+import { CampoSenha } from '../componentes/CampoSenha';
 import { CartaoDeEntrada } from '../componentes/CartaoDeEntrada';
 
 /**
@@ -47,12 +48,6 @@ export function TrocarSenha({
     }
   }
 
-  const campo = 'mt-1 w-full rounded border px-3 py-2';
-  const estiloCampo = {
-    borderColor: 'var(--lapato-borda)',
-    background: 'var(--lapato-superficie)',
-  };
-
   return (
     <CartaoDeEntrada
       titulo={obrigatoria ? 'Defina sua senha' : 'Trocar senha'}
@@ -71,59 +66,31 @@ export function TrocarSenha({
         </p>
       }
     >
-      <label className="block">
-        <span className="rotulo">{obrigatoria ? 'Senha recebida' : 'Senha atual'}</span>
-        <input
-          type="password"
-          value={senhaAtual}
-          onChange={(e) => setSenhaAtual(e.target.value)}
-          required
-          autoFocus
-          autoComplete="current-password"
-          className={campo}
-          style={estiloCampo}
-        />
-      </label>
+      <CampoSenha
+        rotulo={obrigatoria ? 'Senha recebida' : 'Senha atual'}
+        valor={senhaAtual}
+        aoMudar={setSenhaAtual}
+        autoComplete="current-password"
+        autoFocus
+      />
 
-      <label className="block">
-        <span className="rotulo">Nova senha</span>
-        <input
-          type="password"
-          value={senhaNova}
-          onChange={(e) => setSenhaNova(e.target.value)}
-          required
-          autoComplete="new-password"
-          minLength={SENHA_TAMANHO_MINIMO}
-          aria-describedby="ajuda-senha"
-          className={campo}
-          style={estiloCampo}
-        />
-        <span
-          id="ajuda-senha"
-          className="mt-1 block text-xs"
-          style={{ color: curta ? 'var(--lapato-perigo)' : undefined }}
-        >
-          Mínimo de {SENHA_TAMANHO_MINIMO} caracteres. Comprimento protege mais que símbolos.
-        </span>
-      </label>
+      <CampoSenha
+        rotulo="Nova senha"
+        valor={senhaNova}
+        aoMudar={setSenhaNova}
+        autoComplete="new-password"
+        minLength={SENHA_TAMANHO_MINIMO}
+        ajuda={`Mínimo de ${SENHA_TAMANHO_MINIMO} caracteres. Comprimento protege mais que símbolos.`}
+        erro={curta ? `Faltam ${SENHA_TAMANHO_MINIMO - senhaNova.length} caracteres.` : undefined}
+      />
 
-      <label className="block">
-        <span className="rotulo">Repita a nova senha</span>
-        <input
-          type="password"
-          value={confirmacao}
-          onChange={(e) => setConfirmacao(e.target.value)}
-          required
-          autoComplete="new-password"
-          className={campo}
-          style={estiloCampo}
-        />
-        {divergente && (
-          <span className="mt-1 block text-xs" style={{ color: 'var(--lapato-perigo)' }}>
-            As senhas não coincidem.
-          </span>
-        )}
-      </label>
+      <CampoSenha
+        rotulo="Repita a nova senha"
+        valor={confirmacao}
+        aoMudar={setConfirmacao}
+        autoComplete="new-password"
+        erro={divergente ? 'As senhas não coincidem.' : undefined}
+      />
     </CartaoDeEntrada>
   );
 }

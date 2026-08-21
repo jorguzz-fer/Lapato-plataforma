@@ -19,6 +19,7 @@
     "db:migrate": "pnpm --filter @lapato/db migrate",
     "db:seed": "pnpm --filter @lapato/db seed",
     "db:provision": "pnpm --filter @lapato/db provision",
+    "db:redefinir-senha": "pnpm --filter @lapato/db redefinir-senha",
     "openapi:generate": "pnpm --filter @lapato/api openapi:generate && pnpm --filter @lapato/api-client generate",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,css}\""

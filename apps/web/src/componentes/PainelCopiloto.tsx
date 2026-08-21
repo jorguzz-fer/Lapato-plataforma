@@ -1,28 +1,40 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
+import Badge from '@mui/material/Badge';
 import ButtonBase from '@mui/material/ButtonBase';
 import Drawer from '@mui/material/Drawer';
 import IconButton from '@mui/material/IconButton';
+import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
-import ChevronRight from '@mui/icons-material/ChevronRight';
+import Close from '@mui/icons-material/CloseOutlined';
+import PushPin from '@mui/icons-material/PushPinOutlined';
+import PushPinFilled from '@mui/icons-material/PushPin';
 import AutoAwesome from '@mui/icons-material/AutoAwesomeOutlined';
-import { nivelIa, raio, shell } from '@lapato/design-tokens';
+import { nivelIa, raio, shell, sombra } from '@lapato/design-tokens';
 import type { NivelIa } from '@lapato/shared';
 import { api, type StatusIa } from '../api';
 
 /**
- * Painel lateral do LAPATO Copiloto (M17 secao 8).
+ * Painel do LAPATO Copiloto (M17 secao 8).
  *
  * Requisitos que a documentacao trata como estruturais, e nao como enfeite:
  *
- * - ocupa ~30% da tela, com ~70% para a area de trabalho;
- * - pode ser expandido, reduzido, recolhido, fixado ou ocultado;
+ * - pode ser expandido, reduzido, recolhido, **fixado** ou ocultado;
+ * - quando fixado, ocupa ~30% da tela com ~70% para a area de trabalho;
  * - o conteudo muda por modulo e etapa - **nao existe uma interface generica de
  *   chatbot** (secao 9);
  * - quando a IA esta indisponivel, mostra o indicador e o trabalho continua
  *   normalmente (secoes 110-112).
+ *
+ * O padrao e **flutuante**, e nao a coluna fixa. A propria lista do modulo traz
+ * "fixado" como um dos estados, o que implica um estado nao-fixado - e e ele que
+ * faz sentido como padrao: o Copiloto assiste o trabalho, entao nao deveria
+ * cobrar 30% da largura de quem esta lendo uma tabela de casos ou preenchendo
+ * uma macroscopia. Quem quiser a coluna permanente fixa o painel, e a
+ * preferencia fica guardada no aparelho.
  */
 
 /**
@@ -35,6 +47,8 @@ const NIVEL: Record<NivelIa, { cor: string; simbolo: string; rotulo: string }> =
   atencao: { cor: nivelIa.atencao, simbolo: '!', rotulo: 'Atenção' },
   critico: { cor: nivelIa.critico, simbolo: '⨯', rotulo: 'Crítico' },
 };
+
+const CHAVE_FIXADO = 'lapato:copiloto-fixado';
 
 export interface CartaoPainel {
   id: string;
@@ -51,17 +65,30 @@ interface Props {
   /** Achados do Guardian, que existem mesmo sem Copiloto disponível. */
   cartoes?: CartaoPainel[];
   /**
-   * Em tela estreita o painel nao pode ser inline: `width: 30%` com
-   * `minWidth: 300` deixaria 75px de area util num aparelho de 375px. Vira
-   * gaveta temporaria, aberta pela barra superior.
+   * Em tela estreita nao ha o que dividir: o painel vira gaveta, e "fixar" nem
+   * se oferece - uma coluna de 30% em 375px deixaria 75px de area de trabalho.
    */
   estreito: boolean;
   aberto: boolean;
   onAlternar: () => void;
 }
 
-export function PainelCopiloto({ modulo, etapa, cartoes = [], estreito, aberto, onAlternar }: Props) {
+export function PainelCopiloto({
+  modulo,
+  etapa,
+  cartoes = [],
+  estreito,
+  aberto,
+  onAlternar,
+}: Props) {
   const [status, setStatus] = useState<StatusIa | null>(null);
+  const [fixado, setFixado] = useState(() => {
+    try {
+      return localStorage.getItem(CHAVE_FIXADO) === 'sim';
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     api
@@ -70,41 +97,19 @@ export function PainelCopiloto({ modulo, etapa, cartoes = [], estreito, aberto, 
       .catch(() => setStatus({ disponivel: false, provedor: 'indisponivel' }));
   }, []);
 
-  /**
-   * Em tela larga e recolhido, sobra a aba flutuante na lateral. Em tela
-   * estreita ela nao existe: cobriria conteudo, e quem abre e o botao da barra
-   * superior, onde o badge ja informa que ha apontamento esperando.
-   */
-  if (!estreito && !aberto) {
-    return (
-      <ButtonBase
-        onClick={onAlternar}
-        aria-label="Abrir painel do Copiloto"
-        sx={{
-          position: 'fixed',
-          right: 0,
-          top: '50%',
-          transform: 'translateY(-50%)',
-          px: 1,
-          py: 3,
-          gap: 1,
-          flexDirection: 'column',
-          borderRadius: `${raio.medio}px 0 0 ${raio.medio}px`,
-          border: '1px solid',
-          borderRight: 'none',
-          borderColor: 'divider',
-          backgroundColor: 'background.paper',
-          boxShadow: 3,
-          zIndex: 1200,
-        }}
-      >
-        <AutoAwesome sx={{ fontSize: 16, color: 'primary.main' }} />
-        <Typography sx={{ fontSize: 11.5, writingMode: 'vertical-rl' }}>Copiloto</Typography>
-      </ButtonBase>
-    );
+  function alternarFixado() {
+    setFixado((atual) => {
+      const novo = !atual;
+      try {
+        localStorage.setItem(CHAVE_FIXADO, novo ? 'sim' : 'nao');
+      } catch {
+        // Preferência não persistida não impede o uso.
+      }
+      return novo;
+    });
   }
 
-  const conteudo = (
+  const conteudo: ReactNode = (
     <>
       <Stack
         direction="row"
@@ -116,21 +121,38 @@ export function PainelCopiloto({ modulo, etapa, cartoes = [], estreito, aberto, 
           justifyContent: 'space-between',
           borderBottom: '1px solid',
           borderColor: 'divider',
+          flexShrink: 0,
         }}
       >
-        <Box>
+        <Box sx={{ minWidth: 0 }}>
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
             <AutoAwesome sx={{ fontSize: 15, color: 'primary.main' }} />
             <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>LAPATO Copiloto</Typography>
           </Stack>
-          <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
+          <Typography noWrap sx={{ fontSize: 11.5, color: 'text.secondary' }}>
             {etapa ? `${modulo} · ${etapa}` : modulo}
           </Typography>
         </Box>
 
-        <IconButton onClick={onAlternar} size="small" aria-label="Recolher painel do Copiloto">
-          <ChevronRight fontSize="small" />
-        </IconButton>
+        <Stack direction="row" spacing={0.25}>
+          {!estreito && (
+            <Tooltip
+              title={fixado ? 'Soltar: volta a flutuar sobre o conteúdo' : 'Fixar ao lado do conteúdo'}
+            >
+              <IconButton onClick={alternarFixado} size="small" aria-pressed={fixado}>
+                {fixado ? (
+                  <PushPinFilled sx={{ fontSize: 17, color: 'primary.main' }} />
+                ) : (
+                  <PushPin sx={{ fontSize: 17 }} />
+                )}
+              </IconButton>
+            </Tooltip>
+          )}
+
+          <IconButton onClick={onAlternar} size="small" aria-label="Fechar painel do Copiloto">
+            <Close fontSize="small" />
+          </IconButton>
+        </Stack>
       </Stack>
 
       <Stack spacing={1.5} sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
@@ -203,10 +225,7 @@ export function PainelCopiloto({ modulo, etapa, cartoes = [], estreito, aberto, 
                * confundida com dado observado.
                */}
               {(c.fontes?.length || c.inferencia) && (
-                <Typography
-                  component="footer"
-                  sx={{ mt: 1, fontSize: 11, color: 'text.secondary' }}
-                >
+                <Typography component="footer" sx={{ mt: 1, fontSize: 11, color: 'text.secondary' }}>
                   {c.fontes?.length ? `Fontes: ${c.fontes.join(', ')}. ` : null}
                   {c.inferencia ? 'Contém inferência.' : 'Baseado em dados do caso.'}
                 </Typography>
@@ -218,7 +237,7 @@ export function PainelCopiloto({ modulo, etapa, cartoes = [], estreito, aberto, 
     </>
   );
 
-  // Gaveta em tela estreita; coluna fixa em tela larga.
+  // --- tela estreita: gaveta ------------------------------------------------
   if (estreito) {
     return (
       <Drawer
@@ -239,22 +258,91 @@ export function PainelCopiloto({ modulo, etapa, cartoes = [], estreito, aberto, 
     );
   }
 
+  // --- fechado: aba na lateral ----------------------------------------------
+  if (!aberto) {
+    return (
+      <ButtonBase
+        onClick={onAlternar}
+        aria-label="Abrir painel do Copiloto"
+        sx={{
+          position: 'fixed',
+          right: 0,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          px: 1,
+          py: 3,
+          gap: 1,
+          flexDirection: 'column',
+          borderRadius: `${raio.medio}px 0 0 ${raio.medio}px`,
+          border: '1px solid',
+          borderRight: 'none',
+          borderColor: 'divider',
+          backgroundColor: 'background.paper',
+          boxShadow: 3,
+          zIndex: 1200,
+        }}
+      >
+        {/* A contagem e o motivo de abrir: sem ela, a aba seria so um enfeite
+            na borda da tela. */}
+        <Badge badgeContent={cartoes.length} color="primary">
+          <AutoAwesome sx={{ fontSize: 16, color: 'primary.main' }} />
+        </Badge>
+        <Typography sx={{ fontSize: 11.5, writingMode: 'vertical-rl' }}>Copiloto</Typography>
+      </ButtonBase>
+    );
+  }
+
+  // --- fixado: coluna ao lado, ~30% (M17 secao 8) ---------------------------
+  if (fixado) {
+    return (
+      <Box
+        component="aside"
+        aria-label="LAPATO Copiloto"
+        sx={{
+          width: shell.copilotoLargura,
+          minWidth: 300,
+          display: 'flex',
+          flexDirection: 'column',
+          borderLeft: '1px solid',
+          borderColor: 'divider',
+          backgroundColor: 'background.paper',
+        }}
+      >
+        {conteudo}
+      </Box>
+    );
+  }
+
+  /**
+   * Padrao: flutuante.
+   *
+   * `position: fixed` tira o painel do fluxo, entao ele nao rouba largura da
+   * area de trabalho - a tabela de casos continua com a tela inteira por baixo.
+   * Sem backdrop de proposito: o Copiloto assiste o trabalho, e nao poderia
+   * bloquear a interacao justamente com aquilo que esta comentando.
+   */
   return (
-    <Box
+    <Paper
       component="aside"
       aria-label="LAPATO Copiloto"
+      elevation={0}
       sx={{
-        // 30% da tela, conforme M17 seção 8.
-        width: shell.copilotoLargura,
-        minWidth: 300,
+        position: 'fixed',
+        right: 16,
+        top: shell.topbarAltura + 16,
+        bottom: 16,
+        width: 360,
+        maxWidth: 'calc(100vw - 32px)',
         display: 'flex',
         flexDirection: 'column',
-        borderLeft: '1px solid',
+        border: '1px solid',
         borderColor: 'divider',
-        backgroundColor: 'background.paper',
+        borderRadius: `${raio.cartao}px`,
+        boxShadow: sombra.suspenso,
+        zIndex: 1150,
       }}
     >
       {conteudo}
-    </Box>
+    </Paper>
   );
 }

@@ -39,15 +39,17 @@ import { PainelCopiloto, type CartaoPainel } from './PainelCopiloto';
  *
  * Layout em duas formas, e nao uma so encolhida:
  *
- * - **Telas largas (md+)**: sidebar fixa a esquerda, area de trabalho ~70% e
- *   painel do Copiloto ~30% a direita (M17 secao 8).
+ * - **Telas largas (md+)**: sidebar fixa a esquerda e area de trabalho com a
+ *   largura toda. O Copiloto flutua por cima quando aberto, sem tirar espaco
+ *   dos dados - e so vira coluna de 30% se o usuario fixar (M17 secao 8).
  * - **Telas estreitas**: menu e Copiloto viram gavetas temporarias, abertas por
  *   botoes na barra superior. Espremer os tres em 375px daria 75px de area util -
  *   e foi o que aconteceu antes desta separacao existir.
  *
  * O M17 secao 8 pede que o painel possa ser "expandido, reduzido, recolhido,
- * fixado ou ocultado". A gaveta e a forma que "recolhido/oculto" assume quando
- * nao ha 30% de tela para ceder.
+ * fixado ou ocultado". A gaveta e a forma que "recolhido" assume onde nao ha
+ * 30% de tela para ceder; o flutuante e a forma que o estado nao-fixado assume
+ * onde ha.
  */
 
 const MENU = [
@@ -83,12 +85,15 @@ export function Shell({ sessao, aoSair, modulo, etapa, cartoes, children }: Prop
   const estreito = useMediaQuery(tema.breakpoints.down('md'));
 
   const [menuAberto, setMenuAberto] = useState(false);
-  const [copilotoAberto, setCopilotoAberto] = useState(!estreito);
-
   /**
-   * Ao estreitar a janela, o Copiloto fecha. Sem isto, quem redimensiona de
-   * desktop para estreito ficaria com a gaveta aberta por cima do trabalho.
+   * O Copiloto nasce fechado, em qualquer largura. Ele assiste o trabalho: abrir
+   * sozinho por cima da tabela de casos seria cobrar espaco antes de ter o que
+   * dizer. A aba lateral fica visivel com a contagem de apontamentos, que e o
+   * convite para abrir quando ha motivo.
    */
+  const [copilotoAberto, setCopilotoAberto] = useState(false);
+
+  /** Ao estreitar a janela, a gaveta fecha em vez de cobrir o trabalho. */
   useEffect(() => {
     if (estreito) setCopilotoAberto(false);
   }, [estreito]);

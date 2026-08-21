@@ -124,12 +124,31 @@ export class CasosController {
 const triagemSchema = z.object({
   amostras: z
     .array(
-      z.object({
-        amostraId: z.string().uuid(),
-        resultado: z.enum(RESULTADO_TRIAGEM),
-        observacoes: z.string().optional(),
-        checklist: z.record(z.unknown()).optional(),
-      }),
+      z
+        .object({
+          amostraId: z.string().uuid(),
+          resultado: z.enum(RESULTADO_TRIAGEM),
+          observacoes: z.string().optional(),
+          checklist: z.record(z.unknown()).optional(),
+        })
+        /**
+         * Bloquear ou recusar **exige motivo escrito**.
+         *
+         * O bloqueio cria uma pendencia com descricao generica ("material nao
+         * apto para prosseguir") e suspende o prazo. Sem a observacao, o unico
+         * lugar onde caberia o motivo real fica vazio - e quem for resolver a
+         * pendencia depois nao tem como saber o que precisa ser resolvido.
+         */
+        .superRefine((a, ctx) => {
+          const trava = a.resultado === 'bloqueado' || a.resultado === 'recusado';
+          if (trava && !a.observacoes?.trim()) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['observacoes'],
+              message: `Resultado "${a.resultado}" exige o motivo em observações.`,
+            });
+          }
+        }),
     )
     .min(1),
   naoConformidades: z

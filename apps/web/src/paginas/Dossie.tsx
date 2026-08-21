@@ -11,6 +11,7 @@ import Tabs from '@mui/material/Tabs';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import InventoryOutlined from '@mui/icons-material/Inventory2Outlined';
+import FactCheckOutlined from '@mui/icons-material/FactCheckOutlined';
 import { EVENTO_LABEL, type TipoEvento } from '@lapato/shared';
 import { api, type Dossie as DadosDossie } from '../api';
 
@@ -117,6 +118,23 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
                 Registrar recebimento
               </Button>
             )}
+
+            {/* Recebido e ainda não triado: a triagem é a próxima ação. As duas
+                condições são excludentes, então nunca aparecem as duas. */}
+            {dados.caso.recebidoEm &&
+              !dados.caso.triadoEm &&
+              permissoes.includes('triagem:executar') && (
+                <Button
+                  component={Link}
+                  to={`/casos/${id}/triagem`}
+                  variant="contained"
+                  size="small"
+                  startIcon={<FactCheckOutlined />}
+                  sx={{ flex: { xs: 1, md: 'none' } }}
+                >
+                  Registrar triagem
+                </Button>
+              )}
           </Stack>
         </Stack>
       </Card>

@@ -14,6 +14,7 @@ import { CadastrarMfa } from './paginas/CadastrarMfa';
 import { CentralDeCasos } from './paginas/CentralDeCasos';
 import { NovoCaso } from './paginas/NovoCaso';
 import { Recebimento } from './paginas/Recebimento';
+import { Triagem } from './paginas/Triagem';
 import { Dossie } from './paginas/Dossie';
 import './estilos.css';
 
@@ -128,6 +129,14 @@ function App() {
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Recebimento e Cadastro" etapa="recebimento">
             <Recebimento />
+          </Shell>
+        }
+      />
+      <Route
+        path="/casos/:id/triagem"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Triagem de Amostras" etapa="triagem">
+            <Triagem />
           </Shell>
         }
       />

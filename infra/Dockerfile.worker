@@ -16,7 +16,11 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --filter @lapato/worker...
 
 FROM base AS build
+# Ver comentario em Dockerfile.web: copiar so `/repo/node_modules` deixa cada
+# pacote do workspace sem as proprias dependencias.
 COPY --from=deps /repo/node_modules ./node_modules
+COPY --from=deps /repo/packages ./packages
+COPY --from=deps /repo/apps ./apps
 COPY . .
 RUN pnpm --filter @lapato/worker... build \
  && pnpm deploy --filter @lapato/worker --prod --legacy /app

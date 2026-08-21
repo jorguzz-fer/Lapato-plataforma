@@ -1,7 +1,16 @@
 import { useState, type FormEvent } from 'react';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
+import ArrowForward from '@mui/icons-material/ArrowForward';
+import HistoryToggleOff from '@mui/icons-material/HistoryToggleOffOutlined';
+import ShieldOutlined from '@mui/icons-material/ShieldOutlined';
+import VerifiedOutlined from '@mui/icons-material/VerifiedOutlined';
 import type { EstagioSessao } from '@lapato/shared';
+import { CampoSenha, MolduraEntrada } from '@lapato/ui';
 import { api, ErroApi } from '../api';
-import { CampoSenha } from '../componentes/CampoSenha';
 
 /**
  * Login.
@@ -11,10 +20,27 @@ import { CampoSenha } from '../componentes/CampoSenha';
  * bypass da RLS no backend.
  *
  * Aceitar a senha nao significa entrar: a resposta diz em que estagio a sessao
- * ficou, e quem decide a proxima tela e o `App`. Antes, o front ignorava esse
- * campo e mandava todo mundo para `/casos` - com MFA ativo isso produzia um
- * laco: `/auth/eu` respondia 401 e a tela de login voltava, sem explicacao.
+ * ficou, e quem decide a proxima tela e o `App`.
  */
+
+const DESTAQUES = [
+  {
+    icone: <HistoryToggleOff sx={{ fontSize: 18 }} />,
+    titulo: 'Rastreabilidade',
+    descricao: 'Linha do tempo única por caso',
+  },
+  {
+    icone: <ShieldOutlined sx={{ fontSize: 18 }} />,
+    titulo: 'Isolamento',
+    descricao: 'Cada instituição vê só o seu',
+  },
+  {
+    icone: <VerifiedOutlined sx={{ fontSize: 18 }} />,
+    titulo: 'Guardian',
+    descricao: 'Checagem antes de assinar',
+  },
+];
+
 export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => void }) {
   const [instituicao, setInstituicao] = useState('');
   const [email, setEmail] = useState('');
@@ -43,62 +69,72 @@ export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => voi
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <form onSubmit={submeter} className="cartao w-full max-w-sm space-y-4 p-6">
-        <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--lapato-primaria)' }}>
-            LAPATO
-          </h1>
-          <p className="rotulo">Gestão Anatomopatológica Veterinária</p>
-        </div>
-
-        <label className="block">
-          <span className="rotulo">Instituição</span>
-          <input
+    <MolduraEntrada
+      titulo="Bem-vindo de volta"
+      descricao="Entre com suas credenciais para acessar o sistema."
+      vitrine={{
+        etiqueta: 'Gestão anatomopatológica veterinária',
+        manchete: (
+          <>
+            Do recebimento à assinatura,{' '}
+            <Box component="span" sx={{ color: 'primary.light' }}>
+              um caso só.
+            </Box>
+          </>
+        ),
+        texto:
+          'Cadastro, triagem, macroscopia, processamento e laudo em torno de uma única unidade de trabalho — com prazo em dias úteis e histórico que não se apaga.',
+        destaques: DESTAQUES,
+      }}
+    >
+      <Box component="form" onSubmit={submeter} noValidate>
+        <Stack spacing={2.5}>
+          <TextField
+            label="Instituição"
             value={instituicao}
             onChange={(e) => setInstituicao(e.target.value)}
             required
+            fullWidth
+            autoFocus
             autoComplete="organization"
-            className="mt-1 w-full rounded border px-3 py-2"
-            style={{ borderColor: 'var(--lapato-borda)', background: 'var(--lapato-superficie)' }}
+            helperText="O identificador curto da sua instituição."
           />
-        </label>
 
-        <label className="block">
-          <span className="rotulo">E-mail</span>
-          <input
+          <TextField
+            label="E-mail"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            fullWidth
             autoComplete="username"
-            className="mt-1 w-full rounded border px-3 py-2"
-            style={{ borderColor: 'var(--lapato-borda)', background: 'var(--lapato-superficie)' }}
           />
-        </label>
 
-        <CampoSenha
-          rotulo="Senha"
-          valor={senha}
-          aoMudar={setSenha}
-          autoComplete="current-password"
-        />
+          <CampoSenha
+            rotulo="Senha"
+            valor={senha}
+            aoMudar={setSenha}
+            autoComplete="current-password"
+          />
 
-        {erro && (
-          <p role="alert" className="text-xs" style={{ color: 'var(--lapato-perigo)' }}>
-            {erro}
-          </p>
-        )}
+          {erro && (
+            <Alert severity="error" sx={{ fontSize: 13 }}>
+              {erro}
+            </Alert>
+          )}
 
-        <button
-          type="submit"
-          disabled={enviando}
-          className="w-full rounded px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-          style={{ background: 'var(--lapato-primaria)' }}
-        >
-          {enviando ? 'Entrando…' : 'Entrar'}
-        </button>
-      </form>
-    </div>
+          <Button
+            type="submit"
+            variant="contained"
+            size="large"
+            fullWidth
+            disabled={enviando}
+            endIcon={enviando ? undefined : <ArrowForward />}
+          >
+            {enviando ? 'Entrando…' : 'Entrar'}
+          </Button>
+        </Stack>
+      </Box>
+    </MolduraEntrada>
   );
 }

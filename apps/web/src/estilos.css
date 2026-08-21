@@ -1,43 +1,22 @@
-@import '@lapato/design-tokens/tokens.css';
+/**
+ * Estilos globais minimos.
+ *
+ * O grosso da aparencia vive no tema do MUI (`@lapato/ui`), montado a partir de
+ * `@lapato/design-tokens` (ADR 0008). Aqui fica apenas o que precisa existir
+ * antes do React montar: a fonte e a cor de fundo, para nao haver um lampejo
+ * branco antes da primeira pintura.
+ */
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-@layer base {
-  html {
-    font-family: var(--lapato-fonte, 'Roboto', system-ui, sans-serif);
-  }
-
-  body {
-    background-color: var(--lapato-fundo);
-    color: var(--lapato-texto);
-    font-size: 0.875rem;
-    -webkit-font-smoothing: antialiased;
-  }
-
-  /**
-   * Acessibilidade (Blueprint secao 15): foco sempre visivel. O laboratorio
-   * opera muito por teclado, com leitor de codigo de barras entre as maos.
-   */
-  :focus-visible {
-    outline: 2px solid var(--lapato-primaria);
-    outline-offset: 2px;
-  }
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
 }
 
-@layer components {
-  .cartao {
-    background-color: var(--lapato-superficie);
-    border: 1px solid var(--lapato-borda);
-    border-radius: var(--lapato-raio);
-    box-shadow: var(--lapato-sombra);
-  }
-
-  .rotulo {
-    color: var(--lapato-texto-suave);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
+body {
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background-color: #f6f7f9;
 }

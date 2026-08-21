@@ -1,7 +1,12 @@
 import { useState, type FormEvent } from 'react';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
 import { MFA_TAMANHO_CODIGO, type EstagioSessao } from '@lapato/shared';
+import { MolduraEntrada } from '@lapato/ui';
 import { api, ErroApi } from '../api';
-import { CartaoDeEntrada } from '../componentes/CartaoDeEntrada';
 
 /**
  * Segundo fator (M02, Blueprint secao 6).
@@ -31,28 +36,51 @@ export function SegundoFator({ aoAvancar }: { aoAvancar: (estagio: EstagioSessao
   }
 
   return (
-    <CartaoDeEntrada
+    <MolduraEntrada
       titulo="Verificação em duas etapas"
       descricao="Digite o código de 6 dígitos do seu aplicativo autenticador."
-      erro={erro}
-      aoSubmeter={submeter}
-      acao={enviando ? 'Verificando…' : 'Verificar'}
-      enviando={enviando || codigo.length !== MFA_TAMANHO_CODIGO}
     >
-      <label className="block">
-        <span className="rotulo">Código</span>
-        <input
-          value={codigo}
-          // Só dígitos: colar de um autenticador costuma trazer espaço no meio.
-          onChange={(e) => setCodigo(e.target.value.replace(/\D/g, '').slice(0, MFA_TAMANHO_CODIGO))}
-          required
-          autoFocus
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          className="mt-1 w-full rounded border px-3 py-2 text-center text-lg tracking-[0.4em]"
-          style={{ borderColor: 'var(--lapato-borda)', background: 'var(--lapato-superficie)' }}
-        />
-      </label>
-    </CartaoDeEntrada>
+      <Box component="form" onSubmit={submeter} noValidate>
+        <Stack spacing={2.5}>
+          <TextField
+            label="Código"
+            value={codigo}
+            // Só dígitos: colar de um autenticador costuma trazer espaço no meio.
+            onChange={(e) =>
+              setCodigo(e.target.value.replace(/\D/g, '').slice(0, MFA_TAMANHO_CODIGO))
+            }
+            required
+            fullWidth
+            autoFocus
+            autoComplete="one-time-code"
+            slotProps={{ htmlInput: { inputMode: 'numeric' } }}
+            sx={{
+              '& input': {
+                textAlign: 'center',
+                fontSize: 22,
+                letterSpacing: '0.5em',
+                fontVariantNumeric: 'tabular-nums',
+              },
+            }}
+          />
+
+          {erro && (
+            <Alert severity="error" sx={{ fontSize: 13 }}>
+              {erro}
+            </Alert>
+          )}
+
+          <Button
+            type="submit"
+            variant="contained"
+            size="large"
+            fullWidth
+            disabled={enviando || codigo.length !== MFA_TAMANHO_CODIGO}
+          >
+            {enviando ? 'Verificando…' : 'Verificar'}
+          </Button>
+        </Stack>
+      </Box>
+    </MolduraEntrada>
   );
 }

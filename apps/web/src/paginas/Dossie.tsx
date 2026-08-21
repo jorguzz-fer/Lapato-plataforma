@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import Chip from '@mui/material/Chip';
+import Divider from '@mui/material/Divider';
+import Skeleton from '@mui/material/Skeleton';
+import Stack from '@mui/material/Stack';
+import Tab from '@mui/material/Tab';
+import Tabs from '@mui/material/Tabs';
+import Typography from '@mui/material/Typography';
 import { EVENTO_LABEL, type TipoEvento } from '@lapato/shared';
 import { api, type Dossie as DadosDossie } from '../api';
 
@@ -20,6 +29,9 @@ const ABAS: Array<{ id: Aba; rotulo: string }> = [
   { id: 'timeline', rotulo: 'Linha do tempo' },
 ];
 
+/** Identificadores e quantidades em fonte tabular: alinham na vertical. */
+const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
+
 export function Dossie() {
   const { id } = useParams<{ id: string }>();
   const [dados, setDados] = useState<DadosDossie | null>(null);
@@ -29,157 +41,208 @@ export function Dossie() {
     if (id) api.get<DadosDossie>(`/casos/${id}`).then(setDados);
   }, [id]);
 
-  if (!dados) return <p className="rotulo">Carregando dossiê…</p>;
+  if (!dados) {
+    return (
+      <Stack spacing={2}>
+        <Skeleton variant="rounded" height={78} />
+        <Skeleton variant="rounded" height={340} />
+      </Stack>
+    );
+  }
 
   return (
-    <section>
+    <Box component="section">
       {/* DIRETRIZES seção 15: cabeçalho persistente do caso. */}
-      <header className="cartao mb-4 p-4">
-        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-          <span className="font-mono text-base font-semibold">
+      <Card component="header" sx={{ mb: 2.5, p: 2.5 }}>
+        <Stack
+          direction="row"
+          sx={{ flexWrap: 'wrap', alignItems: 'center', columnGap: 3, rowGap: 1 }}
+        >
+          <Typography sx={{ ...MONO, fontSize: 17, fontWeight: 700 }}>
             {dados.caso.identificador}
-          </span>
-          <span>{dados.paciente.nome}</span>
-          <span className="rotulo">{dados.cliente.nomeFantasia}</span>
-          <span className="rotulo">{dados.servico.nome}</span>
-          {dados.estado && (
-            <span
-              className="rounded px-2 py-0.5 text-xs"
-              style={{ background: 'var(--lapato-primaria-clara)', color: 'var(--lapato-primaria)' }}
-            >
-              {dados.estado.etapa.replaceAll('_', ' ')}
-            </span>
-          )}
-        </div>
-      </header>
+          </Typography>
 
-      <nav className="mb-3 flex gap-1 border-b" style={{ borderColor: 'var(--lapato-borda)' }}>
+          <Box>
+            <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>Paciente</Typography>
+            <Typography sx={{ fontSize: 13.5, fontWeight: 500 }}>{dados.paciente.nome}</Typography>
+          </Box>
+
+          <Box>
+            <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>Cliente</Typography>
+            <Typography sx={{ fontSize: 13.5 }}>{dados.cliente.nomeFantasia}</Typography>
+          </Box>
+
+          <Box>
+            <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>Serviço</Typography>
+            <Typography sx={{ fontSize: 13.5 }}>{dados.servico.nome}</Typography>
+          </Box>
+
+          <Box sx={{ ml: 'auto' }}>
+            {dados.estado && (
+              <Chip
+                size="small"
+                label={dados.estado.etapa.replaceAll('_', ' ')}
+                color="primary"
+                variant="outlined"
+              />
+            )}
+          </Box>
+        </Stack>
+      </Card>
+
+      <Tabs
+        value={aba}
+        onChange={(_, v: Aba) => setAba(v)}
+        sx={{ mb: 2, borderBottom: '1px solid', borderColor: 'divider' }}
+      >
         {ABAS.map((a) => (
-          <button
-            key={a.id}
-            type="button"
-            onClick={() => setAba(a.id)}
-            aria-current={aba === a.id ? 'page' : undefined}
-            className="px-3 py-2 text-sm"
-            style={{
-              borderBottom: aba === a.id ? '2px solid var(--lapato-primaria)' : '2px solid transparent',
-              color: aba === a.id ? 'var(--lapato-primaria)' : 'var(--lapato-texto-suave)',
-            }}
-          >
-            {a.rotulo}
-          </button>
+          <Tab key={a.id} value={a.id} label={a.rotulo} sx={{ fontSize: 13.5, minHeight: 42 }} />
         ))}
-      </nav>
+      </Tabs>
 
       {aba === 'visao' && (
-        <div className="cartao space-y-3 p-4 text-sm">
-          <Campo rotulo="Prioridade" valor={dados.caso.prioridade} />
-          <Campo
-            rotulo="Recebido em"
-            valor={
-              dados.caso.recebidoEm
-                ? new Date(dados.caso.recebidoEm).toLocaleString('pt-BR')
-                : 'Ainda não recebido'
-            }
-          />
-          <Campo
-            rotulo="Resultado da triagem"
-            valor={dados.caso.resultadoTriagem?.replaceAll('_', ' ') ?? 'Ainda não triado'}
-          />
-          <Campo rotulo="Microchip" valor={dados.paciente.microchip ?? '—'} />
+        <Card sx={{ p: 2.5 }}>
+          <Stack spacing={2}>
+            <Campo rotulo="Prioridade" valor={dados.caso.prioridade} />
+            <Campo
+              rotulo="Recebido em"
+              valor={
+                dados.caso.recebidoEm
+                  ? new Date(dados.caso.recebidoEm).toLocaleString('pt-BR')
+                  : 'Ainda não recebido'
+              }
+            />
+            <Campo
+              rotulo="Resultado da triagem"
+              valor={dados.caso.resultadoTriagem?.replaceAll('_', ' ') ?? 'Ainda não triado'}
+            />
+            <Campo rotulo="Microchip" valor={dados.paciente.microchip ?? '—'} />
 
-          <div>
-            <span className="rotulo">Recipientes</span>
-            <ul className="mt-1 space-y-1">
-              {dados.recipientes.map((r) => {
-                /**
-                 * M05: declarado e recebido ficam lado a lado. A divergência é
-                 * dado do caso, e por isso aparece em vez de ser "corrigida".
-                 */
-                const divergente =
-                  r.quantidadeRecebida !== null &&
-                  r.quantidadeDeclarada !== null &&
-                  r.quantidadeRecebida !== r.quantidadeDeclarada;
+            <Divider />
 
-                return (
-                  <li key={r.id} className="flex items-center gap-2 text-xs">
-                    <span className="font-mono">{r.identificador}</span>
-                    <span>
-                      declarado {r.quantidadeDeclarada ?? '—'} · recebido{' '}
-                      {r.quantidadeRecebida ?? '—'}
-                    </span>
-                    {divergente && (
-                      <span
-                        className="rounded px-1.5 py-0.5 text-[0.7rem] text-white"
-                        style={{ background: 'var(--lapato-atencao)' }}
-                      >
-                        divergência
-                      </span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </div>
+            <Box>
+              <Typography sx={{ fontSize: 11, color: 'text.secondary', mb: 1 }}>
+                Recipientes
+              </Typography>
+              <Stack spacing={0.75}>
+                {dados.recipientes.map((r) => {
+                  /**
+                   * M05: declarado e recebido ficam lado a lado. A divergência é
+                   * dado do caso, e por isso aparece em vez de ser "corrigida".
+                   */
+                  const divergente =
+                    r.quantidadeRecebida !== null &&
+                    r.quantidadeDeclarada !== null &&
+                    r.quantidadeRecebida !== r.quantidadeDeclarada;
+
+                  return (
+                    <Stack
+                      key={r.id}
+                      direction="row"
+                      spacing={1.5}
+                      sx={{ alignItems: 'center', fontSize: 12.5 }}
+                    >
+                      <Typography sx={{ ...MONO, fontSize: 12.5 }}>{r.identificador}</Typography>
+                      <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+                        declarado {r.quantidadeDeclarada ?? '—'} · recebido{' '}
+                        {r.quantidadeRecebida ?? '—'}
+                      </Typography>
+                      {divergente && (
+                        <Chip size="small" color="warning" label="divergência" />
+                      )}
+                    </Stack>
+                  );
+                })}
+              </Stack>
+            </Box>
+          </Stack>
+        </Card>
       )}
 
       {aba === 'amostras' && (
-        <div className="cartao p-4">
-          <ul className="space-y-2 text-sm">
+        <Card sx={{ p: 2.5 }}>
+          <Stack spacing={1.5} divider={<Divider flexItem />}>
             {dados.amostras.map((a) => (
-              <li key={a.id} className="flex flex-wrap items-center gap-3">
-                <span className="font-mono text-xs">{a.identificador}</span>
-                <span>{a.descricao ?? '—'}</span>
+              <Stack
+                key={a.id}
+                direction="row"
+                spacing={2}
+                sx={{ flexWrap: 'wrap', alignItems: 'center' }}
+              >
+                <Typography sx={{ ...MONO, fontSize: 12.5 }}>{a.identificador}</Typography>
+                <Typography sx={{ fontSize: 13.5 }}>{a.descricao ?? '—'}</Typography>
                 {a.lateralidade !== 'nao_aplicavel' && (
-                  <span className="rotulo">lateralidade: {a.lateralidade}</span>
+                  <Chip size="small" variant="outlined" label={`lateralidade: ${a.lateralidade}`} />
                 )}
                 {a.resultadoTriagem && (
-                  <span className="rotulo">triagem: {a.resultadoTriagem.replaceAll('_', ' ')}</span>
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={`triagem: ${a.resultadoTriagem.replaceAll('_', ' ')}`}
+                  />
                 )}
-              </li>
+              </Stack>
             ))}
-          </ul>
-        </div>
+          </Stack>
+        </Card>
       )}
 
       {aba === 'historico' && (
-        <div className="cartao space-y-3 p-4 text-sm">
-          {dados.historicos.length === 0 && <p className="rotulo">Sem histórico clínico.</p>}
-          {dados.historicos.map((h) => (
-            <article key={h.id}>
-              {/* M05/M11: o texto original do solicitante nunca é substituído. */}
-              <span className="rotulo">Origem: {h.origem}</span>
-              <p className="mt-1 whitespace-pre-wrap">{h.texto}</p>
-            </article>
-          ))}
-        </div>
+        <Card sx={{ p: 2.5 }}>
+          {dados.historicos.length === 0 && (
+            <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+              Sem histórico clínico.
+            </Typography>
+          )}
+          <Stack spacing={2} divider={<Divider flexItem />}>
+            {dados.historicos.map((h) => (
+              <Box key={h.id} component="article">
+                {/* M05/M11: o texto original do solicitante nunca é substituído. */}
+                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                  Origem: {h.origem}
+                </Typography>
+                <Typography sx={{ fontSize: 13.5, whiteSpace: 'pre-wrap', mt: 0.5 }}>
+                  {h.texto}
+                </Typography>
+              </Box>
+            ))}
+          </Stack>
+        </Card>
       )}
 
       {aba === 'timeline' && (
-        <ol className="cartao space-y-3 p-4">
-          {dados.linhaDoTempo.map((e) => (
-            <li key={e.id} className="flex gap-3 text-sm">
-              <time className="shrink-0 font-mono text-xs" style={{ color: 'var(--lapato-texto-suave)' }}>
-                {new Date(e.ocorridoEm).toLocaleString('pt-BR')}
-              </time>
-              <div>
-                <span>{EVENTO_LABEL[e.tipo as TipoEvento] ?? e.tipo}</span>
-                <span className="rotulo ml-2">{e.moduloOrigem}</span>
-              </div>
-            </li>
-          ))}
-        </ol>
+        <Card sx={{ p: 2.5 }}>
+          <Stack component="ol" spacing={1.5} sx={{ listStyle: 'none', m: 0, p: 0 }}>
+            {dados.linhaDoTempo.map((e) => (
+              <Stack key={e.id} component="li" direction="row" spacing={2}>
+                <Typography
+                  component="time"
+                  sx={{ ...MONO, fontSize: 11.5, color: 'text.secondary', flexShrink: 0, pt: 0.25 }}
+                >
+                  {new Date(e.ocorridoEm).toLocaleString('pt-BR')}
+                </Typography>
+                <Box>
+                  <Typography sx={{ fontSize: 13.5 }}>
+                    {EVENTO_LABEL[e.tipo as TipoEvento] ?? e.tipo}
+                  </Typography>
+                  <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                    {e.moduloOrigem}
+                  </Typography>
+                </Box>
+              </Stack>
+            ))}
+          </Stack>
+        </Card>
       )}
-    </section>
+    </Box>
   );
 }
 
 function Campo({ rotulo, valor }: { rotulo: string; valor: string }) {
   return (
-    <div>
-      <span className="rotulo">{rotulo}</span>
-      <p>{valor}</p>
-    </div>
+    <Box>
+      <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{rotulo}</Typography>
+      <Typography sx={{ fontSize: 13.5 }}>{valor}</Typography>
+    </Box>
   );
 }

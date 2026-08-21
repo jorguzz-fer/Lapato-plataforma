@@ -248,6 +248,18 @@ export class MacroscopiaController {
     return this.macro.listarCassetes(casoId);
   }
 
+  @Get('amostras/:amostraId')
+  @ExigePermissao(PERMISSOES.MACROSCOPIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Ficha de macroscopia da amostra',
+    description:
+      'Devolve null quando ainda não iniciada. Separado do início justamente ' +
+      'para que abrir a tela não publique evento nem mova o fluxo.',
+  })
+  async ficha(@Param('amostraId', ParseUUIDPipe) amostraId: string) {
+    return this.macro.buscarPorAmostra(amostraId);
+  }
+
   @Post('amostras/:amostraId')
   @ExigePermissao(PERMISSOES.MACROSCOPIA_EXECUTAR)
   @ApiOperation({ summary: 'Inicia a macroscopia de uma amostra' })

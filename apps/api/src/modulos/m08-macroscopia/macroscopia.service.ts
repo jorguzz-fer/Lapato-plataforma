@@ -148,6 +148,13 @@ export class MacroscopiaService {
         })
         .where(eq(macroscopia.id, macroscopiaId));
 
+      /**
+       * Lesao e margem sao identificadas pelo rotulo/nome dentro da ficha, e o
+       * conflito nesse par significa "esta e a mesma lesao", nao "ja existe,
+       * ignore". Enquanto a macroscopia nao esta concluida ela e rascunho: uma
+       * medida corrigida precisa gravar. Ignorar o conflito faria a correcao
+       * sumir sem aviso - o salvamento responderia sucesso sem ter salvo nada.
+       */
       if (dados.lesoes) {
         for (const l of dados.lesoes) {
           await tx
@@ -162,7 +169,17 @@ export class MacroscopiaService {
               maiorEixoCm: l.maiorEixoCm?.toString() ?? null,
               menorEixoCm: l.menorEixoCm?.toString() ?? null,
             })
-            .onConflictDoNothing();
+            .onConflictDoUpdate({
+              target: [lesaoMacroscopica.macroscopiaId, lesaoMacroscopica.rotulo],
+              set: {
+                tipo: l.tipo ?? null,
+                localizacao: l.localizacao ?? null,
+                lateralidade: l.lateralidade ?? 'nao_aplicavel',
+                maiorEixoCm: l.maiorEixoCm?.toString() ?? null,
+                menorEixoCm: l.menorEixoCm?.toString() ?? null,
+                atualizadoEm: new Date(),
+              },
+            });
         }
       }
 
@@ -180,7 +197,16 @@ export class MacroscopiaService {
               tinta: m.tinta ?? null,
               naoAvaliavel: m.naoAvaliavel ?? false,
             })
-            .onConflictDoNothing();
+            .onConflictDoUpdate({
+              target: [margemMacroscopica.macroscopiaId, margemMacroscopica.nome],
+              set: {
+                metodoAmostragem: m.metodoAmostragem ?? null,
+                distanciaCm: m.distanciaCm?.toString() ?? null,
+                tinta: m.tinta ?? null,
+                naoAvaliavel: m.naoAvaliavel ?? false,
+                atualizadoEm: new Date(),
+              },
+            });
         }
       }
 
@@ -251,6 +277,82 @@ export class MacroscopiaService {
       });
 
       await this.fluxo.processarEvento(tx, registro.casoId, 'macroscopia.concluida');
+    });
+  }
+
+  /**
+   * Ficha da amostra, ou `null` se a macroscopia ainda nao foi iniciada.
+   *
+   * Precisa ser um GET separado do `iniciar`: abrir a tela nao pode publicar
+   * `macroscopia.iniciada` nem mover o fluxo. Quem inicia e o profissional,
+   * quando pega a peca - nao o navegador ao carregar a pagina.
+   */
+  async buscarPorAmostra(amostraId: string) {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const [ficha] = await tx
+        .select()
+        .from(macroscopia)
+        .where(
+          and(eq(macroscopia.tenantId, ctx.tenantId), eq(macroscopia.amostraId, amostraId)),
+        )
+        .limit(1);
+
+      if (!ficha) return null;
+
+      const [lesoes, margens, cassetes] = await Promise.all([
+        tx
+          .select()
+          .from(lesaoMacroscopica)
+          .where(eq(lesaoMacroscopica.macroscopiaId, ficha.id))
+          .orderBy(asc(lesaoMacroscopica.rotulo)),
+        tx
+          .select()
+          .from(margemMacroscopica)
+          .where(eq(margemMacroscopica.macroscopiaId, ficha.id))
+          .orderBy(asc(margemMacroscopica.nome)),
+        tx
+          .select()
+          .from(cassete)
+          .where(eq(cassete.macroscopiaId, ficha.id))
+          .orderBy(asc(cassete.ordem)),
+      ]);
+
+      return {
+        id: ficha.id,
+        casoId: ficha.casoId,
+        amostraId: ficha.amostraId,
+        descricaoTexto: ficha.descricaoTexto,
+        comprimentoCm: ficha.comprimentoCm,
+        larguraCm: ficha.larguraCm,
+        alturaCm: ficha.alturaCm,
+        pesoG: ficha.pesoG,
+        materialTotalmenteIncluido: ficha.materialTotalmenteIncluido,
+        iniciadaEm: ficha.iniciadaEm,
+        concluidaEm: ficha.concluidaEm,
+        lesoes: lesoes.map((l) => ({
+          rotulo: l.rotulo,
+          tipo: l.tipo,
+          localizacao: l.localizacao,
+          lateralidade: l.lateralidade,
+          maiorEixoCm: l.maiorEixoCm,
+          menorEixoCm: l.menorEixoCm,
+        })),
+        margens: margens.map((m) => ({
+          nome: m.nome,
+          metodoAmostragem: m.metodoAmostragem,
+          distanciaCm: m.distanciaCm,
+          naoAvaliavel: m.naoAvaliavel,
+        })),
+        cassetes: cassetes.map((c) => ({
+          id: c.id,
+          identificador: c.identificador,
+          tecidoOrigem: c.tecidoOrigem,
+          descricao: c.descricao,
+          exigeDescalcificacao: c.exigeDescalcificacao,
+        })),
+      };
     });
   }
 

@@ -12,6 +12,7 @@ import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import InventoryOutlined from '@mui/icons-material/Inventory2Outlined';
 import FactCheckOutlined from '@mui/icons-material/FactCheckOutlined';
+import ScienceOutlined from '@mui/icons-material/ScienceOutlined';
 import { EVENTO_LABEL, type TipoEvento } from '@lapato/shared';
 import { api, type Dossie as DadosDossie } from '../api';
 
@@ -133,6 +134,27 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
                   sx={{ flex: { xs: 1, md: 'none' } }}
                 >
                   Registrar triagem
+                </Button>
+              )}
+
+            {/**
+             * Triado e liberado pela triagem: a bancada é a próxima ação. Uma
+             * triagem bloqueada ou recusada não chega aqui — é o M06 segurando
+             * o caso, e oferecer o atalho contradiria isso.
+             */}
+            {dados.caso.triadoEm &&
+              dados.caso.resultadoTriagem !== 'bloqueado' &&
+              dados.caso.resultadoTriagem !== 'recusado' &&
+              permissoes.includes('macroscopia:executar') && (
+                <Button
+                  component={Link}
+                  to={`/casos/${id}/macroscopia`}
+                  variant="contained"
+                  size="small"
+                  startIcon={<ScienceOutlined />}
+                  sx={{ flex: { xs: 1, md: 'none' } }}
+                >
+                  Macroscopia
                 </Button>
               )}
           </Stack>

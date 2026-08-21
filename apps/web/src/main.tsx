@@ -15,6 +15,7 @@ import { CentralDeCasos } from './paginas/CentralDeCasos';
 import { NovoCaso } from './paginas/NovoCaso';
 import { Recebimento } from './paginas/Recebimento';
 import { Triagem } from './paginas/Triagem';
+import { Macroscopia } from './paginas/Macroscopia';
 import { Dossie } from './paginas/Dossie';
 import './estilos.css';
 
@@ -137,6 +138,14 @@ function App() {
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Triagem de Amostras" etapa="triagem">
             <Triagem />
+          </Shell>
+        }
+      />
+      <Route
+        path="/casos/:id/macroscopia"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Macroscopia" etapa="macroscopia">
+            <Macroscopia exigeSupervisao={sessao.exigeSupervisao} />
           </Shell>
         }
       />

@@ -79,7 +79,18 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
             <Typography sx={{ fontSize: 13.5 }}>{dados.servico.nome}</Typography>
           </Box>
 
-          <Stack direction="row" spacing={1.5} sx={{ ml: 'auto', alignItems: 'center' }}>
+          <Stack
+            direction="row"
+            spacing={1.5}
+            sx={{
+              // Em tela estreita a ação desce e ocupa a linha; `ml: auto` só
+              // faz sentido quando há espaço horizontal sobrando.
+              ml: { md: 'auto' },
+              width: { xs: '100%', md: 'auto' },
+              alignItems: 'center',
+              mt: { xs: 1, md: 0 },
+            }}
+          >
             {dados.estado && (
               <Chip
                 size="small"
@@ -101,6 +112,7 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
                 variant="contained"
                 size="small"
                 startIcon={<InventoryOutlined />}
+                sx={{ flex: { xs: 1, md: 'none' } }}
               >
                 Registrar recebimento
               </Button>
@@ -112,6 +124,8 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
       <Tabs
         value={aba}
         onChange={(_, v: Aba) => setAba(v)}
+        variant="scrollable"
+        scrollButtons="auto"
         sx={{ mb: 2, borderBottom: '1px solid', borderColor: 'divider' }}
       >
         {ABAS.map((a) => (

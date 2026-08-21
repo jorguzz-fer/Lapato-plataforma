@@ -155,7 +155,7 @@ export function Recebimento() {
 
         <Divider sx={{ my: 2.5 }} />
 
-        <Stack spacing={2.5}>
+        <Stack spacing={{ xs: 3, sm: 2.5 }} divider={<Divider flexItem />}>
           {recipientes.map((r) => {
             const informado = contagem[r.id] ?? '';
             const preenchido = informado.trim() !== '';
@@ -165,46 +165,43 @@ export function Recebimento() {
               Number(informado) !== r.quantidadeDeclarada;
 
             return (
-              <Stack
-                key={r.id}
-                direction={{ xs: 'column', sm: 'row' }}
-                spacing={2}
-                sx={{ alignItems: { sm: 'center' } }}
-              >
-                <Typography sx={{ ...MONO, fontSize: 13, flex: 1 }}>{r.identificador}</Typography>
+              <Box key={r.id}>
+                <Typography sx={{ ...MONO, fontSize: 13, mb: { xs: 1, sm: 0 } }}>
+                  {r.identificador}
+                </Typography>
 
-                <Box sx={{ width: 120 }}>
-                  <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>Declarado</Typography>
-                  <Typography sx={{ fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>
-                    {r.quantidadeDeclarada ?? '—'}
-                  </Typography>
-                </Box>
+                {/**
+                  * Declarado e recebido lado a lado tambem no celular: e a
+                  * comparacao que da sentido a tela, e empilha-los a
+                  * transformaria em dois numeros soltos.
+                  */}
+                <Stack direction="row" spacing={2} sx={{ alignItems: 'center', mt: { sm: -3 } }}>
+                  <Box sx={{ flex: { xs: 1, sm: 'none' }, width: { sm: 120 }, ml: { sm: 'auto' } }}>
+                    <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                      Declarado
+                    </Typography>
+                    <Typography sx={{ fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>
+                      {r.quantidadeDeclarada ?? '—'}
+                    </Typography>
+                  </Box>
 
-                <TextField
-                  label="Recebido"
-                  type="number"
-                  value={informado}
-                  onChange={(e) =>
-                    setContagem((atual) => ({ ...atual, [r.id]: e.target.value }))
-                  }
-                  required
-                  sx={{ width: 130 }}
-                  slotProps={{ htmlInput: { min: 0 } }}
-                  color={diverge ? 'warning' : undefined}
-                  focused={diverge || undefined}
-                />
+                  <TextField
+                    label="Recebido"
+                    type="number"
+                    value={informado}
+                    onChange={(e) => setContagem((atual) => ({ ...atual, [r.id]: e.target.value }))}
+                    required
+                    sx={{ flex: { xs: 1, sm: 'none' }, width: { sm: 130 } }}
+                    slotProps={{ htmlInput: { min: 0 } }}
+                    color={diverge ? 'warning' : undefined}
+                    focused={diverge || undefined}
+                  />
 
-                <Box sx={{ width: 140 }}>
-                  {diverge && (
-                    <Chip
-                      size="small"
-                      color="warning"
-                      label={`▲ divergência`}
-                      sx={{ fontVariantNumeric: 'tabular-nums' }}
-                    />
-                  )}
-                </Box>
-              </Stack>
+                  <Box sx={{ width: { xs: 'auto', sm: 140 } }}>
+                    {diverge && <Chip size="small" color="warning" label="▲ divergência" />}
+                  </Box>
+                </Stack>
+              </Box>
             );
           })}
         </Stack>

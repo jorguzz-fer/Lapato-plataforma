@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
+import Drawer from '@mui/material/Drawer';
 import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -49,11 +50,17 @@ interface Props {
   etapa?: string;
   /** Achados do Guardian, que existem mesmo sem Copiloto disponível. */
   cartoes?: CartaoPainel[];
-  recolhido: boolean;
+  /**
+   * Em tela estreita o painel nao pode ser inline: `width: 30%` com
+   * `minWidth: 300` deixaria 75px de area util num aparelho de 375px. Vira
+   * gaveta temporaria, aberta pela barra superior.
+   */
+  estreito: boolean;
+  aberto: boolean;
   onAlternar: () => void;
 }
 
-export function PainelCopiloto({ modulo, etapa, cartoes = [], recolhido, onAlternar }: Props) {
+export function PainelCopiloto({ modulo, etapa, cartoes = [], estreito, aberto, onAlternar }: Props) {
   const [status, setStatus] = useState<StatusIa | null>(null);
 
   useEffect(() => {
@@ -63,7 +70,12 @@ export function PainelCopiloto({ modulo, etapa, cartoes = [], recolhido, onAlter
       .catch(() => setStatus({ disponivel: false, provedor: 'indisponivel' }));
   }, []);
 
-  if (recolhido) {
+  /**
+   * Em tela larga e recolhido, sobra a aba flutuante na lateral. Em tela
+   * estreita ela nao existe: cobriria conteudo, e quem abre e o botao da barra
+   * superior, onde o badge ja informa que ha apontamento esperando.
+   */
+  if (!estreito && !aberto) {
     return (
       <ButtonBase
         onClick={onAlternar}
@@ -92,21 +104,8 @@ export function PainelCopiloto({ modulo, etapa, cartoes = [], recolhido, onAlter
     );
   }
 
-  return (
-    <Box
-      component="aside"
-      aria-label="LAPATO Copiloto"
-      sx={{
-        // 30% da tela, conforme M17 seção 8.
-        width: shell.copilotoLargura,
-        minWidth: 300,
-        display: 'flex',
-        flexDirection: 'column',
-        borderLeft: '1px solid',
-        borderColor: 'divider',
-        backgroundColor: 'background.paper',
-      }}
-    >
+  const conteudo = (
+    <>
       <Stack
         direction="row"
         component="header"
@@ -216,6 +215,46 @@ export function PainelCopiloto({ modulo, etapa, cartoes = [], recolhido, onAlter
           );
         })}
       </Stack>
+    </>
+  );
+
+  // Gaveta em tela estreita; coluna fixa em tela larga.
+  if (estreito) {
+    return (
+      <Drawer
+        anchor="right"
+        open={aberto}
+        onClose={onAlternar}
+        ModalProps={{ keepMounted: true }}
+        slotProps={{
+          paper: {
+            component: 'aside',
+            'aria-label': 'LAPATO Copiloto',
+            sx: { width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column' },
+          },
+        }}
+      >
+        {conteudo}
+      </Drawer>
+    );
+  }
+
+  return (
+    <Box
+      component="aside"
+      aria-label="LAPATO Copiloto"
+      sx={{
+        // 30% da tela, conforme M17 seção 8.
+        width: shell.copilotoLargura,
+        minWidth: 300,
+        display: 'flex',
+        flexDirection: 'column',
+        borderLeft: '1px solid',
+        borderColor: 'divider',
+        backgroundColor: 'background.paper',
+      }}
+    >
+      {conteudo}
     </Box>
   );
 }

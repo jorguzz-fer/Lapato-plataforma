@@ -1,7 +1,10 @@
 import { StrictMode, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import CircularProgress from '@mui/material/CircularProgress';
+import Box from '@mui/material/Box';
 import type { EstagioSessao } from '@lapato/shared';
+import { ProvedorLapato } from '@lapato/ui';
 import { api, observarEstagio, type Sessao } from './api';
 import { Shell } from './componentes/Shell';
 import { Entrar } from './paginas/Entrar';
@@ -64,7 +67,7 @@ function App() {
   }, [irPara]);
 
   if (estagio === 'carregando') {
-    return <p className="p-6 rotulo">Carregando…</p>;
+    return <Carregando />;
   }
 
   if (estagio === 'anonimo') {
@@ -94,7 +97,7 @@ function App() {
   }
 
   if (!sessao) {
-    return <p className="p-6 rotulo">Carregando…</p>;
+    return <Carregando />;
   }
 
   const sair = () => irPara('anonimo');
@@ -156,10 +159,20 @@ function VoltarAoSistema({
   return <>{children(() => navegar('/casos'))}</>;
 }
 
+function Carregando() {
+  return (
+    <Box sx={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
+      <CircularProgress size={28} />
+    </Box>
+  );
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <ProvedorLapato>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </ProvedorLapato>
   </StrictMode>,
 );

@@ -1,6 +1,23 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ETAPA, type AlertaPrazo } from '@lapato/shared';
+import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import MenuItem from '@mui/material/MenuItem';
+import Skeleton from '@mui/material/Skeleton';
+import Stack from '@mui/material/Stack';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import TextField from '@mui/material/TextField';
+import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
+import BlockOutlined from '@mui/icons-material/BlockOutlined';
+import InboxOutlined from '@mui/icons-material/InboxOutlined';
+import { ETAPA } from '@lapato/shared';
+import { IndicadorPrazo } from '@lapato/ui';
 import { api, type CasoNaFila } from '../api';
 
 /**
@@ -8,18 +25,10 @@ import { api, type CasoNaFila } from '../api';
  *
  * "Onde o caso esta, em que etapa, o que falta, quem e responsavel, se ha
  * pendencia e se esta no prazo."
+ *
+ * O indicador de prazo vem de `@lapato/ui` justamente porque o M07 exige que ele
+ * nao dependa apenas de cor - a regra mora no componente, nao nesta tela.
  */
-
-/**
- * M07 exige indicadores que **nao dependam exclusivamente de cores** - por
- * acessibilidade. Cada alerta tem cor, simbolo e rotulo textual.
- */
-const ALERTA: Record<AlertaPrazo, { rotulo: string; simbolo: string; cor: string }> = {
-  normal: { rotulo: 'No prazo', simbolo: '●', cor: 'var(--lapato-sucesso)' },
-  atencao: { rotulo: 'Atenção', simbolo: '▲', cor: 'var(--lapato-atencao)' },
-  critico: { rotulo: 'Crítico', simbolo: '◆', cor: 'var(--lapato-perigo)' },
-  atrasado: { rotulo: 'Atrasado', simbolo: '■', cor: 'var(--lapato-perigo)' },
-};
 
 const ETAPA_LABEL: Record<string, string> = {
   aguardando_recebimento: 'Aguardando recebimento',
@@ -31,6 +40,8 @@ const ETAPA_LABEL: Record<string, string> = {
   aguardando_assinatura: 'Aguardando assinatura',
   liberado: 'Liberado',
 };
+
+const COLUNAS = ['Registro', 'Paciente', 'Cliente', 'Serviço', 'Etapa', 'Prazo'];
 
 export function CentralDeCasos() {
   const [casos, setCasos] = useState<CasoNaFila[]>([]);
@@ -46,96 +57,120 @@ export function CentralDeCasos() {
   }, [etapa]);
 
   return (
-    <section>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold">Central de Casos</h1>
+    <Box component="section">
+      <Stack
+        direction="row"
+        sx={{ mb: 2.5, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}
+      >
+        <Box>
+          <Typography variant="h2">Central de Casos</Typography>
+          <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+            {carregando
+              ? 'Carregando…'
+              : `${casos.length} ${casos.length === 1 ? 'caso' : 'casos'}${etapa ? ' nesta etapa' : ''}`}
+          </Typography>
+        </Box>
 
-        <label className="flex items-center gap-2 text-xs">
-          <span className="rotulo">Etapa</span>
-          <select
-            value={etapa}
-            onChange={(e) => setEtapa(e.target.value)}
-            className="rounded border px-2 py-1"
-            style={{ borderColor: 'var(--lapato-borda)', background: 'var(--lapato-superficie)' }}
-          >
-            <option value="">Todas</option>
-            {ETAPA.map((e) => (
-              <option key={e} value={e}>
-                {ETAPA_LABEL[e] ?? e}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+        <TextField
+          select
+          label="Etapa"
+          value={etapa}
+          onChange={(e) => setEtapa(e.target.value)}
+          sx={{ minWidth: 230 }}
+        >
+          <MenuItem value="">Todas</MenuItem>
+          {ETAPA.map((e) => (
+            <MenuItem key={e} value={e}>
+              {ETAPA_LABEL[e] ?? e}
+            </MenuItem>
+          ))}
+        </TextField>
+      </Stack>
 
-      {carregando && <p className="rotulo">Carregando…</p>}
+      <Card>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                {COLUNAS.map((c) => (
+                  <TableCell key={c}>{c}</TableCell>
+                ))}
+              </TableRow>
+            </TableHead>
 
-      {!carregando && casos.length === 0 && (
-        <p className="rotulo">Nenhum caso nesta visão.</p>
-      )}
+            <TableBody>
+              {carregando &&
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i}>
+                    {COLUNAS.map((c) => (
+                      <TableCell key={c}>
+                        <Skeleton />
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
 
-      {casos.length > 0 && (
-        <div className="cartao overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b" style={{ borderColor: 'var(--lapato-borda)' }}>
-                <th className="p-3 rotulo">Registro</th>
-                <th className="p-3 rotulo">Paciente</th>
-                <th className="p-3 rotulo">Cliente</th>
-                <th className="p-3 rotulo">Exame</th>
-                <th className="p-3 rotulo">Etapa</th>
-                <th className="p-3 rotulo">Previsão</th>
-                <th className="p-3 rotulo">Prazo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {casos.map((c) => {
-                const alerta = ALERTA[c.alertaPrazo];
-                return (
-                  <tr
-                    key={c.casoId}
-                    className="border-b last:border-0"
-                    style={{ borderColor: 'var(--lapato-borda)' }}
+              {!carregando && casos.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={COLUNAS.length} sx={{ py: 8, textAlign: 'center' }}>
+                    {/* Estado vazio desenhado: sem ele, a tabela vazia parece
+                        erro de carregamento. */}
+                    <InboxOutlined sx={{ fontSize: 40, color: 'text.disabled', mb: 1 }} />
+                    <Typography sx={{ fontWeight: 600 }}>
+                      {etapa ? 'Nenhum caso nesta etapa' : 'Nenhum caso cadastrado'}
+                    </Typography>
+                    <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+                      {etapa
+                        ? 'Troque o filtro para ver os demais.'
+                        : 'Os casos aparecem aqui assim que forem cadastrados.'}
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+
+              {!carregando &&
+                casos.map((caso) => (
+                  <TableRow
+                    key={caso.casoId}
+                    hover
+                    component={Link}
+                    to={`/casos/${caso.casoId}`}
+                    sx={{ textDecoration: 'none', display: 'table-row', cursor: 'pointer' }}
                   >
-                    <td className="p-3 font-mono text-xs">
-                      <Link to={`/casos/${c.casoId}`} className="underline">
-                        {c.identificador}
-                      </Link>
-                    </td>
-                    <td className="p-3">{c.paciente}</td>
-                    <td className="p-3">{c.cliente}</td>
-                    <td className="p-3">{c.servico}</td>
-                    <td className="p-3">
-                      {ETAPA_LABEL[c.etapa] ?? c.etapa}
-                      {c.bloqueado && (
-                        <span
-                          className="ml-2 rounded px-1.5 py-0.5 text-[0.7rem] text-white"
-                          style={{ background: 'var(--lapato-perigo)' }}
+                    <TableCell>
+                      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+                        <Typography
+                          sx={{
+                            fontWeight: 600,
+                            color: 'primary.main',
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
                         >
-                          bloqueado
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3 text-xs">
-                      {c.previsaoLiberacao
-                        ? new Date(c.previsaoLiberacao).toLocaleDateString('pt-BR')
-                        : '—'}
-                    </td>
-                    <td className="p-3">
-                      <span className="inline-flex items-center gap-1 text-xs">
-                        <span aria-hidden style={{ color: alerta.cor }}>
-                          {alerta.simbolo}
-                        </span>
-                        {alerta.rotulo}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+                          {caso.identificador}
+                        </Typography>
+                        {caso.bloqueado && (
+                          <Tooltip title="Caso bloqueado: há pendência impedindo o fluxo">
+                            <BlockOutlined sx={{ fontSize: 15, color: 'error.main' }} />
+                          </Tooltip>
+                        )}
+                      </Stack>
+                    </TableCell>
+                    <TableCell>{caso.paciente}</TableCell>
+                    <TableCell sx={{ color: 'text.secondary' }}>{caso.cliente}</TableCell>
+                    <TableCell sx={{ color: 'text.secondary' }}>{caso.servico}</TableCell>
+                    <TableCell>{ETAPA_LABEL[caso.etapa] ?? caso.etapa}</TableCell>
+                    <TableCell>
+                      <IndicadorPrazo
+                        estado={caso.alertaPrazo}
+                        previsao={caso.previsaoLiberacao}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Card>
+    </Box>
   );
 }

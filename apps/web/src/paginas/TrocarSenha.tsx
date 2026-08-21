@@ -1,16 +1,19 @@
 import { useState, type FormEvent } from 'react';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
 import { SENHA_TAMANHO_MINIMO, type EstagioSessao } from '@lapato/shared';
+import { CampoSenha, MolduraEntrada } from '@lapato/ui';
 import { api, ErroApi } from '../api';
-import { CampoSenha } from '../componentes/CampoSenha';
-import { CartaoDeEntrada } from '../componentes/CartaoDeEntrada';
 
 /**
  * Troca da propria senha.
  *
  * Serve a dois momentos: a troca obrigatoria do primeiro acesso (senha definida
  * pelo provisionamento) e a troca voluntaria depois. `obrigatoria` muda apenas o
- * texto e a saida - no caminho obrigatorio nao ha "cancelar", porque nao existe
- * para onde voltar.
+ * texto - no caminho obrigatorio nao ha para onde voltar.
  */
 export function TrocarSenha({
   obrigatoria,
@@ -49,48 +52,63 @@ export function TrocarSenha({
   }
 
   return (
-    <CartaoDeEntrada
+    <MolduraEntrada
       titulo={obrigatoria ? 'Defina sua senha' : 'Trocar senha'}
       descricao={
         obrigatoria
-          ? 'Sua senha atual foi definida por outra pessoa durante a instalação. Escolha uma senha que só você conheça para continuar.'
+          ? 'Sua senha atual foi definida por outra pessoa durante a instalação. Escolha uma que só você conheça para continuar.'
           : undefined
       }
-      erro={erro}
-      aoSubmeter={submeter}
-      acao={enviando ? 'Salvando…' : 'Salvar senha'}
-      enviando={enviando || !pronto}
-      rodape={
-        <p className="rotulo">
-          As demais sessões desta conta serão encerradas.
-        </p>
-      }
     >
-      <CampoSenha
-        rotulo={obrigatoria ? 'Senha recebida' : 'Senha atual'}
-        valor={senhaAtual}
-        aoMudar={setSenhaAtual}
-        autoComplete="current-password"
-        autoFocus
-      />
+      <Box component="form" onSubmit={submeter} noValidate>
+        <Stack spacing={2.5}>
+          <CampoSenha
+            rotulo={obrigatoria ? 'Senha recebida' : 'Senha atual'}
+            valor={senhaAtual}
+            aoMudar={setSenhaAtual}
+            autoComplete="current-password"
+            autoFocus
+          />
 
-      <CampoSenha
-        rotulo="Nova senha"
-        valor={senhaNova}
-        aoMudar={setSenhaNova}
-        autoComplete="new-password"
-        minLength={SENHA_TAMANHO_MINIMO}
-        ajuda={`Mínimo de ${SENHA_TAMANHO_MINIMO} caracteres. Comprimento protege mais que símbolos.`}
-        erro={curta ? `Faltam ${SENHA_TAMANHO_MINIMO - senhaNova.length} caracteres.` : undefined}
-      />
+          <CampoSenha
+            rotulo="Nova senha"
+            valor={senhaNova}
+            aoMudar={setSenhaNova}
+            autoComplete="new-password"
+            minLength={SENHA_TAMANHO_MINIMO}
+            ajuda={`Mínimo de ${SENHA_TAMANHO_MINIMO} caracteres. Comprimento protege mais que símbolos.`}
+            erro={curta ? `Faltam ${SENHA_TAMANHO_MINIMO - senhaNova.length} caracteres.` : undefined}
+          />
 
-      <CampoSenha
-        rotulo="Repita a nova senha"
-        valor={confirmacao}
-        aoMudar={setConfirmacao}
-        autoComplete="new-password"
-        erro={divergente ? 'As senhas não coincidem.' : undefined}
-      />
-    </CartaoDeEntrada>
+          <CampoSenha
+            rotulo="Repita a nova senha"
+            valor={confirmacao}
+            aoMudar={setConfirmacao}
+            autoComplete="new-password"
+            erro={divergente ? 'As senhas não coincidem.' : undefined}
+          />
+
+          {erro && (
+            <Alert severity="error" sx={{ fontSize: 13 }}>
+              {erro}
+            </Alert>
+          )}
+
+          <Button
+            type="submit"
+            variant="contained"
+            size="large"
+            fullWidth
+            disabled={enviando || !pronto}
+          >
+            {enviando ? 'Salvando…' : 'Salvar senha'}
+          </Button>
+
+          <Typography sx={{ fontSize: 11.5, color: 'text.secondary', textAlign: 'center' }}>
+            As demais sessões desta conta serão encerradas.
+          </Typography>
+        </Stack>
+      </Box>
+    </MolduraEntrada>
   );
 }

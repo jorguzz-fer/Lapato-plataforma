@@ -1,6 +1,26 @@
 import { useState, type ReactNode } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import Divider from '@mui/material/Divider';
+import IconButton from '@mui/material/IconButton';
+import List from '@mui/material/List';
+import ListItemButton from '@mui/material/ListItemButton';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
+import Stack from '@mui/material/Stack';
+import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
+import DarkMode from '@mui/icons-material/DarkModeOutlined';
+import LightMode from '@mui/icons-material/LightModeOutlined';
+import Logout from '@mui/icons-material/LogoutOutlined';
+import AddCircle from '@mui/icons-material/AddCircleOutlineOutlined';
+import ViewList from '@mui/icons-material/ViewListOutlined';
+import Password from '@mui/icons-material/PasswordOutlined';
+import Security from '@mui/icons-material/SecurityOutlined';
+import { shell } from '@lapato/design-tokens';
 import { MODULO_LABEL, MODULOS } from '@lapato/shared';
+import { useTema } from '@lapato/ui';
 import { api, type Sessao } from '../api';
 import { PainelCopiloto, type CartaoPainel } from './PainelCopiloto';
 
@@ -15,8 +35,18 @@ import { PainelCopiloto, type CartaoPainel } from './PainelCopiloto';
  */
 
 const MENU = [
-  { para: '/casos', modulo: MODULOS.M07_RASTREAMENTO, permissao: 'fluxo:visualizar' },
-  { para: '/casos/novo', modulo: MODULOS.M05_RECEBIMENTO, permissao: 'caso:criar' },
+  {
+    para: '/casos',
+    icone: <ViewList fontSize="small" />,
+    rotulo: MODULO_LABEL[MODULOS.M07_RASTREAMENTO],
+    permissao: 'fluxo:visualizar',
+  },
+  {
+    para: '/casos/novo',
+    icone: <AddCircle fontSize="small" />,
+    rotulo: 'Novo caso',
+    permissao: 'caso:criar',
+  },
 ] as const;
 
 interface Props {
@@ -31,14 +61,9 @@ interface Props {
 
 export function Shell({ sessao, aoSair, modulo, etapa, cartoes, children }: Props) {
   const [painelRecolhido, setPainelRecolhido] = useState(false);
-  const [tema, setTema] = useState<'claro' | 'escuro'>('claro');
+  const { modo, alternar } = useTema();
   const navegar = useNavigate();
-
-  function alternarTema() {
-    const novo = tema === 'claro' ? 'escuro' : 'claro';
-    setTema(novo);
-    document.documentElement.setAttribute('data-tema', novo);
-  }
+  const { pathname } = useLocation();
 
   async function sair() {
     await api.post('/auth/logout');
@@ -47,100 +72,150 @@ export function Shell({ sessao, aoSair, modulo, etapa, cartoes, children }: Prop
     aoSair();
   }
 
+  const itemSx = {
+    borderRadius: 1.5,
+    mb: 0.25,
+    '&.Mui-selected': {
+      backgroundColor: 'primary.50',
+      color: 'primary.main',
+      '& .MuiListItemIcon-root': { color: 'primary.main' },
+      '& .MuiListItemText-primary': { fontWeight: 600 },
+    },
+  };
+
+  /**
+   * O item ativo sai do caminho da URL, e nao do `NavLink`: `selected` do MUI ja
+   * carrega o estado visual e o `aria-selected`, enquanto o `className` do
+   * `NavLink` teria de ser reconciliado com as classes do proprio componente.
+   */
+  const ativo = (para: string) => pathname === para;
+
   return (
-    <div className="flex h-screen flex-col">
-      <header
-        className="flex shrink-0 items-center justify-between border-b px-4"
-        style={{
-          height: 'var(--lapato-topbar-altura)',
-          background: 'var(--lapato-topbar-fundo)',
-          borderColor: 'var(--lapato-borda)',
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <Stack
+        component="header"
+        direction="row"
+        sx={{
+          height: `${shell.topbarAltura}px`,
+          flexShrink: 0,
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          px: 3,
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          backgroundColor: 'background.paper',
         }}
       >
-        <div className="flex items-center gap-3">
-          <span className="text-lg font-bold" style={{ color: 'var(--lapato-primaria)' }}>
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'baseline' }}>
+          <Typography sx={{ fontSize: 20, fontWeight: 800, color: 'primary.main' }}>
             LAPATO
-          </span>
-          <span className="rotulo hidden sm:inline">
-            Gestão Anatomopatológica Veterinária
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={alternarTema}
-            className="rounded px-3 py-1.5 text-xs"
-            aria-label={`Mudar para tema ${tema === 'claro' ? 'escuro' : 'claro'}`}
+          </Typography>
+          <Typography
+            sx={{ fontSize: 12, color: 'text.secondary', display: { xs: 'none', sm: 'block' } }}
           >
-            {tema === 'claro' ? '🌙' : '☀️'}
-          </button>
-          <button type="button" onClick={sair} className="rounded px-3 py-1.5 text-xs underline">
-            Sair
-          </button>
-        </div>
-      </header>
+            Gestão Anatomopatológica Veterinária
+          </Typography>
+        </Stack>
 
-      <div className="flex min-h-0 flex-1">
-        <nav
-          className="hidden shrink-0 border-r p-3 md:block"
-          style={{
-            width: 'var(--lapato-sidebar-largura)',
-            background: 'var(--lapato-sidebar-fundo)',
-            borderColor: 'var(--lapato-sidebar-borda)',
-          }}
+        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+          <Tooltip title={`Mudar para tema ${modo === 'claro' ? 'escuro' : 'claro'}`}>
+            <IconButton onClick={alternar} size="small">
+              {modo === 'claro' ? <DarkMode fontSize="small" /> : <LightMode fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title="Sair">
+            <IconButton onClick={sair} size="small" aria-label="Sair">
+              <Logout fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Stack>
+      </Stack>
+
+      <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        <Box
+          component="nav"
           aria-label="Navegação principal"
+          sx={{
+            width: `${shell.sidebarLargura}px`,
+            flexShrink: 0,
+            p: 1.5,
+            display: { xs: 'none', md: 'block' },
+            borderRight: '1px solid',
+            borderColor: 'divider',
+            backgroundColor: 'background.paper',
+            overflowY: 'auto',
+          }}
         >
-          <ul className="space-y-1">
-            {MENU.filter((item) => sessao.permissoes.includes(item.permissao)).map((item) => (
-              <li key={item.para}>
-                <NavLink
-                  to={item.para}
-                  end
-                  className={({ isActive }) =>
-                    `block rounded px-3 py-2 text-sm ${isActive ? 'font-semibold' : ''}`
-                  }
-                  style={({ isActive }) => ({
-                    background: isActive ? 'var(--lapato-primaria-clara)' : 'transparent',
-                    color: isActive
-                      ? 'var(--lapato-primaria)'
-                      : 'var(--lapato-sidebar-item)',
-                  })}
-                >
-                  {item.para === '/casos/novo'
-                    ? 'Novo caso'
-                    : MODULO_LABEL[item.modulo]}
-                </NavLink>
-              </li>
+          <List disablePadding>
+            {MENU.filter((i) => sessao.permissoes.includes(i.permissao)).map((item) => (
+              <ListItemButton
+                key={item.para}
+                component={Link}
+                to={item.para}
+                selected={ativo(item.para)}
+                sx={itemSx}
+              >
+                <ListItemIcon sx={{ minWidth: 34 }}>{item.icone}</ListItemIcon>
+                <ListItemText
+                  primary={item.rotulo}
+                />
+              </ListItemButton>
             ))}
-          </ul>
+          </List>
 
-          <div className="mt-4 space-y-1 border-t pt-3" style={{ borderColor: 'var(--lapato-sidebar-borda)' }}>
-            <NavLink to="/conta/senha" className="block rounded px-3 py-2 text-sm">
-              Trocar senha
-            </NavLink>
+          <Divider sx={{ my: 1.5 }} />
+
+          <Typography
+            sx={{ px: 2, pb: 0.5, fontSize: 11, color: 'text.secondary', fontWeight: 600 }}
+          >
+            CONTA
+          </Typography>
+
+          <List disablePadding>
+            <ListItemButton
+              component={Link}
+              to="/conta/senha"
+              selected={ativo('/conta/senha')}
+              sx={itemSx}
+            >
+              <ListItemIcon sx={{ minWidth: 34 }}>
+                <Password fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Trocar senha" />
+            </ListItemButton>
+
             {!sessao.mfaAtivo && (
-              /* Blueprint secao 6: oferecer o segundo fator a quem ainda nao tem,
-                 mesmo quando o perfil nao o torna obrigatorio. */
-              <NavLink to="/conta/mfa" className="block rounded px-3 py-2 text-sm">
-                Ativar verificação em 2 etapas
-              </NavLink>
+              /* Blueprint seção 6: oferecer o segundo fator a quem ainda não
+                 tem, mesmo quando o perfil não o torna obrigatório. */
+              <ListItemButton
+                component={Link}
+                to="/conta/mfa"
+                selected={ativo('/conta/mfa')}
+                sx={itemSx}
+              >
+                <ListItemIcon sx={{ minWidth: 34 }}>
+                  <Security fontSize="small" />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Ativar 2 etapas"
+                />
+              </ListItemButton>
             )}
-          </div>
+          </List>
 
           {sessao.exigeSupervisao && (
             /* M02/M11: o perfil em supervisão precisa saber disso o tempo todo. */
-            <p
-              className="mt-4 rounded p-2 text-xs"
-              style={{ background: 'var(--lapato-primaria-clara)' }}
-            >
-              Perfil sob supervisão: elaboração permitida, assinatura e liberação exigem
+            <Alert severity="info" sx={{ mt: 2, fontSize: 11.5 }}>
+              Perfil sob supervisão: elaboração permitida; assinatura e liberação exigem
               responsável.
-            </p>
+            </Alert>
           )}
-        </nav>
+        </Box>
 
-        <main className="min-w-0 flex-1 overflow-y-auto p-4">{children}</main>
+        <Box component="main" sx={{ flex: 1, minWidth: 0, overflowY: 'auto', p: 3 }}>
+          {children}
+        </Box>
 
         <PainelCopiloto
           modulo={modulo}
@@ -149,7 +224,7 @@ export function Shell({ sessao, aoSair, modulo, etapa, cartoes, children }: Prop
           recolhido={painelRecolhido}
           onAlternar={() => setPainelRecolhido((v) => !v)}
         />
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }

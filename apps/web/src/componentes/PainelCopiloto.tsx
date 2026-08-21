@@ -1,4 +1,13 @@
 import { useEffect, useState } from 'react';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import ButtonBase from '@mui/material/ButtonBase';
+import IconButton from '@mui/material/IconButton';
+import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
+import ChevronRight from '@mui/icons-material/ChevronRight';
+import AutoAwesome from '@mui/icons-material/AutoAwesomeOutlined';
+import { nivelIa, raio, shell } from '@lapato/design-tokens';
 import type { NivelIa } from '@lapato/shared';
 import { api, type StatusIa } from '../api';
 
@@ -15,29 +24,15 @@ import { api, type StatusIa } from '../api';
  *   normalmente (secoes 110-112).
  */
 
-const CORES_NIVEL: Record<NivelIa, string> = {
-  informacao: 'border-l-ia-informacao',
-  sugestao: 'border-l-ia-sugestao',
-  atencao: 'border-l-ia-atencao',
-  critico: 'border-l-ia-critico',
-};
-
 /**
- * M07 exige indicadores que **nao dependam exclusivamente de cores**. Cada
- * nivel carrega tambem um simbolo e um rotulo textual.
+ * M07 exige indicadores que **nao dependam exclusivamente de cor**. Cada nivel
+ * carrega cor, simbolo e rotulo textual - os tres juntos.
  */
-const SIMBOLO_NIVEL: Record<NivelIa, string> = {
-  informacao: 'i',
-  sugestao: '✦',
-  atencao: '!',
-  critico: '⨯',
-};
-
-const ROTULO_NIVEL: Record<NivelIa, string> = {
-  informacao: 'Informação',
-  sugestao: 'Sugestão',
-  atencao: 'Atenção',
-  critico: 'Crítico',
+const NIVEL: Record<NivelIa, { cor: string; simbolo: string; rotulo: string }> = {
+  informacao: { cor: nivelIa.informacao, simbolo: 'i', rotulo: 'Informação' },
+  sugestao: { cor: nivelIa.sugestao, simbolo: '✦', rotulo: 'Sugestão' },
+  atencao: { cor: nivelIa.atencao, simbolo: '!', rotulo: 'Atenção' },
+  critico: { cor: nivelIa.critico, simbolo: '⨯', rotulo: 'Crítico' },
 };
 
 export interface CartaoPainel {
@@ -70,101 +65,157 @@ export function PainelCopiloto({ modulo, etapa, cartoes = [], recolhido, onAlter
 
   if (recolhido) {
     return (
-      <button
-        type="button"
+      <ButtonBase
         onClick={onAlternar}
         aria-label="Abrir painel do Copiloto"
-        className="fixed right-0 top-1/2 -translate-y-1/2 rounded-l-md border border-r-0 px-2 py-6 text-xs"
-        style={{
-          background: 'var(--lapato-superficie)',
-          borderColor: 'var(--lapato-borda)',
+        sx={{
+          position: 'fixed',
+          right: 0,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          px: 1,
+          py: 3,
+          gap: 1,
+          flexDirection: 'column',
+          borderRadius: `${raio.medio}px 0 0 ${raio.medio}px`,
+          border: '1px solid',
+          borderRight: 'none',
+          borderColor: 'divider',
+          backgroundColor: 'background.paper',
+          boxShadow: 3,
+          zIndex: 1200,
         }}
       >
-        <span className="[writing-mode:vertical-rl]">Copiloto</span>
-      </button>
+        <AutoAwesome sx={{ fontSize: 16, color: 'primary.main' }} />
+        <Typography sx={{ fontSize: 11.5, writingMode: 'vertical-rl' }}>Copiloto</Typography>
+      </ButtonBase>
     );
   }
 
   return (
-    <aside
-      /* 30% da tela, conforme M17 seção 8. */
-      className="flex h-full w-[30%] min-w-[300px] flex-col border-l"
-      style={{ background: 'var(--lapato-superficie)', borderColor: 'var(--lapato-borda)' }}
+    <Box
+      component="aside"
       aria-label="LAPATO Copiloto"
+      sx={{
+        // 30% da tela, conforme M17 seção 8.
+        width: shell.copilotoLargura,
+        minWidth: 300,
+        display: 'flex',
+        flexDirection: 'column',
+        borderLeft: '1px solid',
+        borderColor: 'divider',
+        backgroundColor: 'background.paper',
+      }}
     >
-      <header
-        className="flex items-center justify-between border-b px-4 py-3"
-        style={{ borderColor: 'var(--lapato-borda)' }}
+      <Stack
+        direction="row"
+        component="header"
+        sx={{
+          px: 2,
+          py: 1.5,
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+        }}
       >
-        <div>
-          <h2 className="text-sm font-semibold">LAPATO Copiloto</h2>
-          <p className="rotulo">{etapa ? `${modulo} · ${etapa}` : modulo}</p>
-        </div>
-        <button
-          type="button"
-          onClick={onAlternar}
-          aria-label="Recolher painel do Copiloto"
-          className="rounded px-2 py-1 text-lg leading-none hover:bg-cinza-200"
-        >
-          ›
-        </button>
-      </header>
+        <Box>
+          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+            <AutoAwesome sx={{ fontSize: 15, color: 'primary.main' }} />
+            <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>LAPATO Copiloto</Typography>
+          </Stack>
+          <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
+            {etapa ? `${modulo} · ${etapa}` : modulo}
+          </Typography>
+        </Box>
 
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+        <IconButton onClick={onAlternar} size="small" aria-label="Recolher painel do Copiloto">
+          <ChevronRight fontSize="small" />
+        </IconButton>
+      </Stack>
+
+      <Stack spacing={1.5} sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
         {status && !status.disponivel && (
           /**
            * M17 seções 110-112: o indicador é obrigatório, e o trabalho segue.
            * A ausência do Copiloto não impede cadastrar, descrever, diagnosticar,
            * assinar ou liberar.
            */
-          <div
-            className="rounded border border-dashed p-3 text-xs"
-            style={{ borderColor: 'var(--lapato-borda)', color: 'var(--lapato-texto-suave)' }}
-            role="status"
-          >
-            <strong className="block">Assistência de IA temporariamente indisponível.</strong>
-            O trabalho continua normalmente; o LAPATO Guardian permanece ativo.
-          </div>
+          <Alert severity="info" variant="outlined" role="status" sx={{ fontSize: 12 }}>
+            <strong>Assistência de IA temporariamente indisponível.</strong> O trabalho continua
+            normalmente; o LAPATO Guardian permanece ativo.
+          </Alert>
         )}
 
         {cartoes.length === 0 && (
-          <p className="text-xs" style={{ color: 'var(--lapato-texto-suave)' }}>
+          <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
             Nenhum apontamento para esta etapa.
-          </p>
+          </Typography>
         )}
 
-        {cartoes.map((c) => (
-          <article
-            key={c.id}
-            className={`rounded border border-l-4 p-3 ${CORES_NIVEL[c.nivel]}`}
-            style={{ borderColor: 'var(--lapato-borda)' }}
-          >
-            <div className="mb-1 flex items-center gap-2">
-              <span aria-hidden className="text-xs font-bold">
-                {SIMBOLO_NIVEL[c.nivel]}
-              </span>
-              <span className="rotulo">{ROTULO_NIVEL[c.nivel]}</span>
-            </div>
+        {cartoes.map((c) => {
+          const n = NIVEL[c.nivel];
+          return (
+            <Box
+              key={c.id}
+              component="article"
+              sx={{
+                p: 1.75,
+                borderRadius: `${raio.medio}px`,
+                border: '1px solid',
+                borderColor: 'divider',
+                // A barra lateral colorida identifica o nível de relance; o
+                // símbolo e o rótulo abaixo garantem que não seja só cor.
+                borderLeft: `4px solid ${n.cor}`,
+              }}
+            >
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.5 }}>
+                <Box
+                  aria-hidden
+                  sx={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: '50%',
+                    display: 'grid',
+                    placeItems: 'center',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#fff',
+                    backgroundColor: n.cor,
+                  }}
+                >
+                  {n.simbolo}
+                </Box>
+                <Typography
+                  sx={{ fontSize: 11, fontWeight: 600, color: n.cor, textTransform: 'uppercase' }}
+                >
+                  {n.rotulo}
+                </Typography>
+              </Stack>
 
-            <h3 className="text-sm font-medium">{c.titulo}</h3>
-            <p className="mt-1 text-xs" style={{ color: 'var(--lapato-texto-suave)' }}>
-              {c.corpo}
-            </p>
+              <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{c.titulo}</Typography>
+              <Typography sx={{ fontSize: 12.5, color: 'text.secondary', mt: 0.5 }}>
+                {c.corpo}
+              </Typography>
 
-            {/**
-             * M17 seção 15: a sugestão precisa dizer que veio da IA, com quais
-             * dados, de quais fontes, e se houve inferência - para não ser
-             * confundida com dado observado.
-             */}
-            {(c.fontes?.length || c.inferencia) && (
-              <footer className="mt-2 text-[0.7rem]" style={{ color: 'var(--lapato-texto-suave)' }}>
-                {c.fontes?.length ? <span>Fontes: {c.fontes.join(', ')}. </span> : null}
-                {c.inferencia ? <span>Contém inferência.</span> : <span>Baseado em dados do caso.</span>}
-              </footer>
-            )}
-          </article>
-        ))}
-      </div>
-    </aside>
+              {/**
+               * M17 seção 15: a sugestão precisa dizer que veio da IA, com quais
+               * dados, de quais fontes, e se houve inferência — para não ser
+               * confundida com dado observado.
+               */}
+              {(c.fontes?.length || c.inferencia) && (
+                <Typography
+                  component="footer"
+                  sx={{ mt: 1, fontSize: 11, color: 'text.secondary' }}
+                >
+                  {c.fontes?.length ? `Fontes: ${c.fontes.join(', ')}. ` : null}
+                  {c.inferencia ? 'Contém inferência.' : 'Baseado em dados do caso.'}
+                </Typography>
+              )}
+            </Box>
+          );
+        })}
+      </Stack>
+    </Box>
   );
 }

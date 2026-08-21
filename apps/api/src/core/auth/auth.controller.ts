@@ -171,6 +171,7 @@ export class AuthController {
       unidadeId: ctx.unidadeId,
       setorId: ctx.setorId,
       clienteId: ctx.clienteId,
+      laboratorioApoioId: ctx.laboratorioApoioId,
       exigeSupervisao: ctx.exigeSupervisao,
       permissoes: [...ctx.permissoes].sort(),
       unidadesPermitidas: [...ctx.unidadesPermitidas],

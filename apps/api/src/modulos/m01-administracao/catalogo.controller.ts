@@ -66,6 +66,30 @@ export class CatalogoController {
     });
   }
 
+  @Get('laboratorios-apoio')
+  @ExigePermissao(PERMISSOES.PROCESSAMENTO_ENVIAR_LOTE)
+  @ApiOperation({
+    summary: 'Laboratórios de apoio ativos',
+    description:
+      'Destinos possíveis de um lote (M09). A permissão é a de enviar lote — ' +
+      'quem não envia não precisa da lista.',
+  })
+  async laboratoriosApoio() {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      return tx
+        .select({ id: unidade.id, nome: unidade.nome, codigo: unidade.codigo })
+        .from(unidade)
+        .where(
+          and(
+            eq(unidade.tenantId, ctx.tenantId),
+            eq(unidade.tipo, 'laboratorio_apoio'),
+            isNull(unidade.inativadoEm),
+          ),
+        );
+    });
+  }
+
   @Get('clientes')
   @ExigePermissao(PERMISSOES.CLIENTE_VISUALIZAR)
   @ApiOperation({ summary: 'Clientes ativos' })

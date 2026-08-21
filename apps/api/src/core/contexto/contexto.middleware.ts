@@ -51,6 +51,7 @@ export class ContextoMiddleware implements NestMiddleware {
       unidadeId: sessao.unidadeId,
       setorId: sessao.setorId,
       clienteId: sessao.clienteId,
+      laboratorioApoioId: sessao.laboratorioApoioId,
       permissoes: sessao.permissoes.permissoes,
       unidadesPermitidas: sessao.permissoes.unidadesPermitidas,
       exigeSupervisao: sessao.permissoes.exigeSupervisao,

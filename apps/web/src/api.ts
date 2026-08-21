@@ -90,6 +90,12 @@ export interface Sessao {
   permissoes: string[];
   /** Falso quando a conta ainda não cadastrou o segundo fator. */
   mfaAtivo: boolean;
+  /**
+   * M09: preenchido quando a unidade do usuário é um laboratório de apoio.
+   * O front usa para escolher a tela inicial; o isolamento de verdade é do
+   * servidor, que filtra os lotes pela mesma informação.
+   */
+  laboratorioApoioId: string | null;
 }
 
 export interface CasoNaFila {
@@ -194,6 +200,12 @@ export interface CasoCriado {
 }
 
 // --- M09: processamento terceirizado ----------------------------------------
+
+export interface LaboratorioApoio {
+  id: string;
+  nome: string;
+  codigo: string | null;
+}
 
 export interface CassetePendente {
   id: string;

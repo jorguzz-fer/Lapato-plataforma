@@ -394,8 +394,23 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
     expect(cassetes.body).toHaveLength(2);
     casseteId = cassetes.body[0].id;
 
+    const laboratorios = await req('GET', '/catalogo/laboratorios-apoio');
+    expect(laboratorios.status).toBe(200);
+    expect(laboratorios.body.length).toBeGreaterThan(0);
+
+    /**
+     * Sem destino o lote e invisivel para todo parceiro - carta sem endereco.
+     * Por isso o campo deixou de ser opcional quando o portal externo passou a
+     * filtrar os lotes por laboratorio.
+     */
+    const semDestino = await req('POST', '/processamento/lotes', {
+      casseteIds: cassetes.body.map((c: any) => c.id),
+    });
+    expect(semDestino.status).toBe(400);
+
     const lote = await req('POST', '/processamento/lotes', {
       casseteIds: cassetes.body.map((c: any) => c.id),
+      laboratorioApoioId: laboratorios.body[0].id,
     });
 
     expect(lote.status, JSON.stringify(lote.body)).toBe(201);
@@ -445,6 +460,57 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
     const resumo = lista.body.find((l: any) => l.id === loteId);
     expect(resumo.totalCassetes).toBe(2);
     expect(resumo.divergencias).toBe(1);
+  });
+
+  test('7b. o parceiro só enxerga o próprio lote, e nada antes do envio', async () => {
+    /**
+     * M02, verificacao do bootstrap: "usuario externo do laboratorio de apoio so
+     * ve seus lotes de cassetes". O parceiro esta autenticado desde o teste
+     * anterior.
+     */
+    /**
+     * A chave do isolamento e derivada do TIPO da unidade no banco, nunca de
+     * algo que o cliente envie. Este e o mecanismo novo, entao e ele que precisa
+     * ser medido diretamente.
+     */
+    const euParceiro = await req('GET', '/auth/eu');
+    expect(euParceiro.body.laboratorioApoioId).toBeTruthy();
+
+    const lotes = await req('GET', '/processamento/lotes');
+    expect(lotes.status).toBe(200);
+    expect(lotes.body.some((l: any) => l.id === loteId)).toBe(true);
+
+    /**
+     * A fila de pendentes traz caso e nome de paciente de toda a instituicao.
+     * Material ainda nao enviado nao e assunto do fornecedor.
+     */
+    const pendentes = await req('GET', '/processamento/cassetes-pendentes');
+    expect(pendentes.status).toBe(200);
+    expect(pendentes.body).toHaveLength(0);
+
+    // O parceiro tambem nao monta lote: a permissao nao esta no perfil dele.
+    const tentativaEnvio = await req('POST', '/processamento/lotes', {
+      casseteIds: [casseteId],
+      laboratorioApoioId: '00000000-0000-0000-0000-000000000000',
+    });
+    expect(tentativaEnvio.status).toBe(403);
+
+    // E nao alcanca o dossie do caso: o material e dele, o paciente nao.
+    const dossie = await req('GET', `/casos/${casoId}`);
+    expect(dossie.status).toBe(403);
+
+    /**
+     * O contraste que fecha a prova: quem e interno **nao** recebe a chave de
+     * isolamento, e por isso continua vendo a fila inteira. Sem esta metade, um
+     * `laboratorioApoioId` preenchido para todo mundo passaria despercebido -
+     * e travaria a operacao interna em vez de proteger o parceiro.
+     */
+    await entrar('tecnico@lapato.local');
+    const euInterno = await req('GET', '/auth/eu');
+    expect(euInterno.body.laboratorioApoioId).toBeNull();
+
+    // Devolve a sessao do parceiro: o proximo teste continua de onde o 7 parou.
+    await entrar('apoio@lapato.local');
   });
 
   test('8. laboratório de apoio registra as lâminas produzidas', async () => {

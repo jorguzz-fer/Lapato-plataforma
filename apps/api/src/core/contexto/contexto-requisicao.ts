@@ -26,6 +26,14 @@ export interface ContextoRequisicao {
   /** M03/M04: preenchido quando o usuario e externo, para isolar por cliente. */
   clienteId: string | null;
   /**
+   * M09: preenchido quando a unidade do usuario **e** um laboratorio de apoio.
+   *
+   * Isola o parceiro aos proprios lotes. E derivado do tipo da unidade no banco,
+   * nunca de algo que o cliente envie - pela mesma razao do `tenantId` (ADR
+   * 0002): um campo vindo do request viraria "escolha de quem voce quer ser".
+   */
+  laboratorioApoioId: string | null;
+  /**
    * Ate onde esta sessao chegou no funil de entrada. Rotas de negocio so
    * respondem em `ativa`; o `SessaoGuard` aplica a regra.
    */

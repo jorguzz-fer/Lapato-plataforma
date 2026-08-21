@@ -9,6 +9,7 @@ import {
   loteCassete,
   loteEnvio,
   paciente,
+  unidade,
   type Transacao,
 } from '@lapato/db';
 import { MODULOS, identificadorLamina } from '@lapato/shared';
@@ -52,6 +53,15 @@ export class ProcessamentoService {
   async cassetesPendentes() {
     const ctx = exigirContexto();
 
+    /**
+     * Material ainda nao enviado nao e assunto do parceiro.
+     *
+     * A lista traz nome de paciente e caso de toda a instituicao; devolve-la a
+     * um laboratorio de apoio seria entregar a agenda inteira do laboratorio a
+     * um fornecedor. Ele ve os proprios lotes, e nada antes disso.
+     */
+    if (ctx.laboratorioApoioId) return [];
+
     return this.db.executar(async (tx) =>
       tx
         .select({
@@ -81,10 +91,23 @@ export class ProcessamentoService {
     const ctx = exigirContexto();
 
     return this.db.executar(async (tx) => {
+      /**
+       * M02, verificacao do bootstrap: "usuario externo do laboratorio de apoio
+       * so ve seus lotes de cassetes". O filtro entra na consulta, e nao numa
+       * checagem posterior - assim nao ha caminho em que a linha chegue a ser
+       * lida para depois ser descartada.
+       */
       const lotes = await tx
         .select()
         .from(loteEnvio)
-        .where(eq(loteEnvio.tenantId, ctx.tenantId))
+        .where(
+          ctx.laboratorioApoioId
+            ? and(
+                eq(loteEnvio.tenantId, ctx.tenantId),
+                eq(loteEnvio.laboratorioApoioId, ctx.laboratorioApoioId),
+              )
+            : eq(loteEnvio.tenantId, ctx.tenantId),
+        )
         .orderBy(desc(loteEnvio.dataEnvio), desc(loteEnvio.criadoEm));
 
       return Promise.all(
@@ -125,7 +148,15 @@ export class ProcessamentoService {
         .where(and(eq(loteEnvio.tenantId, ctx.tenantId), eq(loteEnvio.id, loteId)))
         .limit(1);
 
+      /**
+       * Lote de outro parceiro responde "nao encontrado", e nao "proibido":
+       * distinguir os dois confirmaria a existencia do lote a quem nao deveria
+       * nem saber que ele existe.
+       */
       if (!lote) throw new NotFoundException('Lote não encontrado.');
+      if (ctx.laboratorioApoioId && lote.laboratorioApoioId !== ctx.laboratorioApoioId) {
+        throw new NotFoundException('Lote não encontrado.');
+      }
 
       const cassetes = await tx
         .select({
@@ -200,7 +231,7 @@ export class ProcessamentoService {
   /** Monta o lote do dia com os cassetes prontos e envia ao parceiro. */
   async enviarLote(
     casseteIds: string[],
-    laboratorioApoioId?: string,
+    laboratorioApoioId: string,
   ): Promise<{ id: string; identificador: string; total: number }> {
     const ctx = exigirContexto();
 
@@ -209,6 +240,24 @@ export class ProcessamentoService {
     }
 
     return this.db.executar(async (tx) => {
+      /**
+       * O destino deixou de ser opcional quando o parceiro passou a enxergar os
+       * proprios lotes: um lote sem laboratorio e invisivel para todo mundo do
+       * outro lado - carta sem endereco. Tem de ser uma unidade do tipo
+       * `laboratorio_apoio`, senao o isolamento nao teria a que se ancorar.
+       */
+      const [destino] = await tx
+        .select({ id: unidade.id, tipo: unidade.tipo })
+        .from(unidade)
+        .where(and(eq(unidade.tenantId, ctx.tenantId), eq(unidade.id, laboratorioApoioId)))
+        .limit(1);
+
+      if (!destino || destino.tipo !== 'laboratorio_apoio') {
+        throw new BadRequestException(
+          'O destino do lote precisa ser uma unidade do tipo laboratório de apoio.',
+        );
+      }
+
       const cassetes = await tx
         .select()
         .from(cassete)
@@ -237,7 +286,7 @@ export class ProcessamentoService {
           identificador,
           // M09: o lote e identificado pela DATA de envio.
           dataEnvio: hoje.toISOString().slice(0, 10),
-          laboratorioApoioId: laboratorioApoioId ?? null,
+          laboratorioApoioId,
           enviadoEm: hoje,
           enviadoPorId: ctx.usuarioId,
           status: 'enviado',
@@ -305,6 +354,9 @@ export class ProcessamentoService {
         .limit(1);
 
       if (!lote) throw new NotFoundException('Lote não encontrado.');
+      if (ctx.laboratorioApoioId && lote.laboratorioApoioId !== ctx.laboratorioApoioId) {
+        throw new NotFoundException('Lote não encontrado.');
+      }
       if (lote.recebidoParceiroEm) {
         throw new BadRequestException('Recebimento deste lote já foi confirmado.');
       }
@@ -376,6 +428,41 @@ export class ProcessamentoService {
     const ctx = exigirContexto();
 
     return this.db.executar(async (tx) => {
+      const [lote] = await tx
+        .select()
+        .from(loteEnvio)
+        .where(and(eq(loteEnvio.tenantId, ctx.tenantId), eq(loteEnvio.id, loteId)))
+        .limit(1);
+
+      if (!lote) throw new NotFoundException('Lote não encontrado.');
+      if (ctx.laboratorioApoioId && lote.laboratorioApoioId !== ctx.laboratorioApoioId) {
+        throw new NotFoundException('Lote não encontrado.');
+      }
+
+      /**
+       * A lamina so pode nascer de um cassete DESTE lote.
+       *
+       * Sem esta checagem, o `loteId` da rota seria decorativo: qualquer
+       * `casseteId` valido do tenant seria aceito, e um parceiro poderia
+       * registrar producao contra material que nunca recebeu.
+       */
+      const doLote = new Set(
+        (
+          await tx
+            .select({ casseteId: loteCassete.casseteId })
+            .from(loteCassete)
+            .where(and(eq(loteCassete.tenantId, ctx.tenantId), eq(loteCassete.loteId, loteId)))
+        ).map((l) => l.casseteId),
+      );
+
+      for (const item of laminas) {
+        if (!doLote.has(item.casseteId)) {
+          throw new BadRequestException(
+            `Cassete ${item.casseteId} não pertence a este lote.`,
+          );
+        }
+      }
+
       const casosAfetados = new Set<string>();
 
       for (const item of laminas) {

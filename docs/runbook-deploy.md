@@ -204,6 +204,38 @@ seria dado falso.
 O mesmo comando, com outro `slug`. Cada instituição é um tenant isolado por RLS;
 nada é compartilhado entre elas além do schema.
 
+### 3.1 Redefinindo a senha de alguém
+
+Para quando o acesso se perdeu e não há ninguém de dentro para restaurar: a
+senha do provisionamento foi anotada errado, o administrador saiu, a conta
+travou por tentativas.
+
+```bash
+RESET_TENANT_SLUG=lapato \
+RESET_EMAIL=administrador@lapato.com.br \
+node node_modules/@lapato/db/dist/cli/redefinir-senha.js
+```
+
+Sorteia uma senha, imprime **uma vez**, marca a troca obrigatória no próximo
+login e zera o contador de tentativas — porque senha nova não adianta se a conta
+segue travada pelos erros anteriores.
+
+| Variável | Efeito |
+|---|---|
+| `RESET_SENHA` | usa esta em vez de sortear (mín. 16 caracteres) |
+| `RESET_MFA=limpar` | remove o segundo fator; o próximo login pede novo cadastro |
+| `RESET_REATIVAR=sim` | volta o `status` para `ativo` |
+
+**Status e MFA não mudam sem pedido explícito.** Conta suspensa foi suspensa por
+um motivo, e limpar o segundo fator de quem não pediu enfraquece a conta em vez
+de recuperá-la. Quando o status impede o login, o comando avisa em vez de deixar
+você descobrir na tela.
+
+Isto substitui o `UPDATE` manual em `senha_hash`, que era o procedimento
+anterior e tinha uma armadilha silenciosa: o hash começa com `$argon2id`, e
+colado em shell entre aspas duplas o `$` é expandido — o hash entra corrompido e
+o login falha com "credenciais inválidas", sem pista da causa.
+
 ### Verificação
 
 ```bash
@@ -336,9 +368,9 @@ uma conta criada assim fica inacessível. Por isso o `provision` cria o
 administrador já `ativo`, e por isso ainda não há como um administrador criar o
 segundo usuário pela interface. Hoje isso é `INSERT` manual.
 
-**Não existe recuperação de senha esquecida.** Há troca de senha (com a senha
-atual em mãos), mas não há "esqueci minha senha" — que depende do M26
-(Notificações) para enviar o link.
+**Não existe "esqueci minha senha" pelo próprio usuário.** Há troca de senha
+(com a senha atual em mãos) e há redefinição administrativa (§3.1), mas o
+autoatendimento depende do M26 (Notificações) para enviar o link por e-mail.
 
 **O segredo TOTP está em claro no banco.** Quem consegue ler `usuario` consegue
 gerar códigos válidos. Cifrar com chave fora do banco é o conserto; enquanto

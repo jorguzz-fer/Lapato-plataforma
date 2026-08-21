@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { EstagioSessao } from '@lapato/shared';
 import { api, ErroApi } from '../api';
+import { CampoSenha } from '../componentes/CampoSenha';
 
 /**
  * Login.
@@ -76,18 +77,12 @@ export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => voi
           />
         </label>
 
-        <label className="block">
-          <span className="rotulo">Senha</span>
-          <input
-            type="password"
-            value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-            required
-            autoComplete="current-password"
-            className="mt-1 w-full rounded border px-3 py-2"
-            style={{ borderColor: 'var(--lapato-borda)', background: 'var(--lapato-superficie)' }}
-          />
-        </label>
+        <CampoSenha
+          rotulo="Senha"
+          valor={senha}
+          aoMudar={setSenha}
+          autoComplete="current-password"
+        />
 
         {erro && (
           <p role="alert" className="text-xs" style={{ color: 'var(--lapato-perigo)' }}>

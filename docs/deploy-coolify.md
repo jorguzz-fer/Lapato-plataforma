@@ -128,9 +128,9 @@ não ganhar nada.
 
 ### O detalhe que dá 404 em tudo
 
-Ao rotear por caminho, o Traefik do Coolify normalmente **remove o `/api`** antes
-de repassar. O navegador chama `/api/v1/health`, mas o processo recebe
-`/v1/health`.
+Ao rotear por caminho, o Traefik do Coolify **remove o `/api`** antes de
+repassar. O navegador chama `/api/v1/health`, mas o processo recebe
+`/v1/health` — verificado em produção neste deploy, não suposto.
 
 Por isso o prefixo é configurável. No `lapato-api`:
 
@@ -138,9 +138,38 @@ Por isso o prefixo é configurável. No `lapato-api`:
 API_GLOBAL_PREFIX=v1
 ```
 
-Se o seu Coolify **não** remover o prefixo, use `api/v1`. Não tem como adivinhar
-daqui — o teste é o `curl` da §6, e o sintoma de errar é 404 em toda rota,
-inclusive `/health`.
+Com a API num **subdomínio próprio** (roteador com `PathPrefix('/')`, como o
+domínio gerado em `sslip.io`) nada é removido, e aí o valor é `api/v1`. Ou seja:
+o prefixo acompanha o formato do domínio, não o ambiente.
+
+| Domínio da API | Traefik remove? | `API_GLOBAL_PREFIX` |
+|---|---|---|
+| `app.lapato.com.br/api` | sim | `v1` |
+| `api-xyz.sslip.io` | não | `api/v1` |
+
+#### Descobrindo em qual caso você está
+
+O sintoma de errar é 404 em toda rota, inclusive `/health`. Estes dois comandos
+separam as causas:
+
+```sh
+curl -s https://app.lapato.com.br/api/v1/health
+curl -s https://app.lapato.com.br/api/api/v1/health   # /api duplicado, de propósito
+```
+
+O `/api` duplicado parece absurdo e é o teste decisivo: se o proxy remove um
+deles, a aplicação recebe o caminho certo e responde `{"status":"ok"}`.
+
+Leia o **corpo**, não só o código de status:
+
+| Resposta | Causa | Conserto |
+|---|---|---|
+| o duplicado devolve `{"status":"ok"...}` | o proxy remove o `/api` | `API_GLOBAL_PREFIX=v1` |
+| `{"type":".../erros/404","detail":"Cannot GET /v1/health"}` | idem — o `detail` mostra o caminho que chegou | `API_GLOBAL_PREFIX=v1` |
+| `404 page not found` seco | o Traefik não achou rota; o domínio não está na aplicação | configurar o domínio |
+
+O `detail` da resposta é a evidência direta: ele diz qual caminho o processo
+recebeu, e não exige adivinhação.
 
 ---
 

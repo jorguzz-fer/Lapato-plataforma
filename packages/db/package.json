@@ -24,6 +24,7 @@
     "seed": "tsx src/cli/seed.ts",
     "provision": "tsx src/cli/provision.ts",
     "redefinir-senha": "tsx src/cli/redefinir-senha.ts",
+    "vincular-lotes": "tsx src/cli/vincular-lotes.ts",
     "test": "vitest run"
   },
   "dependencies": {

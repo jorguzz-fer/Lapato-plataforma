@@ -1,12 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray } from 'drizzle-orm';
 import {
   bloco,
+  caso,
   cassete,
   divergenciaCassete,
   lamina,
   loteCassete,
   loteEnvio,
+  paciente,
   type Transacao,
 } from '@lapato/db';
 import { MODULOS, identificadorLamina } from '@lapato/shared';
@@ -38,6 +40,162 @@ export class ProcessamentoService {
     private readonly numeracao: NumeracaoService,
     private readonly fluxo: FluxoService,
   ) {}
+
+  /**
+   * Cassetes prontos para envio, de todos os casos.
+   *
+   * A bancada tecnica trabalha por LOTE DO DIA, e nao caso a caso: o M09
+   * identifica o lote pela data de envio e ele atravessa varios casos. Uma
+   * listagem por caso obrigaria a abrir um caso de cada vez para montar o que e
+   * uma unica remessa fisica.
+   */
+  async cassetesPendentes() {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) =>
+      tx
+        .select({
+          id: cassete.id,
+          identificador: cassete.identificador,
+          tecidoOrigem: cassete.tecidoOrigem,
+          exigeDescalcificacao: cassete.exigeDescalcificacao,
+          casoId: cassete.casoId,
+          caso: caso.identificador,
+          paciente: paciente.nome,
+        })
+        .from(cassete)
+        .innerJoin(caso, eq(caso.id, cassete.casoId))
+        .innerJoin(paciente, eq(paciente.id, caso.pacienteId))
+        .where(
+          and(
+            eq(cassete.tenantId, ctx.tenantId),
+            eq(cassete.statusTecnico, 'aguardando_processamento'),
+          ),
+        )
+        .orderBy(asc(caso.identificador), asc(cassete.ordem)),
+    );
+  }
+
+  /** Lotes enviados, do mais recente para o mais antigo. */
+  async listarLotes() {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const lotes = await tx
+        .select()
+        .from(loteEnvio)
+        .where(eq(loteEnvio.tenantId, ctx.tenantId))
+        .orderBy(desc(loteEnvio.dataEnvio), desc(loteEnvio.criadoEm));
+
+      return Promise.all(
+        lotes.map(async (l) => {
+          const [{ total } = { total: 0 }] = await tx
+            .select({ total: count() })
+            .from(loteCassete)
+            .where(eq(loteCassete.loteId, l.id));
+
+          const [{ divergencias } = { divergencias: 0 }] = await tx
+            .select({ divergencias: count() })
+            .from(divergenciaCassete)
+            .where(eq(divergenciaCassete.loteId, l.id));
+
+          return {
+            id: l.id,
+            identificador: l.identificador,
+            dataEnvio: l.dataEnvio,
+            status: l.status,
+            enviadoEm: l.enviadoEm,
+            recebidoParceiroEm: l.recebidoParceiroEm,
+            totalCassetes: total,
+            divergencias,
+          };
+        }),
+      );
+    });
+  }
+
+  /** Detalhe do lote: cassetes, conferencia, divergencias e laminas. */
+  async detalharLote(loteId: string) {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const [lote] = await tx
+        .select()
+        .from(loteEnvio)
+        .where(and(eq(loteEnvio.tenantId, ctx.tenantId), eq(loteEnvio.id, loteId)))
+        .limit(1);
+
+      if (!lote) throw new NotFoundException('Lote não encontrado.');
+
+      const cassetes = await tx
+        .select({
+          id: cassete.id,
+          identificador: cassete.identificador,
+          tecidoOrigem: cassete.tecidoOrigem,
+          exigeDescalcificacao: cassete.exigeDescalcificacao,
+          statusTecnico: cassete.statusTecnico,
+          confirmadoRecebimento: loteCassete.confirmadoRecebimento,
+          caso: caso.identificador,
+        })
+        .from(loteCassete)
+        .innerJoin(cassete, eq(cassete.id, loteCassete.casseteId))
+        .innerJoin(caso, eq(caso.id, cassete.casoId))
+        .where(and(eq(loteCassete.tenantId, ctx.tenantId), eq(loteCassete.loteId, loteId)))
+        .orderBy(asc(caso.identificador), asc(cassete.ordem));
+
+      const divergencias = await tx
+        .select({
+          id: divergenciaCassete.id,
+          tipo: divergenciaCassete.tipo,
+          casseteId: divergenciaCassete.casseteId,
+          codigoInformado: divergenciaCassete.codigoInformado,
+          descricao: divergenciaCassete.descricao,
+          resolvidaEm: divergenciaCassete.resolvidaEm,
+        })
+        .from(divergenciaCassete)
+        .where(
+          and(
+            eq(divergenciaCassete.tenantId, ctx.tenantId),
+            eq(divergenciaCassete.loteId, loteId),
+          ),
+        );
+
+      /**
+       * As laminas do lote sao alcancadas pela genealogia, e nao por um vinculo
+       * direto: Cassete -> Bloco -> Lamina. E o mesmo caminho que o M09 exige
+       * que seja rastreavel ate o fragmento macroscopico.
+       */
+      const idsCassetes = cassetes.map((c) => c.id);
+      const laminas = idsCassetes.length
+        ? await tx
+            .select({
+              id: lamina.id,
+              identificador: lamina.identificador,
+              coloracaoSigla: lamina.coloracaoSigla,
+              nivel: lamina.nivel,
+              casseteId: bloco.casseteId,
+            })
+            .from(lamina)
+            .innerJoin(bloco, eq(bloco.id, lamina.blocoId))
+            .where(
+              and(eq(lamina.tenantId, ctx.tenantId), inArray(bloco.casseteId, idsCassetes)),
+            )
+            .orderBy(asc(lamina.identificador))
+        : [];
+
+      return {
+        id: lote.id,
+        identificador: lote.identificador,
+        dataEnvio: lote.dataEnvio,
+        status: lote.status,
+        enviadoEm: lote.enviadoEm,
+        recebidoParceiroEm: lote.recebidoParceiroEm,
+        cassetes,
+        divergencias,
+        laminas,
+      };
+    });
+  }
 
   /** Monta o lote do dia com os cassetes prontos e envia ao parceiro. */
   async enviarLote(

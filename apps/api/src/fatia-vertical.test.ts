@@ -368,6 +368,21 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
     expect(evento.payload.cassetes[0]).toMatch(/^CV-\d{6}\/\d{2}-A1$/);
   });
 
+  test('5b. cassetes concluídos aparecem na fila de envio, com o caso junto', async () => {
+    /**
+     * A bancada monta o lote do dia atravessando casos, então a listagem não é
+     * por caso — e precisa trazer o caso e o paciente para quem confere ler.
+     */
+    const r = await req('GET', '/processamento/cassetes-pendentes');
+    expect(r.status).toBe(200);
+
+    const meus = r.body.filter((c: any) => c.casoId === casoId);
+    expect(meus).toHaveLength(2);
+    expect(meus[0].caso).toMatch(/^CV-\d{6}\/\d{2}$/);
+    expect(meus[0].paciente).toBeTruthy();
+    expect(meus[0].tecidoOrigem).toBeTruthy();
+  });
+
   test('6. técnico envia o lote ao laboratório de apoio', async () => {
     await entrar('tecnico@lapato.local');
 
@@ -408,6 +423,28 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
 
     expect(conferencia.status, JSON.stringify(conferencia.body)).toBe(201);
     expect(conferencia.body.divergencias).toBe(1);
+
+    /**
+     * O detalhe do lote e o que a tela le: precisa trazer a conferencia por
+     * cassete e a divergencia apontada, e nao so o status agregado.
+     */
+    const detalhe = await req('GET', `/processamento/lotes/${loteId}`);
+    expect(detalhe.status).toBe(200);
+    expect(detalhe.body.status).toBe('com_divergencia');
+    expect(detalhe.body.cassetes).toHaveLength(2);
+    expect(detalhe.body.cassetes.find((c: any) => c.id === casseteId).confirmadoRecebimento).toBe(
+      true,
+    );
+    expect(detalhe.body.divergencias[0].tipo).toBe('numeracao_errada');
+    expect(detalhe.body.divergencias[0].codigoInformado).toBe('ILEGIVEL');
+    // Ainda sem laminas: elas so existem depois do registro de producao.
+    expect(detalhe.body.laminas).toHaveLength(0);
+
+    const lista = await req('GET', '/processamento/lotes');
+    expect(lista.status).toBe(200);
+    const resumo = lista.body.find((l: any) => l.id === loteId);
+    expect(resumo.totalCassetes).toBe(2);
+    expect(resumo.divergencias).toBe(1);
   });
 
   test('8. laboratório de apoio registra as lâminas produzidas', async () => {

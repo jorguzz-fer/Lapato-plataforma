@@ -193,6 +193,62 @@ export interface CasoCriado {
   identificador: string;
 }
 
+// --- M09: processamento terceirizado ----------------------------------------
+
+export interface CassetePendente {
+  id: string;
+  identificador: string;
+  tecidoOrigem: string;
+  exigeDescalcificacao: boolean;
+  casoId: string;
+  caso: string;
+  paciente: string;
+}
+
+export interface LoteResumo {
+  id: string;
+  identificador: string;
+  dataEnvio: string;
+  status: string;
+  enviadoEm: string | null;
+  recebidoParceiroEm: string | null;
+  totalCassetes: number;
+  divergencias: number;
+}
+
+export interface LoteDetalhe {
+  id: string;
+  identificador: string;
+  dataEnvio: string;
+  status: string;
+  enviadoEm: string | null;
+  recebidoParceiroEm: string | null;
+  cassetes: Array<{
+    id: string;
+    identificador: string;
+    tecidoOrigem: string;
+    exigeDescalcificacao: boolean;
+    statusTecnico: string;
+    confirmadoRecebimento: boolean | null;
+    caso: string;
+  }>;
+  divergencias: Array<{
+    id: string;
+    tipo: string;
+    casseteId: string | null;
+    codigoInformado: string | null;
+    descricao: string;
+    resolvidaEm: string | null;
+  }>;
+  laminas: Array<{
+    id: string;
+    identificador: string;
+    coloracaoSigla: string;
+    nivel: number;
+    casseteId: string;
+  }>;
+}
+
 // --- M08: ficha de macroscopia ----------------------------------------------
 
 /**

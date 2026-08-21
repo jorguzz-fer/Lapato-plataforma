@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { and, eq, isNull } from 'drizzle-orm';
 import {
@@ -135,7 +135,10 @@ export class CatalogoController {
   @ApiOperation({
     summary: 'Termos de uma tabela mestre (espécie, órgão, fixador, coloração...)',
   })
-  async tabela(@Query('chave') chave: string) {
+  // `@Param`, e nao `@Query`: a rota declara `:chave` no caminho. Lendo da query,
+  // `/catalogo/tabelas/especie` chegava com `chave` indefinida e estourava 500 -
+  // e so respondia pela URL acidental `/catalogo/tabelas/x?chave=especie`.
+  async tabela(@Param('chave') chave: string) {
     return this.db.executar(async (tx) => {
       const ctx = exigirContexto();
       return tx

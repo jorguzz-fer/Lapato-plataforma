@@ -147,3 +147,48 @@ export interface StatusIa {
   disponivel: boolean;
   provedor: string;
 }
+
+// --- M01: dados mestres consumidos pelos formulários ------------------------
+
+export interface Servico {
+  id: string;
+  nome: string;
+  codigo: string;
+  modalidade: string;
+  /**
+   * As flags decidem por quais etapas o caso passa (M07). O formulário as usa
+   * para dizer ao usuário o que vem depois do cadastro.
+   */
+  exigeTriagem: boolean;
+  exigeMacroscopia: boolean;
+  exigeProcessamento: boolean;
+  exigeMicroscopia: boolean;
+  prazoDiasUteis: number | null;
+}
+
+export interface ClienteResumo {
+  id: string;
+  nomeFantasia: string;
+  codigo: string | null;
+  tipo: string;
+}
+
+export interface VeterinarioResumo {
+  id: string;
+  nome: string;
+  crmv: string | null;
+  crmvUf: string | null;
+}
+
+/** Termo de tabela mestre: espécie, órgão, fixador, recipiente, coloração. */
+export interface Termo {
+  id: string;
+  valor: string;
+  codigo: string | null;
+  ordem: number | null;
+}
+
+export interface CasoCriado {
+  id: string;
+  identificador: string;
+}

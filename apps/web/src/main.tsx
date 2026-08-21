@@ -12,6 +12,7 @@ import { SegundoFator } from './paginas/SegundoFator';
 import { TrocarSenha } from './paginas/TrocarSenha';
 import { CadastrarMfa } from './paginas/CadastrarMfa';
 import { CentralDeCasos } from './paginas/CentralDeCasos';
+import { NovoCaso } from './paginas/NovoCaso';
 import { Dossie } from './paginas/Dossie';
 import './estilos.css';
 
@@ -110,6 +111,14 @@ function App() {
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Rastreamento e Gestão de Fluxo">
             <CentralDeCasos />
+          </Shell>
+        }
+      />
+      <Route
+        path="/casos/novo"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Recebimento e Cadastro" etapa="cadastro">
+            <NovoCaso />
           </Shell>
         }
       />

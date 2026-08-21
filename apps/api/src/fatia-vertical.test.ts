@@ -556,6 +556,16 @@ describe('triagem bloqueada impede o avanço do fluxo', () => {
       conferencia: [{ recipienteId, quantidadeRecebida: 1 }],
     });
 
+    /**
+     * Bloquear sem dizer por quê é recusado. O bloqueio suspende o prazo e cria
+     * uma pendência de descrição genérica; sem o motivo, ninguém consegue
+     * resolvê-la depois.
+     */
+    const semMotivo = await req('POST', `/casos/${criado.body.id}/triagem`, {
+      amostras: [{ amostraId, resultado: 'bloqueado' }],
+    });
+    expect(semMotivo.status).toBe(400);
+
     const triagem = await req('POST', `/casos/${criado.body.id}/triagem`, {
       amostras: [
         {

@@ -2,7 +2,12 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- `viewport-fit=cover` para aparelhos com recorte de tela; sem ele a
+         barra superior fica com faixa branca nas laterais em paisagem. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- Barra do navegador acompanha a superfície da aplicação, em cada tema. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1c1f26" />
     <title>LAPATO — Gestão Anatomopatológica Veterinária</title>
     <meta
       name="description"

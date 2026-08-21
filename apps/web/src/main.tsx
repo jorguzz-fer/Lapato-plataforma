@@ -13,6 +13,7 @@ import { TrocarSenha } from './paginas/TrocarSenha';
 import { CadastrarMfa } from './paginas/CadastrarMfa';
 import { CentralDeCasos } from './paginas/CentralDeCasos';
 import { NovoCaso } from './paginas/NovoCaso';
+import { Recebimento } from './paginas/Recebimento';
 import { Dossie } from './paginas/Dossie';
 import './estilos.css';
 
@@ -123,10 +124,18 @@ function App() {
         }
       />
       <Route
+        path="/casos/:id/recebimento"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Recebimento e Cadastro" etapa="recebimento">
+            <Recebimento />
+          </Shell>
+        }
+      />
+      <Route
         path="/casos/:id"
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Dossiê do caso" etapa="visão geral">
-            <Dossie />
+            <Dossie permissoes={sessao.permissoes} />
           </Shell>
         }
       />

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import Chip from '@mui/material/Chip';
@@ -8,7 +8,9 @@ import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
+import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
+import InventoryOutlined from '@mui/icons-material/Inventory2Outlined';
 import { EVENTO_LABEL, type TipoEvento } from '@lapato/shared';
 import { api, type Dossie as DadosDossie } from '../api';
 
@@ -32,7 +34,7 @@ const ABAS: Array<{ id: Aba; rotulo: string }> = [
 /** Identificadores e quantidades em fonte tabular: alinham na vertical. */
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
 
-export function Dossie() {
+export function Dossie({ permissoes }: { permissoes: string[] }) {
   const { id } = useParams<{ id: string }>();
   const [dados, setDados] = useState<DadosDossie | null>(null);
   const [aba, setAba] = useState<Aba>('visao');
@@ -77,7 +79,18 @@ export function Dossie() {
             <Typography sx={{ fontSize: 13.5 }}>{dados.servico.nome}</Typography>
           </Box>
 
-          <Box sx={{ ml: 'auto' }}>
+          <Stack
+            direction="row"
+            spacing={1.5}
+            sx={{
+              // Em tela estreita a ação desce e ocupa a linha; `ml: auto` só
+              // faz sentido quando há espaço horizontal sobrando.
+              ml: { md: 'auto' },
+              width: { xs: '100%', md: 'auto' },
+              alignItems: 'center',
+              mt: { xs: 1, md: 0 },
+            }}
+          >
             {dados.estado && (
               <Chip
                 size="small"
@@ -86,13 +99,33 @@ export function Dossie() {
                 variant="outlined"
               />
             )}
-          </Box>
+
+            {/**
+             * DIRETRIZES seção 15: navegação POR CONTEXTO. A próxima ação do
+             * caso aparece no próprio caso, em vez de exigir que o usuário
+             * volte à central e procure outra tela.
+             */}
+            {!dados.caso.recebidoEm && permissoes.includes('material:receber') && (
+              <Button
+                component={Link}
+                to={`/casos/${id}/recebimento`}
+                variant="contained"
+                size="small"
+                startIcon={<InventoryOutlined />}
+                sx={{ flex: { xs: 1, md: 'none' } }}
+              >
+                Registrar recebimento
+              </Button>
+            )}
+          </Stack>
         </Stack>
       </Card>
 
       <Tabs
         value={aba}
         onChange={(_, v: Aba) => setAba(v)}
+        variant="scrollable"
+        scrollButtons="auto"
         sx={{ mb: 2, borderBottom: '1px solid', borderColor: 'divider' }}
       >
         {ABAS.map((a) => (

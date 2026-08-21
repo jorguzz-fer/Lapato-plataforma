@@ -192,3 +192,45 @@ export interface CasoCriado {
   id: string;
   identificador: string;
 }
+
+// --- M08: ficha de macroscopia ----------------------------------------------
+
+/**
+ * Numéricos chegam como string: `numeric` do Postgres preserva a escala, e
+ * converter para `number` no caminho perderia o "2.50" que o profissional
+ * mediu. O front trata como texto até precisar comparar.
+ */
+export interface FichaMacroscopia {
+  id: string;
+  casoId: string;
+  amostraId: string;
+  descricaoTexto: string | null;
+  comprimentoCm: string | null;
+  larguraCm: string | null;
+  alturaCm: string | null;
+  pesoG: string | null;
+  materialTotalmenteIncluido: boolean;
+  iniciadaEm: string | null;
+  concluidaEm: string | null;
+  lesoes: Array<{
+    rotulo: string;
+    tipo: string | null;
+    localizacao: string | null;
+    lateralidade: string;
+    maiorEixoCm: string | null;
+    menorEixoCm: string | null;
+  }>;
+  margens: Array<{
+    nome: string;
+    metodoAmostragem: string | null;
+    distanciaCm: string | null;
+    naoAvaliavel: boolean;
+  }>;
+  cassetes: Array<{
+    id: string;
+    identificador: string;
+    tecidoOrigem: string;
+    descricao: string | null;
+    exigeDescalcificacao: boolean;
+  }>;
+}

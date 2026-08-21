@@ -312,6 +312,14 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
   test('5. macroscopia gera cassetes com tecido de origem', async () => {
     await entrar('patologista@lapato.local');
 
+    /**
+     * A leitura vem antes, e não inicia nada: a tela precisa saber se há ficha
+     * sem publicar `macroscopia.iniciada` só por ter sido aberta.
+     */
+    const antes = await req('GET', `/macroscopia/amostras/${amostraId}`);
+    expect(antes.status).toBe(200);
+    expect(antes.body).toBeNull();
+
     const inicio = await req('POST', `/macroscopia/amostras/${amostraId}`);
     expect(inicio.status).toBe(201);
     macroscopiaId = inicio.body.id;
@@ -329,6 +337,24 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
       ],
     });
     expect(salvar.status, JSON.stringify(salvar.body)).toBe(201);
+
+    /**
+     * Enquanto não concluída, a ficha é rascunho: corrigir uma medida precisa
+     * gravar. Ignorar o conflito de rótulo faria a correção sumir em silêncio,
+     * com o salvamento respondendo sucesso sem ter salvo nada.
+     */
+    const corrigir = await req('POST', `/macroscopia/${macroscopiaId}`, {
+      lesoes: [{ rotulo: 'L01', tipo: 'nódulo', lateralidade: 'direito', maiorEixoCm: 2.8 }],
+      margens: [{ nome: 'Profunda', metodoAmostragem: 'perpendicular', distanciaCm: 0.6 }],
+    });
+    expect(corrigir.status).toBe(201);
+
+    const ficha = await req('GET', `/macroscopia/amostras/${amostraId}`);
+    expect(ficha.body.lesoes).toHaveLength(1);
+    expect(Number(ficha.body.lesoes[0].maiorEixoCm)).toBe(2.8);
+    expect(Number(ficha.body.margens[0].distanciaCm)).toBe(0.6);
+    // Os cassetes não foram reenviados, então continuam dois — e não quatro.
+    expect(ficha.body.cassetes).toHaveLength(2);
 
     const concluir = await req('POST', `/macroscopia/${macroscopiaId}/conclusao`);
     expect(concluir.status, JSON.stringify(concluir.body)).toBe(201);

@@ -28,6 +28,7 @@ import {
 } from '@lapato/shared';
 import { ExigePermissao, Publica } from '../core/auth/guards.js';
 import { validarCorpo } from '../core/http/validacao.js';
+import { UsuariosService } from './m02-usuarios/usuarios.service.js';
 import { ClientesService } from './m03-clientes/clientes.service.js';
 import { CasosService } from './m05-casos/casos.service.js';
 import { TriagemService } from './m06-triagem/triagem.service.js';
@@ -647,6 +648,100 @@ export class ValidacaoController {
     @Param('codigo') codigo: string,
   ) {
     return this.laudos.validarPublico(tenantSlug, codigo);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// M02 - Usuários, Perfis e Permissões (gestão; a autenticação vive em core/auth)
+// ---------------------------------------------------------------------------
+
+const novoUsuarioSchema = z.object({
+  nomeCompleto: z.string().min(1, 'Informe o nome.'),
+  email: z.string().email('E-mail inválido.'),
+  perfilIds: z.array(z.string().uuid()).min(1, 'Atribua ao menos um perfil.'),
+  unidadePrincipalId: z.string().uuid().optional(),
+  telefone: z.string().optional(),
+});
+
+const edicaoUsuarioSchema = z.object({
+  nomeCompleto: z.string().min(1).optional(),
+  perfilIds: z.array(z.string().uuid()).min(1).optional(),
+  unidadePrincipalId: z.string().uuid().nullish(),
+});
+
+@ApiTags('M02 - Usuários, Perfis e Permissões')
+@Controller('usuarios')
+export class UsuariosController {
+  constructor(private readonly usuarios: UsuariosService) {}
+
+  @Get('perfis')
+  @ExigePermissao(PERMISSOES.USUARIO_VISUALIZAR)
+  @ApiOperation({ summary: 'Perfis disponíveis para atribuição (M02 seção 9)' })
+  async perfis() {
+    return this.usuarios.listarPerfis();
+  }
+
+  @Get()
+  @ExigePermissao(PERMISSOES.USUARIO_VISUALIZAR)
+  @ApiOperation({ summary: 'Usuários da instituição, com perfis e último acesso' })
+  async listar() {
+    return this.usuarios.listar();
+  }
+
+  @Post()
+  @ExigePermissao(PERMISSOES.USUARIO_CRIAR)
+  @ApiOperation({
+    summary: 'Cria usuário',
+    description:
+      'Senha provisória gerada e exibida UMA vez (M02 seção 31); o primeiro login fica ' +
+      'preso na troca obrigatória - e no cadastro de MFA, se o perfil exigir.',
+  })
+  async criar(@Body() corpo: unknown) {
+    return this.usuarios.criar(validarCorpo(novoUsuarioSchema, corpo));
+  }
+
+  @Post(':id/bloqueio')
+  @ExigePermissao(PERMISSOES.USUARIO_BLOQUEAR)
+  @ApiOperation({
+    summary: 'Bloqueia a conta',
+    description: 'Derruba as sessões abertas na hora (M02 seção 33). Não apaga nada.',
+  })
+  async bloquear(@Param('id', ParseUUIDPipe) id: string) {
+    await this.usuarios.bloquear(id);
+    return { ok: true };
+  }
+
+  @Post(':id/reativacao')
+  @ExigePermissao(PERMISSOES.USUARIO_BLOQUEAR)
+  @ApiOperation({ summary: 'Reativa a conta e zera o lockout progressivo' })
+  async reativar(@Param('id', ParseUUIDPipe) id: string) {
+    await this.usuarios.reativar(id);
+    return { ok: true };
+  }
+
+  @Post(':id/redefinicao-senha')
+  @ExigePermissao(PERMISSOES.USUARIO_EDITAR)
+  @ApiOperation({
+    summary: 'Reset administrativo de senha',
+    description:
+      'Nova senha provisória com troca obrigatória; sessões revogadas; o ato fica na ' +
+      'auditoria (M02 seção 32).',
+  })
+  async redefinirSenha(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usuarios.redefinirSenha(id);
+  }
+
+  @Post(':id')
+  @ExigePermissao(PERMISSOES.USUARIO_EDITAR)
+  @ApiOperation({
+    summary: 'Edita nome, perfis e unidade',
+    description:
+      'A troca de perfis substitui o conjunto e vale na próxima sessão - reduzir ' +
+      'privilégio de sessão aberta exige bloquear.',
+  })
+  async editar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.usuarios.editar(id, validarCorpo(edicaoUsuarioSchema, corpo));
+    return { ok: true };
   }
 }
 

@@ -404,6 +404,29 @@ export interface FichaMacroscopia {
   }>;
 }
 
+// --- M02: gestão de usuários --------------------------------------------------
+
+export interface UsuarioLista {
+  id: string;
+  nomeCompleto: string;
+  email: string;
+  status: string;
+  categoria: string;
+  mfaAtivo: boolean;
+  senhaTrocaObrigatoria: boolean;
+  ultimoAcessoEm: string | null;
+  unidadePrincipal: string | null;
+  /** Nomes dos perfis, separados por " · ". */
+  perfis: string;
+}
+
+export interface PerfilResumo {
+  id: string;
+  chave: string;
+  nome: string;
+  exigeSupervisao: boolean;
+}
+
 // --- M01: administração e configurações --------------------------------------
 
 export interface ServicoAdmin {

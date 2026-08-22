@@ -26,6 +26,7 @@ import LocalShipping from '@mui/icons-material/LocalShippingOutlined';
 import PendingActions from '@mui/icons-material/PendingActionsOutlined';
 import Contacts from '@mui/icons-material/ContactsOutlined';
 import Tune from '@mui/icons-material/TuneOutlined';
+import Group from '@mui/icons-material/GroupOutlined';
 import Password from '@mui/icons-material/PasswordOutlined';
 import Security from '@mui/icons-material/SecurityOutlined';
 import { shell } from '@lapato/design-tokens';
@@ -96,6 +97,13 @@ const MENU = [
     icone: <Tune fontSize="small" />,
     rotulo: 'Administração',
     permissao: 'config:visualizar',
+  },
+  {
+    /* M02: ciclo de vida das contas - a autorização em si é do servidor. */
+    para: '/usuarios',
+    icone: <Group fontSize="small" />,
+    rotulo: 'Usuários e Perfis',
+    permissao: 'usuario:visualizar',
   },
 ] as const;
 

@@ -21,6 +21,7 @@ import { Processamento } from './paginas/Processamento';
 import { Solicitacoes } from './paginas/Solicitacoes';
 import { Clientes } from './paginas/Clientes';
 import { Administracao } from './paginas/Administracao';
+import { Usuarios } from './paginas/Usuarios';
 import { Dossie } from './paginas/Dossie';
 import { ValidarLaudo } from './paginas/ValidarLaudo';
 import './estilos.css';
@@ -179,6 +180,14 @@ function App() {
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Administração e Configurações">
             <Administracao permissoes={sessao.permissoes} />
+          </Shell>
+        }
+      />
+      <Route
+        path="/usuarios"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Usuários, Perfis e Permissões">
+            <Usuarios permissoes={sessao.permissoes} />
           </Shell>
         }
       />

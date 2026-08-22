@@ -197,9 +197,10 @@ COPILOT_PROVIDER=stub
 
 # PDF do laudo (M11) e, mais tarde, imagens (M16) - ver ADR de storage.
 STORAGE_PROVIDER=r2
-R2_ACCOUNT_ID=<id da conta Cloudflare>
-R2_ACCESS_KEY_ID=<chave de acesso do token R2>
-R2_SECRET_ACCESS_KEY=<segredo do token R2>
+# As tres credenciais abaixo vem do token R2 criado no painel da Cloudflare.
+R2_ACCOUNT_ID=<preencher>
+R2_ACCESS_KEY_ID=<preencher>
+R2_SECRET_ACCESS_KEY=<preencher>
 R2_BUCKET=lapato-producao
 
 # Base do front - monta a URL que o QR Code do laudo aponta (M11 seção 88).

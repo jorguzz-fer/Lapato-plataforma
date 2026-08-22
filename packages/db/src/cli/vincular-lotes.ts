@@ -21,24 +21,22 @@ import * as s from '../schema/index.js';
  * errado manda material para o parceiro errado, e desfazer isso exige outro
  * comando. Nesse caso ele lista as opcoes e para.
  *
- * Uso:
+ * Uso em producao - a imagem nao leva `tsx` nem codigo-fonte, entao roda-se o
+ * JavaScript compilado, como os demais comandos administrativos:
  *
- *   VINCULO_TENANT_SLUG=lapato pnpm --filter @lapato/db vincular-lotes
+ *   node node_modules/@lapato/db/dist/cli/vincular-lotes.js
  *
- * Com mais de um laboratorio, ou para escolher explicitamente:
+ * Em desenvolvimento:
  *
- *   VINCULO_TENANT_SLUG=lapato VINCULO_LABORATORIO_ID=<uuid> ...
+ *   pnpm --filter @lapato/db vincular-lotes
  *
- * Para so ver o que seria feito, sem gravar:
+ * Variaveis:
  *
- *   VINCULO_SIMULAR=sim ...
+ *   VINCULO_TENANT_SLUG      instituicao; sem ela, o comando lista as
+ *                            existentes e para
+ *   VINCULO_LABORATORIO_ID   destino, quando ha mais de um laboratorio
+ *   VINCULO_SIMULAR=sim      mostra o que faria, sem gravar
  */
-
-function obrigatoria(nome: string): string {
-  const valor = process.env[nome]?.trim();
-  if (!valor) throw new Error(`${nome} nao definida.`);
-  return valor;
-}
 
 async function main(): Promise<void> {
   const url = process.env.DATABASE_MIGRATION_URL;
@@ -48,13 +46,36 @@ async function main(): Promise<void> {
     );
   }
 
-  const slug = obrigatoria('VINCULO_TENANT_SLUG').toLowerCase();
+  const slug = process.env.VINCULO_TENANT_SLUG?.trim().toLowerCase();
   const laboratorioInformado = process.env.VINCULO_LABORATORIO_ID?.trim();
   const simular = process.env.VINCULO_SIMULAR?.toLowerCase() === 'sim';
 
   const { db, encerrar } = criarConexao({ url, max: 1 });
 
   try {
+    /**
+     * Sem o slug, listar as instituicoes em vez de so recusar.
+     *
+     * Quem roda isto esta num terminal de container, num deploy, resolvendo um
+     * problema - e nao com o `docs/` aberto ao lado. "VINCULO_TENANT_SLUG nao
+     * definida" obrigaria a sair daqui para descobrir um dado que este mesmo
+     * comando ja tem em maos.
+     */
+    if (!slug) {
+      const instituicoes = await db
+        .select({ slug: s.tenant.slug, nome: s.tenant.nomeFantasia })
+        .from(s.tenant);
+
+      console.warn('');
+      console.warn('VINCULO_TENANT_SLUG nao definida. Instituicoes existentes:');
+      console.warn('');
+      for (const i of instituicoes) {
+        console.warn(`  ${i.slug}${' '.repeat(Math.max(1, 24 - i.slug.length))}${i.nome}`);
+      }
+      console.warn('');
+      throw new Error('Rode de novo com VINCULO_TENANT_SLUG igual a um destes.');
+    }
+
     const [instituicao] = await db
       .select({ id: s.tenant.id })
       .from(s.tenant)

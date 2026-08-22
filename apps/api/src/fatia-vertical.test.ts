@@ -587,6 +587,47 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
     expect(relido.body.margens[0].resultado).toBe('livre');
   });
 
+  test('9b. revisão: retorno exige comentário, e o ciclo completo fica registrado', async () => {
+    const envio = await req('POST', `/laudos/versoes/${versaoId}/revisao`);
+    expect(envio.status, JSON.stringify(envio.body)).toBe(201);
+
+    let laudoAtual = await req('GET', `/laudos/casos/${casoId}`);
+    expect(laudoAtual.body.status).toBe('aguardando_revisao');
+
+    /**
+     * Devolver sem dizer o que corrigir e recusado - mesma logica do motivo
+     * obrigatorio no bloqueio da triagem: sem o comentario, quem elabora recebe
+     * "o revisor solicitou ajustes" e fica adivinhando quais.
+     */
+    const semComentario = await req('POST', `/laudos/versoes/${versaoId}/revisao/conclusao`, {
+      resultado: 'ajustes_solicitados',
+    });
+    expect(semComentario.status).toBe(400);
+
+    const retorno = await req('POST', `/laudos/versoes/${versaoId}/revisao/conclusao`, {
+      resultado: 'ajustes_solicitados',
+      comentarios: 'Detalhar a contagem mitótica na descrição.',
+    });
+    expect(retorno.status, JSON.stringify(retorno.body)).toBe(201);
+
+    laudoAtual = await req('GET', `/laudos/casos/${casoId}`);
+    expect(laudoAtual.body.status).toBe('retornado_para_correcao');
+    // O parecer fica no laudo - e o que orienta a correcao.
+    expect(laudoAtual.body.revisoes[0].comentarios).toBe(
+      'Detalhar a contagem mitótica na descrição.',
+    );
+
+    // Segunda rodada: reenvio e aprovacao liberam para assinatura.
+    await req('POST', `/laudos/versoes/${versaoId}/revisao`);
+    const aprovacao = await req('POST', `/laudos/versoes/${versaoId}/revisao/conclusao`, {
+      resultado: 'aprovada',
+    });
+    expect(aprovacao.status, JSON.stringify(aprovacao.body)).toBe(201);
+
+    laudoAtual = await req('GET', `/laudos/casos/${casoId}`);
+    expect(laudoAtual.body.status).toBe('aguardando_assinatura');
+  });
+
   test('10. o Guardian bloqueia assinatura com lateralidade divergente', async () => {
     // Grava um diagnóstico com o lado ERRADO, contradizendo o cadastro.
     await req('POST', `/laudos/versoes/${versaoId}`, {

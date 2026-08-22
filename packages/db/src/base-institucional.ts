@@ -79,6 +79,14 @@ export const PERFIS: Array<{
       PERMISSOES.PROCESSAMENTO_VISUALIZAR,
       PERMISSOES.LAUDO_VISUALIZAR,
       PERMISSOES.LAUDO_EDITAR,
+      /**
+       * M11 preve revisao por pares, dupla revisao e revisao obrigatoria - e
+       * quem revisa laudo de patologista e outro patologista. Sem estas duas,
+       * o ciclo de revisao e a correcao pos-assinatura so existiriam para o
+       * administrador, que o M02 proibe de exercer autoridade tecnica.
+       */
+      PERMISSOES.LAUDO_REVISAR,
+      PERMISSOES.LAUDO_CORRIGIR,
       PERMISSOES.LAUDO_ASSINAR,
       PERMISSOES.LAUDO_LIBERAR,
       PERMISSOES.LAUDO_ADENDO,

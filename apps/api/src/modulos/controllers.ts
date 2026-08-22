@@ -445,11 +445,26 @@ const laudoSchema = z.object({
     .optional(),
 });
 
-const revisaoSchema = z.object({
-  resultado: z.enum(['aprovada', 'ajustes_solicitados']),
-  comentarios: z.string().optional(),
-  discordancia: z.boolean().optional(),
-});
+const revisaoSchema = z
+  .object({
+    resultado: z.enum(['aprovada', 'ajustes_solicitados']),
+    comentarios: z.string().optional(),
+    discordancia: z.boolean().optional(),
+  })
+  /**
+   * Devolver para correcao exige dizer o que corrigir - mesma logica do motivo
+   * obrigatorio no bloqueio da triagem. Sem o comentario, quem elabora recebe
+   * so "o revisor solicitou ajustes" e fica adivinhando quais.
+   */
+  .superRefine((r, ctx) => {
+    if (r.resultado === 'ajustes_solicitados' && !r.comentarios?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['comentarios'],
+        message: 'Solicitar ajustes exige dizer quais, em comentários.',
+      });
+    }
+  });
 
 const novaVersaoSchema = z.object({
   tipo: z.enum(['adendo', 'correcao']),

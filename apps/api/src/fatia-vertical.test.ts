@@ -879,6 +879,154 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
   });
 });
 
+describe('administração e configurações (M01)', () => {
+  const marca = Date.now().toString().slice(-6);
+
+  test('admin cria serviço com flags de comportamento e um caso nasce com o prazo dele', async () => {
+    await entrar('admin@lapato.local');
+
+    /**
+     * M01 seção 11: as flags decidem o fluxo em DADOS. Uma biópsia expressa
+     * com prazo de 2 dias nasce por formulário - não por deploy.
+     */
+    const servico = await req('POST', '/administracao/servicos', {
+      nome: `Biópsia Expressa ${marca}`,
+      codigo: `EXPR${marca.slice(-2)}`,
+      categoria: 'anatomia_patologica',
+      modalidade: 'histopatologia',
+      prazoDiasUteis: 2,
+    });
+    expect(servico.status, JSON.stringify(servico.body)).toBe(201);
+
+    // Código repetido é barrado.
+    const repetido = await req('POST', '/administracao/servicos', {
+      nome: 'Outro',
+      codigo: `EXPR${marca.slice(-2)}`,
+      categoria: 'anatomia_patologica',
+      modalidade: 'histopatologia',
+    });
+    expect(repetido.status).toBe(400);
+
+    // O serviço novo já aparece nas opções de cadastro (catálogo)...
+    const catalogo = await req('GET', '/catalogo/servicos');
+    const novo = catalogo.body.find((s: any) => s.codigo === `EXPR${marca.slice(-2)}`);
+    expect(novo).toBeTruthy();
+    expect(novo.prazoDiasUteis).toBe(2);
+
+    // ...e um caso aberto com ele herda o prazo vigente (M01 seção 22).
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criado = await req('POST', '/casos', {
+      servicoId: novo.id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Mimi ${marca}` },
+      amostras: [{ descricao: 'Punção aspirativa' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+  });
+
+  test('serviço de modalidade sem workflow orienta em vez de estourar', async () => {
+    /**
+     * Estado alcançável pela tela: o admin cria o serviço de citopatologia
+     * antes de existir workflow da modalidade. O caso é recusado com 400 e a
+     * mensagem diz o que falta - era um 500 opaco.
+     */
+    const servico = await req('POST', '/administracao/servicos', {
+      nome: `Citologia ${marca}`,
+      codigo: `CITO${marca.slice(-2)}`,
+      categoria: 'anatomia_patologica',
+      modalidade: 'citopatologia',
+    });
+    expect(servico.status).toBe(201);
+
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criado = await req('POST', '/casos', {
+      servicoId: servico.body.id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Fifi ${marca}` },
+      amostras: [{ descricao: 'Punção' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status).toBe(400);
+    expect(criado.body.detail).toContain('workflow');
+  });
+
+  test('termo novo entra no catálogo; inativado, sai das opções', async () => {
+    const tabelas = await req('GET', '/administracao/tabelas');
+    const especies = tabelas.body.find((t: any) => t.chave === 'especie');
+    expect(especies).toBeTruthy();
+
+    const termoNovo = await req('POST', `/administracao/tabelas/${especies.id}/termos`, {
+      valor: `Chinchila ${marca}`,
+      codigo: `chinchila_${marca}`,
+    });
+    expect(termoNovo.status, JSON.stringify(termoNovo.body)).toBe(201);
+
+    // Aparece nas opções dos formulários (M01 seção 19)...
+    let opcoes = await req('GET', '/catalogo/tabelas/especie');
+    expect(opcoes.body.some((t: any) => t.valor === `Chinchila ${marca}`)).toBe(true);
+
+    // ...e some delas ao inativar - sem apagar (seção 21).
+    await req('POST', `/administracao/termos/${termoNovo.body.id}/inativacao`);
+    opcoes = await req('GET', '/catalogo/tabelas/especie');
+    expect(opcoes.body.some((t: any) => t.valor === `Chinchila ${marca}`)).toBe(false);
+
+    const administrados = await req('GET', `/administracao/tabelas/${especies.id}/termos`);
+    const inativo = administrados.body.find((t: any) => t.valor === `Chinchila ${marca}`);
+    expect(inativo, 'o termo inativo continua na gestão').toBeTruthy();
+    expect(inativo.inativadoEm).not.toBeNull();
+  });
+
+  test('unidade de laboratório de apoio criada aqui aparece nas opções do M09', async () => {
+    const unidade = await req('POST', '/administracao/unidades', {
+      nome: `HistoParceiro ${marca}`,
+      codigo: `HP${marca.slice(-3)}`,
+      tipo: 'laboratorio_apoio',
+    });
+    expect(unidade.status, JSON.stringify(unidade.body)).toBe(201);
+
+    const parceiros = await req('GET', '/catalogo/laboratorios-apoio');
+    expect(parceiros.body.some((l: any) => l.id === unidade.body.id)).toBe(true);
+
+    const setor = await req('POST', `/administracao/unidades/${unidade.body.id}/setores`, {
+      nome: 'Histotécnica',
+      codigo: 'HISTOTEC',
+      tipo: 'histotecnica',
+    });
+    expect(setor.status, JSON.stringify(setor.body)).toBe(201);
+  });
+
+  test('dia não útil entra no calendário e a duplicata é recusada', async () => {
+    const dia = await req('POST', '/administracao/calendario', {
+      data: '2027-03-15',
+      descricao: `Recesso institucional ${marca}`,
+      tipo: 'recesso',
+    });
+    expect(dia.status, JSON.stringify(dia.body)).toBe(201);
+
+    const duplicado = await req('POST', '/administracao/calendario', {
+      data: '2027-03-15',
+      descricao: 'Outra coisa',
+    });
+    expect(duplicado.status).toBe(400);
+
+    // Feriado errado sai de vez - exceção deliberada à regra de inativação.
+    const remocao = await req('POST', `/administracao/calendario/${dia.body.id}/remocao`);
+    expect(remocao.status, JSON.stringify(remocao.body)).toBe(201);
+  });
+
+  test('quem não é admin não configura', async () => {
+    await entrar('patologista@lapato.local');
+    const tentativa = await req('POST', '/administracao/servicos', {
+      nome: 'X',
+      codigo: 'XX',
+      categoria: 'x',
+      modalidade: 'histopatologia',
+    });
+    expect(tentativa.status).toBe(403);
+  });
+});
+
 describe('cadastro de clientes e veterinários (M03)', () => {
   /**
    * O degrau zero de qualquer caso: sem cliente e veterinário cadastrados,

@@ -12,6 +12,8 @@ import { EventosService } from './core/eventos/eventos.service.js';
 import { AuditoriaService } from './core/auditoria/auditoria.service.js';
 import { SaudeController } from './core/saude/saude.controller.js';
 import { NumeracaoService } from './modulos/m01-administracao/numeracao.service.js';
+import { AdministracaoService } from './modulos/m01-administracao/administracao.service.js';
+import { AdministracaoController } from './modulos/m01-administracao/administracao.controller.js';
 import { CasosService } from './modulos/m05-casos/casos.service.js';
 import { TriagemService } from './modulos/m06-triagem/triagem.service.js';
 import { FluxoService } from './modulos/m07-fluxo/fluxo.service.js';
@@ -50,6 +52,7 @@ import {
     SaudeController,
     AuthController,
     CatalogoController,
+    AdministracaoController,
     ClientesController,
     VeterinariosController,
     CasosController,
@@ -67,6 +70,7 @@ import {
     AuditoriaService,
 
     NumeracaoService,
+    AdministracaoService,
     CasosService,
     TriagemService,
     FluxoService,

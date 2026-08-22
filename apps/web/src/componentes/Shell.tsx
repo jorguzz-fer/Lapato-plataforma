@@ -25,6 +25,7 @@ import ViewList from '@mui/icons-material/ViewListOutlined';
 import LocalShipping from '@mui/icons-material/LocalShippingOutlined';
 import PendingActions from '@mui/icons-material/PendingActionsOutlined';
 import Contacts from '@mui/icons-material/ContactsOutlined';
+import Tune from '@mui/icons-material/TuneOutlined';
 import Password from '@mui/icons-material/PasswordOutlined';
 import Security from '@mui/icons-material/SecurityOutlined';
 import { shell } from '@lapato/design-tokens';
@@ -88,6 +89,13 @@ const MENU = [
     icone: <Contacts fontSize="small" />,
     rotulo: 'Clientes e Veterinários',
     permissao: 'cliente:visualizar',
+  },
+  {
+    /* M01: o fluxo é configurado em dados - serviços, tabelas, calendário. */
+    para: '/administracao',
+    icone: <Tune fontSize="small" />,
+    rotulo: 'Administração',
+    permissao: 'config:visualizar',
   },
 ] as const;
 

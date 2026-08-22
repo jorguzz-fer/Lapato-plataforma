@@ -20,6 +20,8 @@ export class ErroApi extends Error {
     readonly achados?: AchadoGuardian[],
     /** Presente quando a sessao parou num estagio do funil de entrada. */
     readonly estagio?: EstagioSessao,
+    /** M03 secao 20: cadastros candidatos quando o 409 e de duplicidade. */
+    readonly duplicidades?: DuplicidadeCadastral[],
   ) {
     super(detalhe || titulo);
     this.name = 'ErroApi';
@@ -28,6 +30,22 @@ export class ErroApi extends Error {
   get bloqueadoPeloGuardian(): boolean {
     return this.status === 409 && Array.isArray(this.achados);
   }
+
+  get possivelDuplicidade(): boolean {
+    return this.status === 409 && Array.isArray(this.duplicidades);
+  }
+}
+
+/** Candidato devolvido pela deteccao de duplicidade (M03 secao 20). */
+export interface DuplicidadeCadastral {
+  id: string;
+  nomeFantasia?: string;
+  nome?: string;
+  documento?: string | null;
+  codigo?: string;
+  crmv?: string | null;
+  crmvUf?: string | null;
+  status: string;
 }
 
 /**
@@ -69,6 +87,7 @@ async function requisitar<T>(
       dados?.detail ?? 'Não foi possível concluir a operação.',
       dados?.achados,
       dados?.estagio,
+      dados?.duplicidades,
     );
   }
 
@@ -383,6 +402,54 @@ export interface FichaMacroscopia {
     descricao: string | null;
     exigeDescalcificacao: boolean;
   }>;
+}
+
+// --- M03: cadastro de clientes e veterinários --------------------------------
+
+export interface ClienteLista {
+  id: string;
+  nomeFantasia: string;
+  razaoSocial: string | null;
+  documento: string | null;
+  tipo: string;
+  status: string;
+  codigo: string;
+  criadoEm: string;
+  inativadoEm: string | null;
+  totalCasos: number;
+}
+
+export interface VinculoDoCliente {
+  id: string;
+  veterinarioId: string;
+  nome: string;
+  crmv: string | null;
+  crmvUf: string | null;
+  cargo: string | null;
+  principal: boolean;
+  inicioEm: string | null;
+  terminoEm: string | null;
+}
+
+export interface ClienteFicha extends Omit<ClienteLista, 'totalCasos'> {
+  nomeAbreviado: string | null;
+  observacoes: string | null;
+  vinculos: VinculoDoCliente[];
+  casos: Array<{ id: string; identificador: string; paciente: string | null; criadoEm: string }>;
+}
+
+export interface VeterinarioLista {
+  id: string;
+  nome: string;
+  crmv: string | null;
+  crmvUf: string | null;
+  email: string | null;
+  telefone: string | null;
+  especialidade: string | null;
+  status: string;
+  inativadoEm: string | null;
+  /** Nomes dos clientes com vínculo vigente, separados por " · ". */
+  vinculos: string;
 }
 
 // --- M10: solicitações e pendências ------------------------------------------

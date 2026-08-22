@@ -52,6 +52,12 @@ export class ProblemaFilter implements ExceptionFilter {
         detail: (detalhes.detail as string) ?? (detalhes.message as string) ?? excecao.message,
         ...(detalhes.errors ? { errors: detalhes.errors } : {}),
         /**
+         * M03 secao 20: a detecao de duplicidade devolve os cadastros
+         * candidatos junto com o 409, para o front oferecer "abrir o
+         * existente" ou "continuar mesmo assim" - sem uma segunda chamada.
+         */
+        ...(detalhes.duplicidades ? { duplicidades: detalhes.duplicidades } : {}),
+        /**
          * O estagio acompanha o 403 do `SessaoGuard`: sem ele o front so saberia
          * que foi proibido, e mandaria o usuario para a tela de "sem permissao"
          * quando o que falta e concluir uma etapa de acesso.

@@ -43,8 +43,16 @@ export const PERFIS: Array<{
       PERMISSOES.ETIQUETA_IMPRIMIR,
       PERMISSOES.CLIENTE_VISUALIZAR,
       PERMISSOES.CLIENTE_CRIAR,
+      /**
+       * M03: manter o cadastro vivo - corrigir contato, inativar, encerrar
+       * vinculo - e trabalho da recepcao, a mesma caixa das pendencias
+       * cadastrais (M10 secao 38). Fundir cadastros fica de fora: fusao
+       * redireciona referencias historicas e exige perfil administrativo.
+       */
+      PERMISSOES.CLIENTE_EDITAR,
       PERMISSOES.VETERINARIO_VISUALIZAR,
       PERMISSOES.VETERINARIO_CRIAR,
+      PERMISSOES.VETERINARIO_EDITAR,
       PERMISSOES.FLUXO_VISUALIZAR,
       PERMISSOES.SOLICITACAO_VISUALIZAR,
       PERMISSOES.SOLICITACAO_CRIAR,

@@ -21,11 +21,14 @@ import {
   PRIORIDADE,
   RESULTADO_MARGEM,
   RESULTADO_TRIAGEM,
+  STATUS_CLIENTE,
   STATUS_PENDENCIA,
+  TIPO_CLIENTE,
   type Etapa,
 } from '@lapato/shared';
 import { ExigePermissao, Publica } from '../core/auth/guards.js';
 import { validarCorpo } from '../core/http/validacao.js';
+import { ClientesService } from './m03-clientes/clientes.service.js';
 import { CasosService } from './m05-casos/casos.service.js';
 import { TriagemService } from './m06-triagem/triagem.service.js';
 import { MacroscopiaService } from './m08-macroscopia/macroscopia.service.js';
@@ -644,6 +647,203 @@ export class ValidacaoController {
     @Param('codigo') codigo: string,
   ) {
     return this.laudos.validarPublico(tenantSlug, codigo);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// M03 - Cadastro de Clientes e Veterinários
+// ---------------------------------------------------------------------------
+
+const clienteSchema = z.object({
+  nomeFantasia: z.string().min(1, 'Informe o nome do cliente.'),
+  razaoSocial: z.string().optional(),
+  documento: z.string().optional(),
+  tipo: z.enum(TIPO_CLIENTE),
+  codigo: z
+    .string()
+    .min(2)
+    .max(6)
+    .regex(/^[A-Za-z0-9]+$/, 'Só letras e números - o código compõe o registro do exame.'),
+  nomeAbreviado: z.string().optional(),
+  observacoes: z.string().optional(),
+  /** M03 seção 20: confirmação após o aviso de duplicidade. */
+  ignorarDuplicidade: z.boolean().optional(),
+});
+
+const veterinarioBase = z.object({
+  nome: z.string().min(1, 'Informe o nome do profissional.'),
+  crmv: z.string().optional(),
+  crmvUf: z.string().length(2).optional(),
+  email: z.string().email().optional().or(z.literal('')),
+  telefone: z.string().optional(),
+  especialidade: z.string().optional(),
+  ignorarDuplicidade: z.boolean().optional(),
+});
+
+const veterinarioSchema = veterinarioBase.superRefine((v, ctx) => {
+  // CRMV sem UF não identifica o registro; UF sem número tampouco.
+  if (Boolean(v.crmv?.trim()) !== Boolean(v.crmvUf?.trim())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['crmvUf'],
+      message: 'CRMV e UF andam juntos - informe os dois ou nenhum.',
+    });
+  }
+});
+
+const vinculoSchema = z.object({
+  clienteId: z.string().uuid(),
+  cargo: z.string().optional(),
+  principal: z.boolean().optional(),
+});
+
+@ApiTags('M03 - Clientes e Veterinários')
+@Controller('clientes')
+export class ClientesController {
+  constructor(private readonly clientes: ClientesService) {}
+
+  @Get()
+  @ExigePermissao(PERMISSOES.CLIENTE_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Busca ampla de clientes',
+    description:
+      'Um campo cobre nome, razão social, documento e código (M03 seção 45). Inclui ' +
+      'inativos - a ficha histórica continua acessível; só as opções de exame os escondem.',
+  })
+  async listar(@Query('q') q?: string, @Query('status') status?: string) {
+    return this.clientes.listarClientes({
+      q,
+      status: STATUS_CLIENTE.includes(status as never) ? (status as never) : undefined,
+    });
+  }
+
+  @Post()
+  @ExigePermissao(PERMISSOES.CLIENTE_CRIAR)
+  @ApiOperation({
+    summary: 'Cria cliente',
+    description:
+      'Documento ou nome já cadastrados devolvem 409 com os candidatos (M03 seção 20); ' +
+      'confirmar com ignorarDuplicidade fica registrado na auditoria.',
+  })
+  async criar(@Body() corpo: unknown) {
+    const { ignorarDuplicidade, ...dados } = validarCorpo(clienteSchema, corpo);
+    return this.clientes.criarCliente(dados, ignorarDuplicidade);
+  }
+
+  @Get(':id')
+  @ExigePermissao(PERMISSOES.CLIENTE_VISUALIZAR)
+  @ApiOperation({ summary: 'Ficha do cliente: dados, vínculos e últimos casos (M03 seção 49)' })
+  async detalhe(@Param('id', ParseUUIDPipe) id: string) {
+    return this.clientes.detalheCliente(id);
+  }
+
+  @Post(':id')
+  @ExigePermissao(PERMISSOES.CLIENTE_EDITAR)
+  @ApiOperation({
+    summary: 'Edita cliente',
+    description:
+      'O código fica fora: ele compõe o registro dos exames já emitidos e não se troca ' +
+      'por formulário.',
+  })
+  async editar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.clientes.editarCliente(
+      id,
+      validarCorpo(clienteSchema.partial().omit({ codigo: true, ignorarDuplicidade: true }), corpo),
+    );
+    return { ok: true };
+  }
+
+  @Post(':id/inativacao')
+  @ExigePermissao(PERMISSOES.CLIENTE_EDITAR)
+  @ApiOperation({ summary: 'Inativa cliente - nunca exclui (M01/M03)' })
+  async inativar(@Param('id', ParseUUIDPipe) id: string) {
+    await this.clientes.inativarCliente(id);
+    return { ok: true };
+  }
+
+  @Post(':id/reativacao')
+  @ExigePermissao(PERMISSOES.CLIENTE_EDITAR)
+  @ApiOperation({ summary: 'Reativa cliente' })
+  async reativar(@Param('id', ParseUUIDPipe) id: string) {
+    await this.clientes.reativarCliente(id);
+    return { ok: true };
+  }
+}
+
+@ApiTags('M03 - Clientes e Veterinários')
+@Controller('veterinarios')
+export class VeterinariosController {
+  constructor(private readonly clientes: ClientesService) {}
+
+  @Post('vinculos/:id/encerramento')
+  @ExigePermissao(PERMISSOES.VETERINARIO_EDITAR)
+  @ApiOperation({
+    summary: 'Encerra vínculo com um cliente',
+    description:
+      'O profissional sai das opções padrão daquele cliente; exames anteriores ficam e o ' +
+      'cadastro segue ativo se houver outros vínculos (M03 seção 35).',
+  })
+  async encerrarVinculo(@Param('id', ParseUUIDPipe) id: string) {
+    await this.clientes.encerrarVinculo(id);
+    return { ok: true };
+  }
+
+  @Get()
+  @ExigePermissao(PERMISSOES.VETERINARIO_VISUALIZAR)
+  @ApiOperation({ summary: 'Busca de veterinários, com os vínculos vigentes (M03 seção 46)' })
+  async listar(@Query('q') q?: string) {
+    return this.clientes.listarVeterinarios({ q });
+  }
+
+  @Post()
+  @ExigePermissao(PERMISSOES.VETERINARIO_CRIAR)
+  @ApiOperation({
+    summary: 'Cria veterinário',
+    description:
+      'Pessoa única com N vínculos (M03 seções 12-13): CRMV ou nome já cadastrados ' +
+      'devolvem 409 - o caminho normal é vincular o existente, não recadastrar.',
+  })
+  async criar(@Body() corpo: unknown) {
+    const { ignorarDuplicidade, ...dados } = validarCorpo(veterinarioSchema, corpo);
+    return this.clientes.criarVeterinario(dados, ignorarDuplicidade);
+  }
+
+  @Post(':id/vinculos')
+  @ExigePermissao(PERMISSOES.VETERINARIO_EDITAR)
+  @ApiOperation({
+    summary: 'Vincula o veterinário a um cliente',
+    description: 'Se o vínculo existiu e foi encerrado, reativa em vez de duplicar (M03 seção 36).',
+  })
+  async vincular(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(vinculoSchema, corpo);
+    return this.clientes.vincular(id, dados.clienteId, dados);
+  }
+
+  @Post(':id/inativacao')
+  @ExigePermissao(PERMISSOES.VETERINARIO_EDITAR)
+  @ApiOperation({ summary: 'Inativa veterinário' })
+  async inativar(@Param('id', ParseUUIDPipe) id: string) {
+    await this.clientes.inativarVeterinario(id);
+    return { ok: true };
+  }
+
+  @Post(':id/reativacao')
+  @ExigePermissao(PERMISSOES.VETERINARIO_EDITAR)
+  @ApiOperation({ summary: 'Reativa veterinário' })
+  async reativar(@Param('id', ParseUUIDPipe) id: string) {
+    await this.clientes.reativarVeterinario(id);
+    return { ok: true };
+  }
+
+  @Post(':id')
+  @ExigePermissao(PERMISSOES.VETERINARIO_EDITAR)
+  @ApiOperation({ summary: 'Edita veterinário' })
+  async editar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.clientes.editarVeterinario(
+      id,
+      validarCorpo(veterinarioBase.partial().omit({ ignorarDuplicidade: true }), corpo),
+    );
+    return { ok: true };
   }
 }
 

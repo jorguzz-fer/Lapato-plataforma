@@ -24,6 +24,7 @@ import AddCircle from '@mui/icons-material/AddCircleOutlineOutlined';
 import ViewList from '@mui/icons-material/ViewListOutlined';
 import LocalShipping from '@mui/icons-material/LocalShippingOutlined';
 import PendingActions from '@mui/icons-material/PendingActionsOutlined';
+import Contacts from '@mui/icons-material/ContactsOutlined';
 import Password from '@mui/icons-material/PasswordOutlined';
 import Security from '@mui/icons-material/SecurityOutlined';
 import { shell } from '@lapato/design-tokens';
@@ -80,6 +81,13 @@ const MENU = [
     icone: <PendingActions fontSize="small" />,
     rotulo: MODULO_LABEL[MODULOS.M10_SOLICITACOES],
     permissao: 'solicitacao:visualizar',
+  },
+  {
+    /* M03: fonte única dos dados cadastrais - o degrau zero de qualquer caso. */
+    para: '/clientes',
+    icone: <Contacts fontSize="small" />,
+    rotulo: 'Clientes e Veterinários',
+    permissao: 'cliente:visualizar',
   },
 ] as const;
 

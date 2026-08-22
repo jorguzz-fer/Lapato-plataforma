@@ -461,6 +461,19 @@ const novaVersaoSchema = z.object({
 export class LaudosController {
   constructor(private readonly laudos: LaudosService) {}
 
+  @Get('casos/:casoId')
+  @ExigePermissao(PERMISSOES.LAUDO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Laudo do caso, com a versão corrente',
+    description:
+      'Devolve null quando ainda não aberto. Separado do início para que ' +
+      'carregar a tela não publique evento nem mova o fluxo. A nota interna ' +
+      'só vem para quem tem a permissão própria (M11).',
+  })
+  async laudoDoCaso(@Param('casoId', ParseUUIDPipe) casoId: string) {
+    return this.laudos.buscarPorCaso(casoId);
+  }
+
   @Post('casos/:casoId')
   @ExigePermissao(PERMISSOES.LAUDO_EDITAR)
   @ApiOperation({ summary: 'Abre (ou recupera) o laudo do caso' })

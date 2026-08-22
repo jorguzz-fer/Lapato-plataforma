@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import {
   assinaturaProfissional,
   caso,
@@ -83,6 +83,113 @@ export class LaudosService {
   ) {}
 
   /** Abre (ou recupera) o laudo do caso e sua versao corrente. */
+  /**
+   * Laudo do caso, ou `null` quando ainda nao foi aberto.
+   *
+   * GET separado do `abrir` pela mesma razao da macroscopia: `abrir` publica
+   * `microscopia.iniciada` e move o fluxo, e carregar a tela nao pode fazer
+   * isso. Quem inicia a microscopia e o patologista, nao o navegador.
+   */
+  async buscarPorCaso(casoId: string) {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const [registro] = await tx
+        .select()
+        .from(laudo)
+        .where(and(eq(laudo.tenantId, ctx.tenantId), eq(laudo.casoId, casoId)))
+        .limit(1);
+
+      if (!registro) return null;
+
+      const corrente = await this.versaoCorrente(tx, registro.id);
+
+      const [diagnosticos, margens, revisoes, versoes] = await Promise.all([
+        tx
+          .select()
+          .from(diagnostico)
+          .where(eq(diagnostico.laudoVersaoId, corrente.id))
+          .orderBy(asc(diagnostico.ordem)),
+        tx
+          .select()
+          .from(margemMicroscopica)
+          .where(eq(margemMicroscopica.laudoVersaoId, corrente.id))
+          .orderBy(asc(margemMicroscopica.nome)),
+        tx
+          .select()
+          .from(revisaoLaudo)
+          .where(eq(revisaoLaudo.laudoVersaoId, corrente.id))
+          .orderBy(desc(revisaoLaudo.criadoEm)),
+        tx
+          .select({
+            versao: laudoVersao.versao,
+            tipo: laudoVersao.tipo,
+            motivo: laudoVersao.motivo,
+            assinadaEm: laudoVersao.assinadaEm,
+            substituida: laudoVersao.substituida,
+          })
+          .from(laudoVersao)
+          .where(eq(laudoVersao.laudoId, registro.id))
+          .orderBy(asc(laudoVersao.versao)),
+      ]);
+
+      return {
+        laudoId: registro.id,
+        status: registro.status,
+        patologistaId: registro.patologistaId,
+        liberadoEm: registro.liberadoEm,
+        versaoCorrente: {
+          id: corrente.id,
+          versao: corrente.versao,
+          tipo: corrente.tipo,
+          motivo: corrente.motivo,
+          descricaoMicroscopica: corrente.descricaoMicroscopica,
+          comentarios: corrente.comentarios,
+          conclusao: corrente.conclusao,
+          /**
+           * M11: a nota interna tem permissao propria. Quem nao a tem recebe
+           * `null` - o campo nao viaja para depois ser escondido na tela.
+           */
+          notaInterna: ctx.permissoes.has(PERMISSOES.LAUDO_VER_NOTA_INTERNA)
+            ? corrente.notaInterna
+            : null,
+          assinadaEm: corrente.assinadaEm,
+          assinaturaIdentificacao: corrente.assinaturaIdentificacao,
+          codigoValidacao: corrente.codigoValidacao,
+        },
+        diagnosticos: diagnosticos.map((d) => ({
+          amostraId: d.amostraId,
+          hierarquia: d.hierarquia,
+          processo: d.processo,
+          entidade: d.entidade,
+          comportamento: d.comportamento,
+          distribuicao: d.distribuicao,
+          severidade: d.severidade,
+          lateralidade: d.lateralidade,
+          textoExibido: d.textoExibido,
+          classificacaoNome: d.classificacaoNome,
+          classificacaoVersao: d.classificacaoVersao,
+          grau: d.grau,
+          criteriosGraduacao: d.criteriosGraduacao,
+          provisorio: d.provisorio,
+        })),
+        margens: margens.map((m) => ({
+          nome: m.nome,
+          resultado: m.resultado,
+          distanciaMm: m.distanciaMm,
+          observacoes: m.observacoes,
+        })),
+        revisoes: revisoes.map((r) => ({
+          resultado: r.resultado,
+          comentarios: r.comentarios,
+          discordancia: r.discordancia,
+          concluidaEm: r.concluidaEm,
+        })),
+        versoes,
+      };
+    });
+  }
+
   async abrir(casoId: string): Promise<{ laudoId: string; versaoId: string; versao: number }> {
     const ctx = exigirContexto();
 

@@ -529,6 +529,14 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
   });
 
   test('9. patologista redige o laudo estruturado', async () => {
+    /**
+     * A leitura vem antes e nao inicia nada: abrir a tela nao pode publicar
+     * `microscopia.iniciada` nem mover o fluxo - mesmo contrato da macroscopia.
+     */
+    const antes = await req('GET', `/laudos/casos/${casoId}`);
+    expect(antes.status).toBe(200);
+    expect(antes.body).toBeNull();
+
     const abrir = await req('POST', `/laudos/casos/${casoId}`);
     expect(abrir.status, JSON.stringify(abrir.body)).toBe(201);
     laudoId = abrir.body.laudoId;
@@ -559,6 +567,24 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
     });
 
     expect(salvar.status, JSON.stringify(salvar.body)).toBe(201);
+
+    /**
+     * A releitura devolve o que foi gravado - e a nota interna vem, porque o
+     * patologista tem `laudo:ver_nota_interna`. O corte da nota para quem nao
+     * tem a permissao acontece no servidor, nao na tela.
+     */
+    const relido = await req('GET', `/laudos/casos/${casoId}`);
+    expect(relido.status).toBe(200);
+    expect(relido.body.status).toBe('rascunho');
+    expect(relido.body.versaoCorrente.versao).toBe(1);
+    expect(relido.body.versaoCorrente.notaInterna).toBe('Confirmar com Giemsa se necessário.');
+    expect(relido.body.diagnosticos).toHaveLength(1);
+    expect(relido.body.diagnosticos[0].criteriosGraduacao).toEqual({
+      mitoses: 2,
+      cariomegalia: false,
+      multinucleadas: 0,
+    });
+    expect(relido.body.margens[0].resultado).toBe('livre');
   });
 
   test('10. o Guardian bloqueia assinatura com lateralidade divergente', async () => {

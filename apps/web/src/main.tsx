@@ -16,6 +16,7 @@ import { NovoCaso } from './paginas/NovoCaso';
 import { Recebimento } from './paginas/Recebimento';
 import { Triagem } from './paginas/Triagem';
 import { Macroscopia } from './paginas/Macroscopia';
+import { Laudo } from './paginas/Laudo';
 import { Processamento } from './paginas/Processamento';
 import { Dossie } from './paginas/Dossie';
 import './estilos.css';
@@ -166,6 +167,14 @@ function App() {
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Macroscopia" etapa="macroscopia">
             <Macroscopia exigeSupervisao={sessao.exigeSupervisao} />
+          </Shell>
+        }
+      />
+      <Route
+        path="/casos/:id/laudo"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Laudos e Microscopia" etapa="laudo">
+            <Laudo permissoes={sessao.permissoes} exigeSupervisao={sessao.exigeSupervisao} />
           </Shell>
         }
       />

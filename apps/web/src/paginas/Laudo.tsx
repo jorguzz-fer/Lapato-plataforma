@@ -55,8 +55,14 @@ import {
  * - **Nota interna nunca aparece no documento externo** e tem permissao
  *   propria. Quem nao a tem nem recebe o campo do servidor.
  * - **Depois de assinada, a versao nao se edita.** Mudanca e adendo ou
- *   correcao, que criam versao nova - fica para a parte 2, junto com revisao,
- *   assinatura e liberacao.
+ *   correcao, que criam versao nova e preservam a anterior - o Portal sinaliza
+ *   "documento substituido".
+ * - **A liberacao e UMA acao** (DIRETRIZES secao 17): fluxo, Portal,
+ *   notificacao e auditoria sao consequencias automatizadas. O botao diz isso.
+ * - **A edicao para quando o laudo sai das maos de quem elabora**: em revisao
+ *   ou adiante, o formulario abre em leitura. O servidor ainda aceitaria o
+ *   save, mas editar por baixo do revisor tornaria a aprovacao dele um parecer
+ *   sobre um texto que ja nao existe.
  */
 
 const STATUS_LABEL: Record<string, string> = {
@@ -146,8 +152,17 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
   const [bloqueioGuardian, setBloqueioGuardian] = useState<ErroApi | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
+  // --- parte 2: revisao, assinatura, versoes ---
+  const [comentariosRevisao, setComentariosRevisao] = useState('');
+  const [discordancia, setDiscordancia] = useState(false);
+  const [motivoVersao, setMotivoVersao] = useState('');
+  const [codigoAssinatura, setCodigoAssinatura] = useState<string | null>(null);
+
   const veNotaInterna = permissoes.includes('laudo:ver_nota_interna');
   const podeEditar = permissoes.includes('laudo:editar');
+  const podeRevisar = permissoes.includes('laudo:revisar');
+  const podeAssinar = permissoes.includes('laudo:assinar') && !exigeSupervisao;
+  const podeLiberar = permissoes.includes('laudo:liberar');
 
   const carregar = useCallback((dados: LaudoDoCaso | null) => {
     setLaudo(dados);
@@ -191,8 +206,18 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
 
   const versao = laudo?.versaoCorrente;
   const assinada = versao?.assinadaEm != null;
-  /** Editável enquanto não assinada — inclusive retornada para correção. */
-  const editavel = podeEditar && laudo !== null && !assinada;
+  /**
+   * Editável só enquanto o laudo está nas mãos de quem elabora. Em revisão ou
+   * adiante o formulário vira leitura — editar por baixo do revisor tornaria a
+   * aprovação dele um parecer sobre um texto que já não existe.
+   */
+  const editavel =
+    podeEditar &&
+    laudo !== null &&
+    !assinada &&
+    (laudo.status === 'rascunho' || laudo.status === 'retornado_para_correcao');
+
+  const emRevisao = laudo?.status === 'aguardando_revisao' || laudo?.status === 'em_revisao';
 
   const diagnosticosValidos = useMemo(
     () => diagnosticos.every((d) => d.textoExibido.trim() !== ''),
@@ -282,6 +307,66 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
     } finally {
       setOcupado(false);
     }
+  }
+
+  /** Executa uma ação do fluxo e recarrega; o Guardian aparece estruturado. */
+  async function agir(fn: () => Promise<void>, mensagemErro: string) {
+    setOcupado(true);
+    setErro(null);
+    setBloqueioGuardian(null);
+    try {
+      await fn();
+      carregar(await api.get<LaudoDoCaso | null>(`/laudos/casos/${id}`));
+    } catch (err) {
+      if (err instanceof ErroApi && err.bloqueadoPeloGuardian) {
+        setBloqueioGuardian(err);
+      } else {
+        setErro(err instanceof ErroApi ? err.detalhe : mensagemErro);
+      }
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  function concluirRevisao(resultado: 'aprovada' | 'ajustes_solicitados') {
+    void agir(async () => {
+      await api.post(`/laudos/versoes/${versao!.id}/revisao/conclusao`, {
+        resultado,
+        ...(comentariosRevisao.trim() ? { comentarios: comentariosRevisao.trim() } : {}),
+        discordancia,
+      });
+      setComentariosRevisao('');
+      setDiscordancia(false);
+    }, 'Não foi possível concluir a revisão.');
+  }
+
+  function assinar() {
+    void agir(async () => {
+      const r = await api.post<{ codigoValidacao: string }>(
+        `/laudos/versoes/${versao!.id}/assinatura`,
+      );
+      // O código do QR aparece uma vez concluída a ação — é ele que valida o
+      // documento entregue (M11).
+      setCodigoAssinatura(r.codigoValidacao);
+    }, 'Não foi possível assinar o laudo.');
+  }
+
+  function liberar() {
+    void agir(
+      () => api.post(`/laudos/versoes/${versao!.id}/liberacao`).then(() => undefined),
+      'Não foi possível liberar o laudo.',
+    );
+  }
+
+  function criarVersao(tipo: 'adendo' | 'correcao') {
+    void agir(async () => {
+      await api.post(`/laudos/${laudo!.laudoId}/versoes`, {
+        tipo,
+        motivo: motivoVersao.trim(),
+      });
+      setMotivoVersao('');
+      setCodigoAssinatura(null);
+    }, `Não foi possível criar a ${tipo === 'adendo' ? 'nova versão de adendo' : 'correção'}.`);
   }
 
   if (!carregado || !dossie) {
@@ -730,6 +815,174 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
             )}
           </Stack>
 
+          {/* --- Revisão (M11): o parecer de quem revisa ------------------- */}
+          {emRevisao && podeRevisar && (
+            <Card sx={{ p: 2.5, mt: 2.5 }}>
+              <Typography variant="h4" sx={{ mb: 0.25 }}>
+                Revisão
+              </Typography>
+              <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 2 }}>
+                Aprovar segue para assinatura. Solicitar ajustes devolve a quem elaborou — e exige
+                dizer quais.
+              </Typography>
+
+              <TextField
+                label="Comentários"
+                value={comentariosRevisao}
+                onChange={(e) => setComentariosRevisao(e.target.value)}
+                multiline
+                minRows={3}
+                fullWidth
+                helperText="Obrigatórios ao solicitar ajustes: são o que orienta a correção."
+              />
+
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={discordancia}
+                    onChange={(e) => setDiscordancia(e.target.checked)}
+                  />
+                }
+                // M13: a discordância registrada alimenta a Qualidade (M22).
+                label="Registrar discordância diagnóstica"
+                slotProps={{ typography: { sx: { fontSize: 13 } } }}
+                sx={{ mt: 1 }}
+              />
+
+              <Stack
+                direction={{ xs: 'column-reverse', sm: 'row' }}
+                spacing={1.5}
+                sx={{ mt: 2, justifyContent: 'flex-end' }}
+              >
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  onClick={() => concluirRevisao('ajustes_solicitados')}
+                  disabled={ocupado || comentariosRevisao.trim() === ''}
+                >
+                  Solicitar ajustes
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={() => concluirRevisao('aprovada')}
+                  disabled={ocupado}
+                >
+                  Aprovar para assinatura
+                </Button>
+              </Stack>
+            </Card>
+          )}
+
+          {emRevisao && !podeRevisar && (
+            <Alert severity="info" sx={{ mt: 2.5 }}>
+              Aguardando a conclusão da revisão. Enquanto isso, o conteúdo fica em leitura.
+            </Alert>
+          )}
+
+          {/* --- Assinatura concluída: o código que valida o documento ----- */}
+          {codigoAssinatura && (
+            <Alert severity="success" sx={{ mt: 2.5 }}>
+              <AlertTitle>Laudo assinado</AlertTitle>
+              Código de validação do documento:{' '}
+              <Box component="strong" sx={{ ...MONO }}>{codigoAssinatura}</Box>. Ele vai no QR do
+              PDF e permite conferir a autenticidade.
+            </Alert>
+          )}
+
+          {/* --- Liberado: o desfecho ------------------------------------- */}
+          {laudo.status === 'liberado' && (
+            <Alert severity="success" sx={{ mt: 2.5 }}>
+              <AlertTitle>Laudo liberado</AlertTitle>
+              Fluxo atualizado, notificação enfileirada e auditoria registrada — consequências
+              automáticas da única ação que você executou.
+            </Alert>
+          )}
+
+          {/* --- Versões (M11): adendo acrescenta; correção retifica ------- */}
+          {laudo.versoes.length > 0 && (assinada || laudo.versoes.length > 1) && (
+            <Card sx={{ p: 2.5, mt: 2.5 }}>
+              <Typography variant="h4" sx={{ mb: 0.25 }}>
+                Versões
+              </Typography>
+              <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 2 }}>
+                Nenhuma versão é apagada. A anterior fica marcada como substituída — e o Portal
+                sinaliza isso a quem recebeu o documento.
+              </Typography>
+
+              <Stack spacing={1} divider={<Divider flexItem />}>
+                {laudo.versoes.map((v) => (
+                  <Stack
+                    key={v.versao}
+                    direction="row"
+                    spacing={1.5}
+                    sx={{ alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}
+                  >
+                    <Typography sx={{ ...MONO, fontSize: 13, fontWeight: 600 }}>
+                      v{v.versao}
+                    </Typography>
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={v.tipo === 'original' ? 'Original' : v.tipo === 'adendo' ? 'Adendo' : 'Correção'}
+                    />
+                    {v.assinadaEm && (
+                      <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+                        assinada em {new Date(v.assinadaEm).toLocaleString('pt-BR')}
+                      </Typography>
+                    )}
+                    {v.substituida && <Chip size="small" label="substituída" />}
+                    {v.motivo && (
+                      <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+                        — {v.motivo}
+                      </Typography>
+                    )}
+                  </Stack>
+                ))}
+              </Stack>
+
+              {assinada &&
+                (permissoes.includes('laudo:adendo') || permissoes.includes('laudo:corrigir')) && (
+                  <>
+                    <Divider sx={{ my: 2 }} />
+                    <Stack
+                      direction={{ xs: 'column', sm: 'row' }}
+                      spacing={1.5}
+                      sx={{ alignItems: { sm: 'flex-start' } }}
+                    >
+                      <TextField
+                        label="Motivo"
+                        value={motivoVersao}
+                        onChange={(e) => setMotivoVersao(e.target.value)}
+                        sx={{ flex: 1, width: { xs: '100%', sm: 'auto' } }}
+                        // M11: adendo e correção exigem motivo — ele aparece na
+                        // linha do tempo e no histórico de versões.
+                        helperText="Obrigatório: fica registrado na versão."
+                      />
+                      {permissoes.includes('laudo:adendo') && (
+                        <Button
+                          variant="outlined"
+                          onClick={() => criarVersao('adendo')}
+                          disabled={ocupado || motivoVersao.trim() === ''}
+                        >
+                          Criar adendo
+                        </Button>
+                      )}
+                      {permissoes.includes('laudo:corrigir') && (
+                        <Button
+                          variant="outlined"
+                          color="warning"
+                          onClick={() => criarVersao('correcao')}
+                          disabled={ocupado || motivoVersao.trim() === ''}
+                        >
+                          Criar correção
+                        </Button>
+                      )}
+                    </Stack>
+                  </>
+                )}
+            </Card>
+          )}
+
           {bloqueioGuardian && (
             <Alert severity="error" sx={{ mt: 2.5 }}>
               <AlertTitle>Envio impedido pelo Guardian</AlertTitle>
@@ -790,6 +1043,37 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
                   {ocupado ? 'Processando…' : 'Enviar para revisão'}
                 </Button>
               </>
+            )}
+
+            {laudo.status === 'aguardando_assinatura' && !assinada && (
+              <Tooltip
+                title={
+                  podeAssinar
+                    ? ''
+                    : exigeSupervisao
+                      ? 'Perfil sob supervisão não assina laudo.'
+                      : 'Seu perfil não assina laudos.'
+                }
+              >
+                <span>
+                  <Button
+                    variant="contained"
+                    onClick={assinar}
+                    disabled={ocupado || !podeAssinar}
+                  >
+                    {/* M11 seção 82: a assinatura congela identificação
+                        profissional, data e versão do documento. */}
+                    {ocupado ? 'Processando…' : 'Assinar laudo'}
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
+
+            {laudo.status === 'assinado' && podeLiberar && (
+              <Button variant="contained" onClick={liberar} disabled={ocupado}>
+                {/* DIRETRIZES seção 17: é UMA ação; o resto é consequência. */}
+                {ocupado ? 'Processando…' : 'Liberar laudo'}
+              </Button>
             )}
           </Stack>
         </>

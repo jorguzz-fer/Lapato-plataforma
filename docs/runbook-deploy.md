@@ -272,6 +272,32 @@ Como os demais, é comando e não `UPDATE` no terminal do banco: o schema roda c
 tabelas enxerga zero linhas. Um `UPDATE` colado à mão responde `UPDATE 0` e
 parece não ter encontrado nada — quando na verdade nem chegou a olhar.
 
+### 3.3 Sincronizando perfis com a base institucional
+
+Necessário quando uma versão nova acrescenta permissões aos perfis padrão —
+instituições existentes ficam com a foto do dia em que foram provisionadas.
+Exemplo real: `laudo:revisar` e `laudo:corrigir` entraram no perfil de
+patologista depois do provisionamento; sem a sincronização, o ciclo de revisão
+só existe para instituições novas.
+
+```bash
+# sem o slug, lista as instituições
+node node_modules/@lapato/db/dist/cli/sincronizar-perfis.js
+
+# confere o que faria
+SINCRONIZAR_TENANT_SLUG=lapato SINCRONIZAR_SIMULAR=sim \
+node node_modules/@lapato/db/dist/cli/sincronizar-perfis.js
+
+# grava
+SINCRONIZAR_TENANT_SLUG=lapato \
+node node_modules/@lapato/db/dist/cli/sincronizar-perfis.js
+```
+
+**Estritamente aditivo**: insere o que falta nos perfis padrão e não remove
+nada — o que a instituição acrescentou por conta própria é configuração dela.
+Perfil padrão que a instituição removeu **não** é recriado. A permissão nova
+vale na próxima sessão de cada usuário.
+
 ### Verificação
 
 ```bash

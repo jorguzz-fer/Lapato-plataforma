@@ -325,6 +325,35 @@ UPDATE definicao_workflow SET servico_id = NULL WHERE nome = 'Histopatologia pad
 Instituições provisionadas já com o M01 nascem corretas — o ajuste é só para as
 anteriores, uma única vez.
 
+### 3.5 Populando a equipe inicial
+
+O `provision` cria só o administrador. Para a instituição começar a operar, o
+comando abaixo cria **um usuário por perfil padrão** (recepção, técnico,
+patologista, residente e laboratório de apoio), cada um com **senha provisória
+aleatória e troca obrigatória** — impressa uma única vez, na tela de quem rodou.
+MFA não é semeado: quem assina cadastra o próprio TOTP no primeiro acesso,
+guiado pelo funil de sessão.
+
+```bash
+EQUIPE_TENANT_SLUG=lapato \
+EQUIPE_EMAIL_DOMINIO=minhaclinica.com.br \
+EQUIPE_CRMV="CRMV-CE 12345" \
+node node_modules/@lapato/db/dist/cli/popular-equipe.js
+```
+
+- `EQUIPE_EMAIL_DOMINIO` monta os e-mails (`recepcao@<domínio>`, ...).
+- `EQUIPE_CRMV` (opcional) registra a identificação profissional do
+  patologista — é ela que sai na assinatura do PDF do laudo (M11 §82).
+- **Idempotente por e-mail**: rodar de novo pula quem já existe.
+- A conta de apoio exige uma unidade do tipo `laboratorio_apoio`; sem ela, o
+  comando avisa e segue — crie a unidade em Administração → Unidades e rode de
+  novo.
+
+As contas nascem com o nome do perfil ("Patologista (conta inicial)").
+**Renomeie para a pessoa real na tela de Usuários** — ou crie as contas
+individuais por lá e bloqueie estas. M02 §3: uma conta é uma pessoa, não uma
+função; estas existem para a instituição começar, não para ficar.
+
 ### Verificação
 
 ```bash

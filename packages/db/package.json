@@ -26,6 +26,7 @@
     "redefinir-senha": "tsx src/cli/redefinir-senha.ts",
     "vincular-lotes": "tsx src/cli/vincular-lotes.ts",
     "sincronizar-perfis": "tsx src/cli/sincronizar-perfis.ts",
+    "popular-equipe": "tsx src/cli/popular-equipe.ts",
     "test": "vitest run"
   },
   "dependencies": {

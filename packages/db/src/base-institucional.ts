@@ -391,7 +391,13 @@ export async function criarBaseInstitucional(
     .values({
       tenantId,
       nome: 'Histopatologia padrão',
-      servicoId: histopatologia!.id,
+      /**
+       * PADRAO da modalidade (`servicoId` nulo), nao do servico HISTO: as
+       * etapas condicionais ja consultam as flags de cada servico, entao um
+       * servico novo criado pelo M01 usa este mesmo workflow. Amarrado ao
+       * servico, todo servico novo de histopatologia nascia sem fluxo.
+       */
+      servicoId: null,
       modalidade: 'histopatologia',
     })
     .returning();

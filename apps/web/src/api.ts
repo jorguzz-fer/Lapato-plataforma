@@ -404,6 +404,69 @@ export interface FichaMacroscopia {
   }>;
 }
 
+// --- M01: administração e configurações --------------------------------------
+
+export interface ServicoAdmin {
+  id: string;
+  nome: string;
+  codigo: string;
+  categoria: string;
+  modalidade: string;
+  descricao: string | null;
+  exigeTriagem: boolean;
+  exigeMacroscopia: boolean;
+  exigeProcessamento: boolean;
+  exigeMicroscopia: boolean;
+  geraLaudo: boolean;
+  permiteComplementares: boolean;
+  prazoDiasUteis: number;
+  prazoUrgenteDiasUteis: number | null;
+  inativadoEm: string | null;
+}
+
+export interface TabelaAdmin {
+  id: string;
+  chave: string;
+  nome: string;
+  sistema: boolean;
+  totalTermos: number;
+}
+
+export interface TermoAdmin {
+  id: string;
+  valor: string;
+  codigo: string;
+  abreviacao: string | null;
+  sinonimos: string[];
+  ordem: number;
+  inativadoEm: string | null;
+}
+
+export interface UnidadeAdmin {
+  id: string;
+  nome: string;
+  codigo: string;
+  sigla: string | null;
+  tipo: string;
+  responsavel: string | null;
+  inativadoEm: string | null;
+  setores: Array<{
+    id: string;
+    nome: string;
+    codigo: string;
+    tipo: string;
+    inativadoEm: string | null;
+  }>;
+}
+
+export interface DiaNaoUtil {
+  id: string;
+  data: string;
+  descricao: string;
+  tipo: string;
+  unidadeId: string | null;
+}
+
 // --- M03: cadastro de clientes e veterinários --------------------------------
 
 export interface ClienteLista {

@@ -307,6 +307,24 @@ nada — o que a instituição acrescentou por conta própria é configuração 
 Perfil padrão que a instituição removeu **não** é recriado. A permissão nova
 vale na próxima sessão de cada usuário.
 
+### 3.4 Workflow padrão da modalidade (uma vez, ao atualizar para o M01)
+
+Instituições provisionadas antes do M01 têm o workflow "Histopatologia padrão"
+amarrado ao serviço HISTO específico — um desvio: as etapas condicionais já
+consultam as flags de cada serviço, então ele sempre foi, na prática, o padrão
+da modalidade. Sem o ajuste, **todo serviço novo criado pela tela de
+Administração recusa casos** com "Nenhum workflow ativo para a modalidade".
+
+No terminal do banco (com o tenant declarado, por causa da RLS):
+
+```sql
+SET app.current_tenant = '<id do tenant>';   -- SELECT id FROM tenant WHERE slug='lapato';
+UPDATE definicao_workflow SET servico_id = NULL WHERE nome = 'Histopatologia padrão';
+```
+
+Instituições provisionadas já com o M01 nascem corretas — o ajuste é só para as
+anteriores, uma única vez.
+
 ### Verificação
 
 ```bash

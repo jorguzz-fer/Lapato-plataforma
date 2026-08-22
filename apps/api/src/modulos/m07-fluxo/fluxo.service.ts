@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import {
   bloqueio,
@@ -423,9 +423,14 @@ export class FluxoService {
       candidatos.find((c) => c.servicoId === null);
 
     if (!escolhido) {
-      throw new Error(
+      /**
+       * Erro de CONFIGURACAO, nao do sistema: com o M01 criando servicos por
+       * formulario, uma modalidade sem workflow e um estado alcancavel pela
+       * tela - o 400 diz o que falta, em vez do 500 opaco que saia daqui.
+       */
+      throw new BadRequestException(
         `Nenhum workflow ativo para a modalidade "${modalidade}". ` +
-          'Configure em Administração (M01) antes de cadastrar casos deste serviço.',
+          'Configure o workflow antes de cadastrar casos deste serviço.',
       );
     }
 

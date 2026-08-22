@@ -236,6 +236,42 @@ anterior e tinha uma armadilha silenciosa: o hash começa com `$argon2id`, e
 colado em shell entre aspas duplas o `$` é expandido — o hash entra corrompido e
 o login falha com "credenciais inválidas", sem pista da causa.
 
+### 3.2 Vinculando lotes sem laboratório de apoio
+
+Necessário uma única vez, para instituições que enviaram lotes **antes** de o
+portal do laboratório de apoio existir. Naquele momento o destino era opcional;
+depois que o parceiro passou a enxergar apenas os próprios lotes, um lote sem
+destino ficou invisível dos dois lados — e não há tela que o corrija, porque o
+envio acontece uma vez.
+
+```bash
+# 1. sem o slug, ele lista as instituições existentes
+node node_modules/@lapato/db/dist/cli/vincular-lotes.js
+
+# 2. confere o que faria, sem gravar
+VINCULO_TENANT_SLUG=lapato VINCULO_SIMULAR=sim \
+node node_modules/@lapato/db/dist/cli/vincular-lotes.js
+
+# 3. grava
+VINCULO_TENANT_SLUG=lapato \
+node node_modules/@lapato/db/dist/cli/vincular-lotes.js
+```
+
+| Variável | Efeito |
+|---|---|
+| `VINCULO_TENANT_SLUG` | instituição; ausente, o comando lista as existentes |
+| `VINCULO_LABORATORIO_ID` | destino, obrigatório quando há mais de um laboratório |
+| `VINCULO_SIMULAR=sim` | mostra o plano sem gravar |
+
+**Não adivinha o destino** quando há mais de um laboratório cadastrado: escolher
+errado manda material para o parceiro errado, e desfazer exige outro comando.
+Nesse caso ele lista as opções com os ids e para.
+
+Como os demais, é comando e não `UPDATE` no terminal do banco: o schema roda com
+`FORCE ROW LEVEL SECURITY`, então sem declarar o tenant antes até o dono das
+tabelas enxerga zero linhas. Um `UPDATE` colado à mão responde `UPDATE 0` e
+parece não ter encontrado nada — quando na verdade nem chegou a olhar.
+
 ### Verificação
 
 ```bash

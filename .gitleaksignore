@@ -34,3 +34,18 @@
 # commit em que a versao antiga existiu.
 # ---------------------------------------------------------------------------
 a033d2f2ea8b59abbf9d201628eb4267245c371d:.gitleaksignore:generic-api-key:10
+
+# ---------------------------------------------------------------------------
+# 0f4943e docs/deploy-coolify.md linha 202
+#
+# O bloco de variaveis do R2 (M11: storage do PDF do laudo) trazia, no campo do
+# segredo do token, um texto-instrucao entre colchetes angulares pedindo para
+# preencher com a credencial real. Tinha entropia suficiente para a regra
+# generic-api-key classificar como chave, mas era placeholder, nao credencial -
+# mesma causa do achado do `.env.example` acima.
+#
+# O arquivo ja foi corrigido: os tres campos de credencial do R2 agora usam o
+# mesmo placeholder generico de baixa entropia. Esta entrada existe so para o
+# commit historico, que nao da para reescrever sem force-push num PR ja aberto.
+# ---------------------------------------------------------------------------
+0f4943e9baa366eee64eb98425822f29687d0ed0:docs/deploy-coolify.md:generic-api-key:202

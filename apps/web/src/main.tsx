@@ -19,6 +19,7 @@ import { Macroscopia } from './paginas/Macroscopia';
 import { Laudo } from './paginas/Laudo';
 import { Processamento } from './paginas/Processamento';
 import { Dossie } from './paginas/Dossie';
+import { ValidarLaudo } from './paginas/ValidarLaudo';
 import './estilos.css';
 
 /**
@@ -232,11 +233,19 @@ function Carregando() {
   );
 }
 
+/**
+ * `/validar/:tenantSlug/:codigo` fica FORA do `App`: quem escaneia o QR do
+ * PDF não tem sessão nenhuma (M11 seção 88), então essa rota não pode esperar
+ * `/auth/estado` resolver, nem cair no redirecionamento para `/entrar`.
+ */
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ProvedorLapato>
       <BrowserRouter>
-        <App />
+        <Routes>
+          <Route path="/validar/:tenantSlug/:codigo" element={<ValidarLaudo />} />
+          <Route path="*" element={<App />} />
+        </Routes>
       </BrowserRouter>
     </ProvedorLapato>
   </StrictMode>,

@@ -25,3 +25,6 @@ design/vendor/
 
 playwright-report/
 test-results/
+
+# StorageLocalProvider (dev/test) - PDFs e arquivos gravados localmente
+.storage-local/

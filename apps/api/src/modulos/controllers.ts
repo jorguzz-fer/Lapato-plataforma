@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  StreamableFile,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import {
@@ -12,7 +22,7 @@ import {
   RESULTADO_TRIAGEM,
   type Etapa,
 } from '@lapato/shared';
-import { ExigePermissao } from '../core/auth/guards.js';
+import { ExigePermissao, Publica } from '../core/auth/guards.js';
 import { validarCorpo } from '../core/http/validacao.js';
 import { CasosService } from './m05-casos/casos.service.js';
 import { TriagemService } from './m06-triagem/triagem.service.js';
@@ -567,6 +577,67 @@ export class LaudosController {
   async novaVersao(@Param('laudoId', ParseUUIDPipe) laudoId: string, @Body() corpo: unknown) {
     const dados = validarCorpo(novaVersaoSchema, corpo);
     return this.laudos.novaVersao(laudoId, dados.tipo, dados.motivo);
+  }
+
+  @Get('versoes/:versaoId/pdf/pre-visualizacao')
+  @ExigePermissao(PERMISSOES.LAUDO_VISUALIZAR)
+  @Header('Content-Type', 'application/pdf')
+  @ApiOperation({
+    summary: 'Pré-visualização do PDF',
+    description:
+      'Mostra exatamente o documento que seria disponibilizado (M11 seção 71). Gerado ' +
+      'na hora, nunca gravado - só a versão assinada é congelada (ADR 0005).',
+  })
+  async preVisualizarPdf(@Param('versaoId', ParseUUIDPipe) versaoId: string) {
+    const bytes = await this.laudos.preVisualizarPdf(versaoId);
+    return new StreamableFile(bytes);
+  }
+
+  @Get('versoes/:versaoId/pdf')
+  @ExigePermissao(PERMISSOES.LAUDO_VISUALIZAR)
+  @Header('Content-Type', 'application/pdf')
+  @ApiOperation({
+    summary: 'PDF assinado',
+    description:
+      'Os bytes congelados no momento da assinatura - nunca regerados. ' +
+      '400 se a versão ainda não foi assinada.',
+  })
+  async baixarPdf(@Param('versaoId', ParseUUIDPipe) versaoId: string) {
+    const { bytes, nomeArquivo } = await this.laudos.baixarPdf(versaoId);
+    return new StreamableFile(bytes, {
+      disposition: `inline; filename="${nomeArquivo}"`,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Validacao publica de laudo (M11 secao 88)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fora de `/laudos` de proposito: e a unica rota do modulo sem sessao, e
+ * misturá-la ao controller autenticado tornaria facil esquecer o `@Publica()`
+ * num endpoint futuro por perto. O slug da instituicao vem na URL pela mesma
+ * razao do login (ADR 0002) - nao ha sessao para resolver o tenant.
+ */
+@ApiTags('Validação pública de laudo')
+@Controller('validar')
+export class ValidacaoController {
+  constructor(private readonly laudos: LaudosService) {}
+
+  @Publica()
+  @Get(':tenantSlug/:codigo')
+  @ApiOperation({
+    summary: 'Confere a autenticidade de um laudo pelo QR Code',
+    description:
+      'Resposta deliberadamente pobre: instituição, caso, versão, quem assinou e ' +
+      'quando, e se esta é a versão vigente. Nenhum dado clínico ou diagnóstico.',
+  })
+  async validar(
+    @Param('tenantSlug') tenantSlug: string,
+    @Param('codigo') codigo: string,
+  ) {
+    return this.laudos.validarPublico(tenantSlug, codigo);
   }
 }
 

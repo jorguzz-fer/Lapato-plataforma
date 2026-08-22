@@ -13,6 +13,7 @@ import Typography from '@mui/material/Typography';
 import InventoryOutlined from '@mui/icons-material/Inventory2Outlined';
 import FactCheckOutlined from '@mui/icons-material/FactCheckOutlined';
 import ScienceOutlined from '@mui/icons-material/ScienceOutlined';
+import BiotechOutlined from '@mui/icons-material/BiotechOutlined';
 import { EVENTO_LABEL, type TipoEvento } from '@lapato/shared';
 import { api, type Dossie as DadosDossie } from '../api';
 
@@ -35,6 +36,18 @@ const ABAS: Array<{ id: Aba; rotulo: string }> = [
 
 /** Identificadores e quantidades em fonte tabular: alinham na vertical. */
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
+
+/** M07: etapas em que o trabalho corrente é do M11 (da lâmina à liberação). */
+const ETAPAS_LAUDO = new Set([
+  'laminas_disponiveis',
+  'aguardando_microscopia',
+  'em_microscopia',
+  'aguardando_complementar',
+  'aguardando_revisao',
+  'em_revisao',
+  'aguardando_assinatura',
+  'liberado',
+]);
 
 export function Dossie({ permissoes }: { permissoes: string[] }) {
   const { id } = useParams<{ id: string }>();
@@ -149,12 +162,33 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
                 <Button
                   component={Link}
                   to={`/casos/${id}/macroscopia`}
-                  variant="contained"
+                  // Enquanto a bancada é o trabalho corrente, é a ação primária;
+                  // da lâmina em diante vira consulta, e o laudo assume o papel.
+                  variant={ETAPAS_LAUDO.has(dados.estado?.etapa ?? '') ? 'outlined' : 'contained'}
                   size="small"
                   startIcon={<ScienceOutlined />}
                   sx={{ flex: { xs: 1, md: 'none' } }}
                 >
                   Macroscopia
+                </Button>
+              )}
+
+            {/**
+             * Da lâmina em diante o trabalho é do M11: microscopia, laudo,
+             * revisão, assinatura. Depois de liberado o botão continua — o
+             * laudo é consulta, não só elaboração.
+             */}
+            {ETAPAS_LAUDO.has(dados.estado?.etapa ?? '') &&
+              permissoes.includes('laudo:visualizar') && (
+                <Button
+                  component={Link}
+                  to={`/casos/${id}/laudo`}
+                  variant="contained"
+                  size="small"
+                  startIcon={<BiotechOutlined />}
+                  sx={{ flex: { xs: 1, md: 'none' } }}
+                >
+                  Microscopia e laudo
                 </Button>
               )}
           </Stack>

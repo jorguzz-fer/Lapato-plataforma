@@ -261,6 +261,68 @@ export interface LoteDetalhe {
   }>;
 }
 
+// --- M11/M13: laudo ----------------------------------------------------------
+
+export interface DiagnosticoLaudo {
+  amostraId: string | null;
+  hierarquia: string;
+  processo: string | null;
+  entidade: string | null;
+  comportamento: string | null;
+  distribuicao: string | null;
+  severidade: string | null;
+  lateralidade: string;
+  textoExibido: string;
+  classificacaoNome: string | null;
+  classificacaoVersao: string | null;
+  grau: string | null;
+  criteriosGraduacao: Record<string, unknown> | null;
+  provisorio: boolean;
+}
+
+export interface MargemLaudo {
+  nome: string;
+  resultado: string;
+  distanciaMm: string | null;
+  observacoes: string | null;
+}
+
+export interface LaudoDoCaso {
+  laudoId: string;
+  status: string;
+  patologistaId: string | null;
+  liberadoEm: string | null;
+  versaoCorrente: {
+    id: string;
+    versao: number;
+    tipo: string;
+    motivo: string | null;
+    descricaoMicroscopica: string | null;
+    comentarios: string | null;
+    conclusao: string | null;
+    /** `null` também quando o perfil não tem `laudo:ver_nota_interna`. */
+    notaInterna: string | null;
+    assinadaEm: string | null;
+    assinaturaIdentificacao: string | null;
+    codigoValidacao: string | null;
+  };
+  diagnosticos: DiagnosticoLaudo[];
+  margens: MargemLaudo[];
+  revisoes: Array<{
+    resultado: string;
+    comentarios: string | null;
+    discordancia: boolean;
+    concluidaEm: string | null;
+  }>;
+  versoes: Array<{
+    versao: number;
+    tipo: string;
+    motivo: string | null;
+    assinadaEm: string | null;
+    substituida: boolean;
+  }>;
+}
+
 // --- M08: ficha de macroscopia ----------------------------------------------
 
 /**

@@ -24,6 +24,7 @@ import { LaudosService } from './modulos/m11-laudos/laudos.service.js';
 import { LaudoPdfService } from './modulos/m11-laudos/laudo-pdf.service.js';
 import { SolicitacoesService } from './modulos/m10-solicitacoes/solicitacoes.service.js';
 import { ClientesService } from './modulos/m03-clientes/clientes.service.js';
+import { UsuariosService } from './modulos/m02-usuarios/usuarios.service.js';
 import { CatalogoController } from './modulos/m01-administracao/catalogo.controller.js';
 import {
   CasosController,
@@ -34,6 +35,7 @@ import {
   ProcessamentoController,
   SolicitacoesController,
   TriagemController,
+  UsuariosController,
   ValidacaoController,
   VeterinariosController,
 } from './modulos/controllers.js';
@@ -53,6 +55,7 @@ import {
     AuthController,
     CatalogoController,
     AdministracaoController,
+    UsuariosController,
     ClientesController,
     VeterinariosController,
     CasosController,
@@ -81,6 +84,7 @@ import {
     LaudoPdfService,
     SolicitacoesService,
     ClientesService,
+    UsuariosService,
 
     /**
      * Guards globais: negar por padrao (Blueprint secao 1.3). Toda rota exige

@@ -879,6 +879,139 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
   });
 });
 
+describe('gestão de usuários (M02)', () => {
+  const marca = Date.now().toString().slice(-6);
+  const emailNovo = `novo.${marca}@lapato.local`;
+  let usuarioId: string;
+  let senhaProvisoria: string;
+
+  test('admin cria conta com senha provisória; o primeiro login prende na troca', async () => {
+    await entrar('admin@lapato.local');
+
+    const perfis = await req('GET', '/usuarios/perfis');
+    const recepcao = perfis.body.find((p: any) => p.chave === 'recepcao');
+    expect(recepcao).toBeTruthy();
+
+    const criado = await req('POST', '/usuarios', {
+      nomeCompleto: `Usuária Nova ${marca}`,
+      email: emailNovo,
+      perfilIds: [recepcao.id],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    expect(criado.body.senhaProvisoria).toBeTruthy();
+    usuarioId = criado.body.id;
+    senhaProvisoria = criado.body.senhaProvisoria;
+
+    // Identidade individual (M02 seção 3): o mesmo e-mail não cria outra conta.
+    const duplicado = await req('POST', '/usuarios', {
+      nomeCompleto: 'Outra Pessoa',
+      email: emailNovo,
+      perfilIds: [recepcao.id],
+    });
+    expect(duplicado.status).toBe(400);
+
+    /**
+     * Senha definida por terceiro vale para um acesso (seção 31): o login
+     * funciona, mas a sessão fica presa em `troca_senha_obrigatoria` até a
+     * pessoa definir a própria senha.
+     */
+    cookie = '';
+    const login = await req('POST', '/auth/login', {
+      instituicao: 'demo',
+      email: emailNovo,
+      senha: senhaProvisoria,
+    });
+    expect(login.status, JSON.stringify(login.body)).toBe(200);
+    expect(login.body.estagio).toBe('troca_senha_obrigatoria');
+
+    // Presa na troca, nenhuma rota de negócio responde.
+    const bloqueada = await req('GET', '/fluxo/casos');
+    expect(bloqueada.status).toBe(403);
+
+    const troca = await req('POST', '/auth/senha', {
+      senhaAtual: senhaProvisoria,
+      senhaNova: `NovaSenha!${marca}`,
+    });
+    expect(troca.status, JSON.stringify(troca.body)).toBe(200);
+    expect(troca.body.estagio).toBe('ativa');
+
+    // Destravada: o perfil de recepção enxerga a central de casos.
+    const fila = await req('GET', '/fluxo/casos');
+    expect(fila.status).toBe(200);
+  });
+
+  test('bloquear derruba a sessão aberta na hora; reativar devolve o acesso', async () => {
+    // A usuária nova está logada (cookie corrente). O admin a bloqueia...
+    const cookieDaUsuaria = cookie;
+    await entrar('admin@lapato.local');
+    const bloqueio = await req('POST', `/usuarios/${usuarioId}/bloqueio`);
+    expect(bloqueio.status, JSON.stringify(bloqueio.body)).toBe(201);
+
+    // ...e a sessão dela morre imediatamente (M02 seção 33).
+    const cookieDoAdmin = cookie;
+    cookie = cookieDaUsuaria;
+    const sessaoMorta = await req('GET', '/fluxo/casos');
+    expect(sessaoMorta.status).toBe(401);
+
+    // Login recusado enquanto bloqueada.
+    cookie = '';
+    const login = await req('POST', '/auth/login', {
+      instituicao: 'demo',
+      email: emailNovo,
+      senha: `NovaSenha!${marca}`,
+    });
+    expect(login.status).toBe(401);
+
+    // O admin não consegue se bloquear - a instituição não pode se trancar fora.
+    cookie = cookieDoAdmin;
+    const eu = await req('GET', '/auth/eu');
+    const autoBloqueio = await req('POST', `/usuarios/${eu.body.usuarioId}/bloqueio`);
+    expect(autoBloqueio.status).toBe(400);
+
+    const reativacao = await req('POST', `/usuarios/${usuarioId}/reativacao`);
+    expect(reativacao.status, JSON.stringify(reativacao.body)).toBe(201);
+
+    cookie = '';
+    const loginDeVolta = await req('POST', '/auth/login', {
+      instituicao: 'demo',
+      email: emailNovo,
+      senha: `NovaSenha!${marca}`,
+    });
+    expect(loginDeVolta.status).toBe(200);
+    expect(loginDeVolta.body.estagio).toBe('ativa');
+  });
+
+  test('reset administrativo gera nova provisória e revoga as sessões', async () => {
+    // A usuária está logada de novo; o admin reseta a senha dela.
+    await entrar('admin@lapato.local');
+    const reset = await req('POST', `/usuarios/${usuarioId}/redefinicao-senha`);
+    expect(reset.status, JSON.stringify(reset.body)).toBe(201);
+    expect(reset.body.senhaProvisoria).toBeTruthy();
+
+    // A senha antiga já não vale; a nova provisória prende na troca de novo.
+    cookie = '';
+    const senhaAntiga = await req('POST', '/auth/login', {
+      instituicao: 'demo',
+      email: emailNovo,
+      senha: `NovaSenha!${marca}`,
+    });
+    expect(senhaAntiga.status).toBe(401);
+
+    const login = await req('POST', '/auth/login', {
+      instituicao: 'demo',
+      email: emailNovo,
+      senha: reset.body.senhaProvisoria,
+    });
+    expect(login.status).toBe(200);
+    expect(login.body.estagio).toBe('troca_senha_obrigatoria');
+
+    // Quem não é admin não gerencia contas.
+    await entrar('patologista@lapato.local');
+    const tentativa = await req('POST', `/usuarios/${usuarioId}/redefinicao-senha`);
+    expect(tentativa.status).toBe(403);
+  });
+});
+
 describe('administração e configurações (M01)', () => {
   const marca = Date.now().toString().slice(-6);
 
@@ -891,7 +1024,7 @@ describe('administração e configurações (M01)', () => {
      */
     const servico = await req('POST', '/administracao/servicos', {
       nome: `Biópsia Expressa ${marca}`,
-      codigo: `EXPR${marca.slice(-2)}`,
+      codigo: `EXPR${marca.slice(-4)}`,
       categoria: 'anatomia_patologica',
       modalidade: 'histopatologia',
       prazoDiasUteis: 2,
@@ -901,7 +1034,7 @@ describe('administração e configurações (M01)', () => {
     // Código repetido é barrado.
     const repetido = await req('POST', '/administracao/servicos', {
       nome: 'Outro',
-      codigo: `EXPR${marca.slice(-2)}`,
+      codigo: `EXPR${marca.slice(-4)}`,
       categoria: 'anatomia_patologica',
       modalidade: 'histopatologia',
     });
@@ -909,7 +1042,7 @@ describe('administração e configurações (M01)', () => {
 
     // O serviço novo já aparece nas opções de cadastro (catálogo)...
     const catalogo = await req('GET', '/catalogo/servicos');
-    const novo = catalogo.body.find((s: any) => s.codigo === `EXPR${marca.slice(-2)}`);
+    const novo = catalogo.body.find((s: any) => s.codigo === `EXPR${marca.slice(-4)}`);
     expect(novo).toBeTruthy();
     expect(novo.prazoDiasUteis).toBe(2);
 
@@ -933,7 +1066,7 @@ describe('administração e configurações (M01)', () => {
      */
     const servico = await req('POST', '/administracao/servicos', {
       nome: `Citologia ${marca}`,
-      codigo: `CITO${marca.slice(-2)}`,
+      codigo: `CITO${marca.slice(-4)}`,
       categoria: 'anatomia_patologica',
       modalidade: 'citopatologia',
     });

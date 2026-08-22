@@ -385,6 +385,54 @@ export interface FichaMacroscopia {
   }>;
 }
 
+// --- M10: solicitações e pendências ------------------------------------------
+
+export interface SolicitacaoResumo {
+  id: string;
+  identificador: string;
+  tipo: string;
+  descricao: string;
+  justificativa: string | null;
+  prioridade: string;
+  status: string;
+  exigeAprovacao: boolean;
+  motivoRecusa: string | null;
+  resultadoTecnico: string | null;
+  setorResponsavel: string | null;
+  prazoEm: string | null;
+  criadaEm: string;
+  concluidaEm: string | null;
+  casoId: string | null;
+  caso: string | null;
+  paciente: string | null;
+  solicitante: string | null;
+  responsavel: string | null;
+}
+
+export interface PendenciaResumo {
+  id: string;
+  tipo: string;
+  descricao: string;
+  status: string;
+  nivelBloqueio: string;
+  etapaBloqueada: string | null;
+  suspendePrazo: boolean;
+  setorResponsavel: string | null;
+  visivelPortal: boolean;
+  criadaEm: string;
+  casoId: string;
+  caso: string;
+  paciente: string | null;
+}
+
+export interface MensagemSolicitacao {
+  id: string;
+  texto: string;
+  externa: boolean;
+  autor: string | null;
+  criadaEm: string;
+}
+
 // --- M11: validação pública do laudo pelo QR Code do PDF --------------------
 
 /**

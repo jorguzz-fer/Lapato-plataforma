@@ -18,6 +18,7 @@ import { Triagem } from './paginas/Triagem';
 import { Macroscopia } from './paginas/Macroscopia';
 import { Laudo } from './paginas/Laudo';
 import { Processamento } from './paginas/Processamento';
+import { Solicitacoes } from './paginas/Solicitacoes';
 import { Dossie } from './paginas/Dossie';
 import { ValidarLaudo } from './paginas/ValidarLaudo';
 import './estilos.css';
@@ -160,6 +161,15 @@ function App() {
               parceiro={sessao.laboratorioApoioId !== null}
               podeEnviarLote={sessao.permissoes.includes('processamento:enviar_lote')}
             />
+          </Shell>
+        }
+      />
+      {/* Fora de /casos: a demanda atravessa casos e setores (M10). */}
+      <Route
+        path="/solicitacoes"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Solicitações e Pendências">
+            <Solicitacoes permissoes={sessao.permissoes} />
           </Shell>
         }
       />

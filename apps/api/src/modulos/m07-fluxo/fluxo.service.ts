@@ -319,6 +319,52 @@ export class FluxoService {
     });
   }
 
+  /**
+   * Abre uma janela de suspensao do prazo (M10 secao 21: uma pendencia pode
+   * suspender a contagem enquanto se aguarda um terceiro).
+   *
+   * A tabela e do M07 - o modulo que pede a suspensao informa origem e motivo,
+   * mas quem escreve a janela e recalcula a previsao e este servico, como nos
+   * bloqueios. E o que permite depois distinguir "atraso laboratorial" de
+   * "aguardando terceiro" nos indicadores (M10 secao 111).
+   */
+  async suspenderPrazo(
+    tx: Transacao,
+    casoId: string,
+    dados: { motivo: string; origem: string; origemId?: string },
+  ): Promise<void> {
+    const ctx = exigirContexto();
+
+    await tx.insert(suspensaoPrazo).values({
+      tenantId: ctx.tenantId,
+      casoId,
+      motivo: dados.motivo,
+      origem: dados.origem,
+      origemId: dados.origemId ?? null,
+    });
+
+    await this.recalcularPrazo(tx, casoId);
+  }
+
+  /** Fecha as janelas de suspensao de uma origem e recalcula a previsao. */
+  async retomarPrazo(tx: Transacao, casoId: string, origemId: string): Promise<void> {
+    const ctx = exigirContexto();
+
+    await tx
+      .update(suspensaoPrazo)
+      .set({ fimEm: new Date(), atualizadoEm: new Date() })
+      .where(
+        and(
+          eq(suspensaoPrazo.tenantId, ctx.tenantId),
+          eq(suspensaoPrazo.casoId, casoId),
+          eq(suspensaoPrazo.origemId, origemId),
+          isNull(suspensaoPrazo.fimEm),
+        ),
+      );
+
+    await this.recalcularPrazo(tx, casoId);
+  }
+
   // --- internos ------------------------------------------------------------
 
   private async aplicarTransicao(

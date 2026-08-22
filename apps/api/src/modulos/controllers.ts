@@ -16,10 +16,12 @@ import {
   GRAVIDADE_NC,
   LATERALIDADE,
   METODO_AMOSTRAGEM,
+  NIVEL_BLOQUEIO,
   PERMISSOES,
   PRIORIDADE,
   RESULTADO_MARGEM,
   RESULTADO_TRIAGEM,
+  STATUS_PENDENCIA,
   type Etapa,
 } from '@lapato/shared';
 import { ExigePermissao, Publica } from '../core/auth/guards.js';
@@ -29,6 +31,10 @@ import { TriagemService } from './m06-triagem/triagem.service.js';
 import { MacroscopiaService } from './m08-macroscopia/macroscopia.service.js';
 import { ProcessamentoService } from './m09-processamento/processamento.service.js';
 import { LaudosService } from './m11-laudos/laudos.service.js';
+import {
+  SolicitacoesService,
+  type AbaSolicitacoes,
+} from './m10-solicitacoes/solicitacoes.service.js';
 import { FluxoConsultaService } from './m07-fluxo/fluxo-consulta.service.js';
 import { DbService } from '../core/db/db.service.js';
 
@@ -638,6 +644,204 @@ export class ValidacaoController {
     @Param('codigo') codigo: string,
   ) {
     return this.laudos.validarPublico(tenantSlug, codigo);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// M10 - Solicitações e Pendências
+// ---------------------------------------------------------------------------
+
+const novaSolicitacaoSchema = z.object({
+  casoId: z.string().uuid().optional(),
+  /**
+   * Texto livre de propósito: o M10 seção 112 entrega os tipos à configuração
+   * do M01. A tela oferece os comuns (coloração especial, IHQ, recorte...);
+   * fixar um enum aqui congelaria no código o que a documentação quer em dados.
+   */
+  tipo: z.string().min(1),
+  categoria: z.string().optional(),
+  descricao: z.string().min(1, 'Descreva o que está sendo solicitado.'),
+  justificativa: z.string().optional(),
+  prioridade: z.enum(PRIORIDADE).optional(),
+  objetoTipo: z.enum(['amostra', 'cassete', 'bloco', 'lamina']).optional(),
+  objetoId: z.string().uuid().optional(),
+  setorResponsavel: z.string().optional(),
+  prazoEm: z.coerce.date().optional(),
+  exigeAprovacao: z.boolean().optional(),
+});
+
+const analiseSchema = z
+  .object({
+    resultado: z.enum(['aprovada', 'recusada']),
+    motivo: z.string().optional(),
+  })
+  .superRefine((r, ctx) => {
+    if (r.resultado === 'recusada' && !r.motivo?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['motivo'],
+        message: 'Recusar uma solicitação exige o motivo.',
+      });
+    }
+  });
+
+const conclusaoSolicitacaoSchema = z.object({
+  resultadoTecnico: z.string().optional(),
+});
+
+const cancelamentoSchema = z.object({
+  motivo: z.string().min(1, 'Cancelar exige o motivo - ele fica no histórico (M10 seção 108).'),
+});
+
+const novaPendenciaSchema = z.object({
+  casoId: z.string().uuid(),
+  solicitacaoId: z.string().uuid().optional(),
+  tipo: z.string().min(1),
+  descricao: z.string().min(1, 'Descreva o que falta para o caso avançar.'),
+  status: z.enum(STATUS_PENDENCIA).optional(),
+  nivelBloqueio: z.enum(NIVEL_BLOQUEIO).optional(),
+  etapaBloqueada: z.enum(ETAPA).optional(),
+  suspendePrazo: z.boolean().optional(),
+  setorResponsavel: z.string().optional(),
+  visivelPortal: z.boolean().optional(),
+});
+
+const resolucaoPendenciaSchema = z.object({
+  resolucao: z.string().min(1, 'A resolução registra COMO a pendência saiu do caminho.'),
+});
+
+const mensagemSchema = z.object({
+  texto: z.string().min(1),
+});
+
+@ApiTags('M10 - Solicitações e Pendências')
+@Controller('solicitacoes')
+export class SolicitacoesController {
+  constructor(private readonly solicitacoes: SolicitacoesService) {}
+
+  /**
+   * As rotas fixas (`pendencias`, `casos/...`) vêm antes de `:id` de
+   * propósito: o Nest resolve na ordem de declaração, e depois delas qualquer
+   * segmento vira id - que o ParseUUIDPipe valida.
+   */
+
+  @Get('pendencias')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Pendências abertas da instituição',
+    description: 'Mais antigas primeiro - a pendência esquecida é o inimigo (M10 seção 92).',
+  })
+  async pendencias() {
+    return this.solicitacoes.listarPendencias();
+  }
+
+  @Post('pendencias')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_CRIAR)
+  @ApiOperation({
+    summary: 'Cria pendência',
+    description:
+      'A pendência informa seu impacto (bloqueio, suspensão de prazo); quem decide ' +
+      'o estado global do caso é o M07 (M10 seções 21-22).',
+  })
+  async criarPendencia(@Body() corpo: unknown) {
+    return this.solicitacoes.criarPendencia(validarCorpo(novaPendenciaSchema, corpo));
+  }
+
+  @Post('pendencias/:id/resolucao')
+  @ExigePermissao(PERMISSOES.PENDENCIA_RESOLVER)
+  @ApiOperation({
+    summary: 'Resolve pendência',
+    description:
+      'Resolução manual (M10 seção 94). Libera bloqueio e retoma o prazo quando a ' +
+      'pendência os criou - inclusive a pendência de triagem bloqueada (M06).',
+  })
+  async resolverPendencia(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(resolucaoPendenciaSchema, corpo);
+    await this.solicitacoes.resolverPendencia(id, dados.resolucao);
+    return { ok: true };
+  }
+
+  @Get('casos/:casoId')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_VISUALIZAR)
+  @ApiOperation({ summary: 'Solicitações e pendências do caso (aba do dossiê, M10 seção 89)' })
+  async doCaso(@Param('casoId', ParseUUIDPipe) casoId: string) {
+    return this.solicitacoes.doCaso(casoId);
+  }
+
+  @Get()
+  @ExigePermissao(PERMISSOES.SOLICITACAO_VISUALIZAR)
+  @ApiOperation({ summary: 'Fila de solicitações por subaba (M10 seção 51)' })
+  async listar(@Query('aba') aba?: string) {
+    const valida = ['abertas', 'vencidas', 'concluidas', 'todas'].includes(aba ?? '');
+    return this.solicitacoes.listar(valida ? (aba as AbaSolicitacoes) : 'abertas');
+  }
+
+  @Post()
+  @ExigePermissao(PERMISSOES.SOLICITACAO_CRIAR)
+  @ApiOperation({
+    summary: 'Cria solicitação',
+    description:
+      'Numeração própria SOL- (M10 seção 10). Quem exige aprovação nasce aguardando ' +
+      'análise; o resto cai direto na fila de execução.',
+  })
+  async criar(@Body() corpo: unknown) {
+    return this.solicitacoes.criar(validarCorpo(novaSolicitacaoSchema, corpo));
+  }
+
+  @Post(':id/analise')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_APROVAR)
+  @ApiOperation({
+    summary: 'Aprova ou recusa solicitação que exige análise prévia',
+    description: 'Decisão técnica (M10 seção 29) - recusar exige motivo.',
+  })
+  async analisar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(analiseSchema, corpo);
+    await this.solicitacoes.analisar(id, dados.resultado, dados.motivo);
+    return { ok: true };
+  }
+
+  @Post(':id/conclusao')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_EXECUTAR)
+  @ApiOperation({
+    summary: 'Conclui a execução',
+    description:
+      'Registra o resultado técnico - nunca a interpretação, que pertence ao módulo ' +
+      'diagnóstico (M10 seções 3 e 26). Pendências vinculadas resolvem sozinhas (seção 93).',
+  })
+  async concluir(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(conclusaoSolicitacaoSchema, corpo);
+    await this.solicitacoes.concluir(id, dados.resultadoTecnico);
+    return { ok: true };
+  }
+
+  @Post(':id/cancelamento')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_CANCELAR)
+  @ApiOperation({ summary: 'Cancela solicitação aberta, com motivo obrigatório' })
+  async cancelar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(cancelamentoSchema, corpo);
+    await this.solicitacoes.cancelar(id, dados.motivo);
+    return { ok: true };
+  }
+
+  @Get(':id/mensagens')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_VISUALIZAR)
+  @ApiOperation({ summary: 'Conversa estruturada da solicitação (M10 seção 49)' })
+  async mensagens(@Param('id', ParseUUIDPipe) id: string) {
+    return this.solicitacoes.mensagens(id);
+  }
+
+  @Post(':id/mensagens')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Comenta na solicitação',
+    description:
+      'A conversa fica anexa à demanda, nunca solta no caso - comentário livre como ' +
+      'tarefa é o que o módulo quer eliminar (M10 seção 50).',
+  })
+  async comentar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(mensagemSchema, corpo);
+    await this.solicitacoes.comentar(id, dados.texto);
+    return { ok: true };
   }
 }
 

@@ -529,6 +529,100 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
     expect(dossie.body.estado.etapa).toBe('aguardando_microscopia');
   });
 
+  test('8b. patologista solicita PAS; a execução do técnico resolve a pendência sozinha', async () => {
+    /**
+     * M10 seção 3: o módulo é dono da DEMANDA, não da execução. O patologista
+     * pede; o técnico executa e devolve "execução concluída"; a pendência
+     * vinculada morre junto (seção 93), sem ninguém lembrar de fechá-la.
+     */
+    const sol = await req('POST', '/solicitacoes', {
+      casoId,
+      tipo: 'coloracao_especial',
+      descricao: 'PAS — pesquisa de estruturas fúngicas',
+      justificativa: 'Descartar etiologia infecciosa antes de fechar o diagnóstico.',
+      objetoTipo: 'cassete',
+      objetoId: casseteId,
+    });
+    expect(sol.status, JSON.stringify(sol.body)).toBe(201);
+    // M10 seção 10: numeração própria, distinta do registro do caso.
+    expect(sol.body.identificador).toMatch(/^SOL-\d{4}-\d{6}$/);
+    const solicitacaoId = sol.body.id;
+
+    const pend = await req('POST', '/solicitacoes/pendencias', {
+      casoId,
+      solicitacaoId,
+      tipo: 'execucao_tecnica',
+      descricao: 'Aguardando coloração PAS.',
+      status: 'aguardando_execucao_tecnica',
+      // M10 seção 21: esta pendência suspende a contagem do prazo.
+      suspendePrazo: true,
+    });
+    expect(pend.status, JSON.stringify(pend.body)).toBe(201);
+
+    // Quem pede não executa: o patologista não tem `solicitacao:executar`.
+    const naoExecuta = await req('POST', `/solicitacoes/${solicitacaoId}/conclusao`, {});
+    expect(naoExecuta.status).toBe(403);
+
+    await entrar('tecnico@lapato.local');
+    const conclusao = await req('POST', `/solicitacoes/${solicitacaoId}/conclusao`, {
+      // Seção 82: resultado técnico, nunca interpretação.
+      resultadoTecnico: 'PAS realizado; lâminas disponíveis.',
+    });
+    expect(conclusao.status, JSON.stringify(conclusao.body)).toBe(201);
+
+    const doCaso = await req('GET', `/solicitacoes/casos/${casoId}`);
+    expect(doCaso.body.solicitacoes[0].status).toBe('concluida');
+    // Seção 93: resolvida automaticamente pela conclusão da execução.
+    expect(doCaso.body.pendencias[0].status).toBe('resolvida');
+
+    await entrar('patologista@lapato.local');
+    const dossie = await req('GET', `/casos/${casoId}`);
+    const tipos = dossie.body.linhaDoTempo.map((e: any) => e.tipo);
+    for (const t of [
+      'solicitacao.criada',
+      'pendencia.criada',
+      'solicitacao.concluida',
+      'pendencia.resolvida',
+    ]) {
+      expect(tipos, `evento ausente: ${t}`).toContain(t);
+    }
+  });
+
+  test('8c. solicitação com aprovação prévia não executa antes da análise', async () => {
+    // M10 seção 29: IHQ de alto custo exige autorização antes da bancada.
+    const sol = await req('POST', '/solicitacoes', {
+      casoId,
+      tipo: 'ihq',
+      descricao: 'Painel IHQ — pancitoqueratina, vimentina, CD18.',
+      exigeAprovacao: true,
+    });
+    expect(sol.status).toBe(201);
+    const solicitacaoId = sol.body.id;
+
+    // Sem análise concluída, a execução é recusada.
+    await entrar('tecnico@lapato.local');
+    const cedoDemais = await req('POST', `/solicitacoes/${solicitacaoId}/conclusao`, {});
+    expect(cedoDemais.status).toBe(400);
+
+    await entrar('patologista@lapato.local');
+    // Recusar sem motivo é recusado - o motivo é o que orienta quem pediu.
+    const semMotivo = await req('POST', `/solicitacoes/${solicitacaoId}/analise`, {
+      resultado: 'recusada',
+    });
+    expect(semMotivo.status).toBe(400);
+
+    const aprovacao = await req('POST', `/solicitacoes/${solicitacaoId}/analise`, {
+      resultado: 'aprovada',
+    });
+    expect(aprovacao.status, JSON.stringify(aprovacao.body)).toBe(201);
+
+    // Aprovada, o cancelamento com motivo mantém o histórico limpo para o resto do fluxo.
+    const cancelamento = await req('POST', `/solicitacoes/${solicitacaoId}/cancelamento`, {
+      motivo: 'Painel adiado até o resultado do PAS.',
+    });
+    expect(cancelamento.status, JSON.stringify(cancelamento.body)).toBe(201);
+  });
+
   test('9. patologista redige o laudo estruturado', async () => {
     /**
      * A leitura vem antes e nao inicia nada: abrir a tela nao pode publicar
@@ -847,5 +941,34 @@ describe('triagem bloqueada impede o avanço do fluxo', () => {
     await entrar('patologista@lapato.local');
     const macro = await req('POST', `/macroscopia/amostras/${amostraId}`);
     expect(macro.status).toBe(400);
+
+    /**
+     * M10 seções 5 e 94: o cliente esclarece, alguém valida e RESOLVE a
+     * pendência - e é isso, não uma edição manual de status, que desbloqueia
+     * o caso no M07. A pendência nasceu na triagem (M06), mas pertence ao M10;
+     * resolver aqui destrava lá.
+     */
+    const pendencias = await req('GET', '/solicitacoes/pendencias');
+    const daTriagem = pendencias.body.find((p: any) => p.casoId === criado.body.id);
+    expect(daTriagem, 'pendência da triagem ausente da fila do M10').toBeTruthy();
+
+    // Resolver sem dizer o desfecho é recusado.
+    const semResolucao = await req(
+      'POST',
+      `/solicitacoes/pendencias/${daTriagem.id}/resolucao`,
+      { resolucao: '' },
+    );
+    expect(semResolucao.status).toBe(400);
+
+    const resolucao = await req('POST', `/solicitacoes/pendencias/${daTriagem.id}/resolucao`, {
+      resolucao: 'Tutor confirmou por escrito a identificação do material.',
+    });
+    expect(resolucao.status, JSON.stringify(resolucao.body)).toBe(201);
+
+    const desbloqueado = await req('GET', `/casos/${criado.body.id}`);
+    expect(desbloqueado.body.estado.bloqueado).toBe(false);
+    expect(desbloqueado.body.linhaDoTempo.map((e: any) => e.tipo)).toContain(
+      'fluxo.desbloqueado',
+    );
   });
 });

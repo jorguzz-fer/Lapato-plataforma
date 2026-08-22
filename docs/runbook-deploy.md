@@ -449,11 +449,10 @@ Ambos precisam de decisão do dono do produto antes do go-live.
 
 ## 6. Decisões em aberto
 
-**Object storage.** Não existe hoje, e não faz falta: nenhum código grava
-arquivo. Quando o M16 entrar, o volume de imagens cresce sem parar, e a escolha
-é entre disco do host e S3 gerenciado (Cloudflare R2 não cobra egress). É troca
-de variável de ambiente, sem mudança de arquitetura — decida na hora, com o
-volume real do laboratório na mão.
+**Object storage — decidido (ADR 0009).** Cloudflare R2, atrás da interface
+`StorageProvider`: hoje guarda os PDFs dos laudos assinados, que são poucos e
+pequenos. O que continua em aberto é o M16 (imagens), onde o volume cresce sem
+parar — aí vale reavaliar retenção e classe de armazenamento, não o provedor.
 
 **Residência de dados.** Recomendação: região Brasil, pela LGPD. Confirmar com o
 provedor escolhido e registrar como ADR (`docs/dados-pessoais.md`).
@@ -471,30 +470,35 @@ isso ficou mais barato do que era com Compose.
 
 ## 7. Lacunas conhecidas de gestão de contas
 
-Nenhuma bloqueia o primeiro deploy, mas todas aparecem no primeiro mês de uso
-real. Estão aqui para que ninguém descubra na hora errada.
+Nenhuma bloqueia a operação, mas todas aparecem no primeiro mês de uso real.
+Estão aqui para que ninguém descubra na hora errada.
 
-**Não existe recuperação de MFA.** Um administrador que troque de celular sem
-migrar o segredo perde a conta, e o único conserto é `UPDATE` no banco. Também
-não existe rota para *substituir* um segundo fator já ativo — isso exigiria
-provar posse do fator antigo, e sem essa prova um cookie roubado trocaria o MFA
-da vítima. A rota devolve `409` até que essa prova exista.
+**Não existe autoatendimento de recuperação de MFA.** Quem troca de celular sem
+migrar o segredo perde o acesso, e quem restaura é alguém com terminal: o
+`redefinir-senha` com `RESET_MFA=limpar` (§3.1) limpa o segundo fator para que o
+próximo login cadastre outro. Também não existe rota para *substituir* um fator
+já ativo pela interface — isso exigiria provar posse do fator antigo, e sem essa
+prova um cookie roubado trocaria o MFA da vítima. A rota devolve `409` até que
+essa prova exista.
 
-**Não existe convite de usuário.** O schema já prevê `status =
-'aguardando_ativacao'` e `senha_hash` nulo, mas não há fluxo que ative a conta —
-uma conta criada assim fica inacessível. Por isso o `provision` cria o
-administrador já `ativo`, e por isso ainda não há como um administrador criar o
-segundo usuário pela interface. Hoje isso é `INSERT` manual.
+**Não existe convite de usuário por e-mail.** O administrador cria a conta na
+tela de Usuários e recebe a senha provisória na hora, para entregar à pessoa
+pelo canal que preferir — o funil de sessão exige a troca no primeiro acesso
+(M02 §31). O que falta é o convite propriamente dito: link enviado por e-mail,
+com a pessoa definindo a própria senha sem que ninguém mais a conheça. O schema
+já prevê `status = 'aguardando_ativacao'` e `senha_hash` nulo para esse fluxo,
+que depende do M26 (Notificações) para entregar a mensagem.
 
 **Não existe "esqueci minha senha" pelo próprio usuário.** Há troca de senha
-(com a senha atual em mãos) e há redefinição administrativa (§3.1), mas o
-autoatendimento depende do M26 (Notificações) para enviar o link por e-mail.
+(com a senha atual em mãos) e há redefinição administrativa — pela tela de
+Usuários ou, quando ninguém de dentro pode restaurar, pelo comando do §3.1. O
+autoatendimento depende do M26 para enviar o link por e-mail.
 
 **O segredo TOTP está em claro no banco.** Quem consegue ler `usuario` consegue
 gerar códigos válidos. Cifrar com chave fora do banco é o conserto; enquanto
 isso, o backup do banco (que já é cifrado por GPG, ver §5) carrega segredos de
 MFA e precisa do mesmo cuidado das credenciais.
 
-O caminho para fechar as três primeiras é o mesmo: gestão de usuários no M02
-(convite, ativação, reset administrativo), que por sua vez depende do M26 para
-entregar os e-mails.
+As duas primeiras têm o mesmo destravamento: o M26, que entrega e-mail. Enquanto
+ele não existe, a senha provisória viaja pela mão de quem administra — o que é
+aceitável para começar, e não é onde se quer ficar.

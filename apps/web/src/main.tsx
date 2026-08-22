@@ -19,6 +19,7 @@ import { Macroscopia } from './paginas/Macroscopia';
 import { Laudo } from './paginas/Laudo';
 import { Processamento } from './paginas/Processamento';
 import { Solicitacoes } from './paginas/Solicitacoes';
+import { Clientes } from './paginas/Clientes';
 import { Dossie } from './paginas/Dossie';
 import { ValidarLaudo } from './paginas/ValidarLaudo';
 import './estilos.css';
@@ -161,6 +162,14 @@ function App() {
               parceiro={sessao.laboratorioApoioId !== null}
               podeEnviarLote={sessao.permissoes.includes('processamento:enviar_lote')}
             />
+          </Shell>
+        }
+      />
+      <Route
+        path="/clientes"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Cadastro de Clientes e Veterinários">
+            <Clientes permissoes={sessao.permissoes} />
           </Shell>
         }
       />

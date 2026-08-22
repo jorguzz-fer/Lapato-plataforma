@@ -879,6 +879,140 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
   });
 });
 
+describe('cadastro de clientes e veterinários (M03)', () => {
+  /**
+   * O degrau zero de qualquer caso: sem cliente e veterinário cadastrados,
+   * nenhum exame nasce. A recepção faz o ciclo inteiro pela API - cadastrar,
+   * tropeçar na duplicidade, vincular e usar num caso novo.
+   */
+  const marca = Date.now().toString().slice(-6);
+  let clienteId: string;
+  let veterinarioId: string;
+
+  test('recepção cadastra cliente e veterinário e abre um caso com eles', async () => {
+    await entrar('recepcao@lapato.local');
+
+    const cli = await req('POST', '/clientes', {
+      nomeFantasia: `Clínica Aurora ${marca}`,
+      documento: `12.345.${marca}/0001-90`,
+      tipo: 'clinica',
+      codigo: `A${marca.slice(-3)}`,
+    });
+    expect(cli.status, JSON.stringify(cli.body)).toBe(201);
+    clienteId = cli.body.id;
+
+    const vet = await req('POST', '/veterinarios', {
+      nome: `Dra. Aurora Teste ${marca}`,
+      crmv: marca,
+      crmvUf: 'CE',
+    });
+    expect(vet.status, JSON.stringify(vet.body)).toBe(201);
+    veterinarioId = vet.body.id;
+
+    const vinculo = await req('POST', `/veterinarios/${veterinarioId}/vinculos`, {
+      clienteId,
+      principal: true,
+    });
+    expect(vinculo.status, JSON.stringify(vinculo.body)).toBe(201);
+
+    // O cadastro novo serve imediatamente a um caso novo - fonte única (M03 seção 1).
+    const servicos = await req('GET', '/catalogo/servicos');
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: any) => s.codigo === 'HISTO').id,
+      clienteId,
+      veterinarioId,
+      paciente: { nome: 'Belinha' },
+      amostras: [{ descricao: 'Nódulo cutâneo' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    // O identificador nasce com o código do cliente novo (M03 seção 6.2).
+    expect(criado.body.identificador).toContain(`A${marca.slice(-3)}-`);
+  });
+
+  test('duplicidade é conversa com candidatos, não erro seco (M03 seção 20)', async () => {
+    // Mesmo documento: 409 com o cadastro existente entre os candidatos.
+    const repetido = await req('POST', '/clientes', {
+      nomeFantasia: `Outro Nome ${marca}`,
+      documento: `12345${marca}000190`,
+      tipo: 'clinica',
+      codigo: `B${marca.slice(-3)}`,
+    });
+    expect(repetido.status).toBe(409);
+    expect(repetido.body.duplicidades.some((d: any) => d.id === clienteId)).toBe(true);
+
+    // Confirmar que é outro cliente passa - e fica na auditoria.
+    const confirmado = await req('POST', '/clientes', {
+      nomeFantasia: `Outro Nome ${marca}`,
+      documento: `12345${marca}000190`,
+      tipo: 'clinica',
+      codigo: `B${marca.slice(-3)}`,
+      ignorarDuplicidade: true,
+    });
+    expect(confirmado.status, JSON.stringify(confirmado.body)).toBe(201);
+
+    // Código repetido é barrado mesmo com a confirmação: compõe o registro.
+    const codigoRepetido = await req('POST', '/clientes', {
+      nomeFantasia: 'Terceiro Nome',
+      tipo: 'clinica',
+      codigo: `A${marca.slice(-3)}`,
+      ignorarDuplicidade: true,
+    });
+    expect(codigoRepetido.status).toBe(400);
+
+    // Mesmo CRMV: o caminho oferecido é vincular, não recadastrar.
+    const vetRepetido = await req('POST', '/veterinarios', {
+      nome: `Nome Diferente ${marca}`,
+      crmv: marca,
+      crmvUf: 'CE',
+    });
+    expect(vetRepetido.status).toBe(409);
+    expect(vetRepetido.body.duplicidades.some((d: any) => d.id === veterinarioId)).toBe(true);
+  });
+
+  test('encerrar vínculo preserva a história; inativar tira das opções novas', async () => {
+    const ficha = await req('GET', `/clientes/${clienteId}`);
+    expect(ficha.status).toBe(200);
+    const vinculo = ficha.body.vinculos[0];
+    expect(vinculo.terminoEm).toBeNull();
+
+    const encerramento = await req(
+      'POST',
+      `/veterinarios/vinculos/${vinculo.id}/encerramento`,
+    );
+    expect(encerramento.status, JSON.stringify(encerramento.body)).toBe(201);
+
+    // O vínculo encerrado continua na ficha, com término - nada é apagado.
+    const depois = await req('GET', `/clientes/${clienteId}`);
+    expect(depois.body.vinculos[0].terminoEm).not.toBeNull();
+    // E o caso aberto com o cliente segue lá.
+    expect(depois.body.casos.length).toBeGreaterThan(0);
+
+    // Revincular reativa o MESMO registro em vez de duplicar (M03 seção 36).
+    const volta = await req('POST', `/veterinarios/${veterinarioId}/vinculos`, { clienteId });
+    expect(volta.status).toBe(201);
+    expect(volta.body.id).toBe(vinculo.id);
+
+    // Inativado, o cliente some do catálogo de opções para exame novo...
+    await req('POST', `/clientes/${clienteId}/inativacao`);
+    const catalogo = await req('GET', '/catalogo/clientes');
+    expect(catalogo.body.some((c: any) => c.id === clienteId)).toBe(false);
+
+    // ...mas a busca ampla do M03 ainda o encontra (a história fica) - e com a
+    // contagem de casos certa, que já saiu errada por identificador sem
+    // qualificação no subquery.
+    const busca = await req('GET', `/clientes?q=Aurora ${marca}`);
+    const encontrado = busca.body.find((c: any) => c.id === clienteId);
+    expect(encontrado).toBeTruthy();
+    expect(encontrado.totalCasos).toBe(1);
+
+    // A lista de veterinários traz os vínculos vigentes por extenso.
+    const vets = await req('GET', `/veterinarios?q=Aurora Teste ${marca}`);
+    expect(vets.status, JSON.stringify(vets.body)).toBe(200);
+    expect(vets.body[0].vinculos).toContain(`Clínica Aurora ${marca}`);
+  });
+});
+
 describe('triagem bloqueada impede o avanço do fluxo', () => {
   test('caso com triagem bloqueada não chega à macroscopia', async () => {
     await entrar('admin@lapato.local');

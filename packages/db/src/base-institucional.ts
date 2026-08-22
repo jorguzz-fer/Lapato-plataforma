@@ -48,6 +48,12 @@ export const PERFIS: Array<{
       PERMISSOES.FLUXO_VISUALIZAR,
       PERMISSOES.SOLICITACAO_VISUALIZAR,
       PERMISSOES.SOLICITACAO_CRIAR,
+      /**
+       * M10 secao 38 e 52: pendencias cadastrais - confirmar paciente,
+       * veterinario, numero de frascos - sao a caixa da recepcao, e resolver
+       * e o desfecho do trabalho dela, nao um privilegio tecnico.
+       */
+      PERMISSOES.PENDENCIA_RESOLVER,
     ],
   },
   {
@@ -63,6 +69,12 @@ export const PERFIS: Array<{
       PERMISSOES.PROCESSAMENTO_VISUALIZAR,
       PERMISSOES.PROCESSAMENTO_ENVIAR_LOTE,
       PERMISSOES.SOLICITACAO_VISUALIZAR,
+      /**
+       * M10 secao 52: a caixa do tecnico sao as ordens tecnicas - recortes,
+       * niveis, coloracoes, IHQ. Executar e concluir a ordem e dele; a
+       * interpretacao do resultado continua no modulo diagnostico (secao 26).
+       */
+      PERMISSOES.SOLICITACAO_EXECUTAR,
       PERMISSOES.IMAGEM_VISUALIZAR,
       PERMISSOES.IMAGEM_ENVIAR,
     ],
@@ -93,6 +105,16 @@ export const PERFIS: Array<{
       PERMISSOES.LAUDO_VER_NOTA_INTERNA,
       PERMISSOES.SOLICITACAO_VISUALIZAR,
       PERMISSOES.SOLICITACAO_CRIAR,
+      /**
+       * M10: aprovar solicitacao de alto custo (secao 29, IHQ com autorizacao)
+       * e validar a resposta de uma pendencia antes de resolve-la (secoes 48 e
+       * 94) sao decisoes tecnicas - do patologista, nao do administrador, que
+       * o M02 proibe de exercer autoridade tecnica. Cancelar acompanha quem
+       * pode criar e aprovar.
+       */
+      PERMISSOES.SOLICITACAO_APROVAR,
+      PERMISSOES.SOLICITACAO_CANCELAR,
+      PERMISSOES.PENDENCIA_RESOLVER,
       PERMISSOES.IMAGEM_VISUALIZAR,
       PERMISSOES.IMAGEM_ENVIAR,
       PERMISSOES.CLIENTE_VISUALIZAR,

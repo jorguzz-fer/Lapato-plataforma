@@ -23,6 +23,7 @@ import MenuIcon from '@mui/icons-material/MenuOutlined';
 import AddCircle from '@mui/icons-material/AddCircleOutlineOutlined';
 import ViewList from '@mui/icons-material/ViewListOutlined';
 import LocalShipping from '@mui/icons-material/LocalShippingOutlined';
+import PendingActions from '@mui/icons-material/PendingActionsOutlined';
 import Password from '@mui/icons-material/PasswordOutlined';
 import Security from '@mui/icons-material/SecurityOutlined';
 import { shell } from '@lapato/design-tokens';
@@ -72,6 +73,13 @@ const MENU = [
     icone: <LocalShipping fontSize="small" />,
     rotulo: MODULO_LABEL[MODULOS.M09_PROCESSAMENTO],
     permissao: 'processamento:visualizar',
+  },
+  {
+    /* M10: a demanda atravessa casos e setores - a fila é da instituição. */
+    para: '/solicitacoes',
+    icone: <PendingActions fontSize="small" />,
+    rotulo: MODULO_LABEL[MODULOS.M10_SOLICITACOES],
+    permissao: 'solicitacao:visualizar',
   },
 ] as const;
 

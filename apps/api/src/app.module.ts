@@ -2,6 +2,7 @@ import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common
 import { APP_GUARD } from '@nestjs/core';
 import { DbModule } from './core/db/db.module.js';
 import { IaModule } from './core/ia/ia.module.js';
+import { StorageModule } from './core/storage/storage.module.js';
 import { ConfigModule } from './core/config/config.module.js';
 import { AuthService } from './core/auth/auth.service.js';
 import { AuthController } from './core/auth/auth.controller.js';
@@ -18,6 +19,7 @@ import { FluxoConsultaService } from './modulos/m07-fluxo/fluxo-consulta.service
 import { MacroscopiaService } from './modulos/m08-macroscopia/macroscopia.service.js';
 import { ProcessamentoService } from './modulos/m09-processamento/processamento.service.js';
 import { LaudosService } from './modulos/m11-laudos/laudos.service.js';
+import { LaudoPdfService } from './modulos/m11-laudos/laudo-pdf.service.js';
 import { CatalogoController } from './modulos/m01-administracao/catalogo.controller.js';
 import {
   CasosController,
@@ -26,6 +28,7 @@ import {
   MacroscopiaController,
   ProcessamentoController,
   TriagemController,
+  ValidacaoController,
 } from './modulos/controllers.js';
 
 /**
@@ -37,7 +40,7 @@ import {
  * auditoria, IA, numeracao - nunca regra de negocio de outro modulo.
  */
 @Module({
-  imports: [ConfigModule, DbModule, IaModule],
+  imports: [ConfigModule, DbModule, IaModule, StorageModule],
   controllers: [
     SaudeController,
     AuthController,
@@ -47,6 +50,7 @@ import {
     MacroscopiaController,
     ProcessamentoController,
     LaudosController,
+    ValidacaoController,
     FluxoController,
   ],
   providers: [
@@ -62,6 +66,7 @@ import {
     MacroscopiaService,
     ProcessamentoService,
     LaudosService,
+    LaudoPdfService,
 
     /**
      * Guards globais: negar por padrao (Blueprint secao 1.3). Toda rota exige

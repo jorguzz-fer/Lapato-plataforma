@@ -194,6 +194,16 @@ SESSION_COOKIE_SECURE=true
 MFA_ISSUER=LAPATO
 
 COPILOT_PROVIDER=stub
+
+# PDF do laudo (M11) e, mais tarde, imagens (M16) - ver ADR de storage.
+STORAGE_PROVIDER=r2
+R2_ACCOUNT_ID=<id da conta Cloudflare>
+R2_ACCESS_KEY_ID=<chave de acesso do token R2>
+R2_SECRET_ACCESS_KEY=<segredo do token R2>
+R2_BUCKET=lapato-producao
+
+# Base do front - monta a URL que o QR Code do laudo aponta (M11 seção 88).
+WEB_PUBLIC_URL=https://app.lapato.com.br
 ```
 
 ### `lapato-worker`
@@ -219,6 +229,7 @@ O processo morre na subida, dizendo qual campo falta, se:
 - `SESSION_SECRET` tiver menos de 32 caracteres;
 - `NODE_ENV=production` com `SESSION_COOKIE_SECURE=false`;
 - `COPILOT_PROVIDER=claude` sem `ANTHROPIC_API_KEY`;
+- `STORAGE_PROVIDER=r2` sem as quatro credenciais do R2;
 - `DATABASE_URL` ausente.
 
 É deliberado: melhor o container morrer imediatamente do que atender request com

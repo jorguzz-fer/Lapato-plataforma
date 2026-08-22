@@ -80,6 +80,26 @@ export const api = {
   post: <T>(caminho: string, corpo?: unknown) => requisitar<T>('POST', caminho, corpo),
 };
 
+/**
+ * Baixa um arquivo binário (o PDF do laudo) - `requisitar` assume corpo JSON e
+ * não serve aqui.
+ */
+export async function baixarArquivo(caminho: string): Promise<Blob> {
+  const resposta = await fetch(`${BASE}${caminho}`, { credentials: 'include' });
+
+  if (!resposta.ok) {
+    const texto = await resposta.text();
+    const dados = texto ? JSON.parse(texto) : null;
+    throw new ErroApi(
+      resposta.status,
+      dados?.title ?? 'Erro',
+      dados?.detail ?? 'Não foi possível baixar o arquivo.',
+    );
+  }
+
+  return resposta.blob();
+}
+
 // --- Tipos das respostas usadas pelas telas ---------------------------------
 
 export interface Sessao {
@@ -363,4 +383,20 @@ export interface FichaMacroscopia {
     descricao: string | null;
     exigeDescalcificacao: boolean;
   }>;
+}
+
+// --- M11: validação pública do laudo pelo QR Code do PDF --------------------
+
+/**
+ * Resposta deliberadamente pobre (M11 seção 88) - nada de dado clínico,
+ * diagnóstico ou paciente. Só o que autentica o documento perante terceiros.
+ */
+export interface LaudoValidado {
+  instituicao: string;
+  caso: string;
+  versao: number;
+  tipo: string;
+  assinadoPor: string | null;
+  assinadoEm: string;
+  vigente: boolean;
 }

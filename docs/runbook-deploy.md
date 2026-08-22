@@ -79,7 +79,7 @@ segurança.
 | Provedor de VPS | Hospedagem do Coolify | Agora |
 | DNS do domínio | Registro `A` | Agora |
 | Destino S3 do backup | Cópia off-site do banco | Antes do go-live |
-| Object storage S3 | Imagens do M16 | Quando o M16 entrar |
+| Cloudflare R2 | PDF do laudo (M11); imagens do M16 reaproveitam o mesmo bucket depois | Antes do go-live |
 | Provedor de e-mail | Notificações do M26 | Quando o M26 entrar |
 | Anthropic API | Copiloto real (M17) | Quando o Copiloto for ligado |
 
@@ -103,9 +103,18 @@ openssl rand -hex 32     # senha do usuário de banco
 significado da URL — assim como `#`, `%` e `@` de um gerador com símbolos. Hex
 tem 128 bits de entropia em 32 caracteres e não precisa de escape em lugar nenhum.
 
-**Redis e S3 não são configurados hoje.** Apareciam aqui e no Compose, mas
-nenhuma linha de código os lê — não estão nas dependências nem no schema de
-validação do `env.ts`. Voltam quando o M16 e as filas do M07 existirem.
+**Redis ainda não é configurado.** Aparece no Compose, mas nenhuma linha de
+código o lê — não está nas dependências nem no schema de validação do
+`env.ts`. Volta quando as filas do M07 existirem.
+
+**Storage já é o R2, desde o M11.** `STORAGE_PROVIDER=local` grava em disco e é
+o padrão de dev/teste — o mesmo espírito do `COPILOT_PROVIDER=stub`, sem exigir
+credencial de nuvem para rodar a suíte ou subir localmente. Em produção o valor
+é `r2`, com as quatro credenciais da Cloudflare (`R2_ACCOUNT_ID`,
+`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`) — a aplicação recusa
+subir com `STORAGE_PROVIDER=r2` e alguma delas faltando. Hoje guarda o PDF do
+laudo; o M16 (imagens) reaproveita o mesmo bucket depois, sem precisar de novo
+provedor.
 
 Para desenvolvimento local, copie `.env.example` para `.env` e use
 `infra/docker-compose.yml`, que sobe Postgres, os três serviços e o Caddy

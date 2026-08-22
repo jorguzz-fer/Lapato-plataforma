@@ -194,6 +194,7 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
   let loteId: string;
   let laudoId: string;
   let versaoId: string;
+  let codigoValidacao: string;
 
   /**
    * A rota declara `:chave` no caminho e por um tempo leu o valor da query, o
@@ -675,6 +676,7 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
     expect(r.status, JSON.stringify(r.body)).toBe(201);
     // M11: código do QR Code de validação de autenticidade.
     expect(r.body.codigoValidacao).toBeTruthy();
+    codigoValidacao = r.body.codigoValidacao;
   });
 
   test('12. liberação dispara as consequências automatizadas', async () => {
@@ -708,6 +710,52 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
     }
   });
 
+  test('12b. PDF assinado e validação pública pelo QR Code', async () => {
+    const preview = await fetch(
+      `${servidor}${BASE}/laudos/versoes/${versaoId}/pdf/pre-visualizacao`,
+      { headers: { cookie } },
+    );
+    expect(preview.status).toBe(200);
+    expect(preview.headers.get('content-type')).toBe('application/pdf');
+    expect(Buffer.from(await preview.arrayBuffer()).subarray(0, 5).toString()).toBe('%PDF-');
+
+    const download = await fetch(`${servidor}${BASE}/laudos/versoes/${versaoId}/pdf`, {
+      headers: { cookie },
+    });
+    expect(download.status).toBe(200);
+    expect(Buffer.from(await download.arrayBuffer()).subarray(0, 5).toString()).toBe('%PDF-');
+
+    /**
+     * Sem cookie de sessão nenhum - a validação por QR Code acontece antes de
+     * qualquer login existir (ADR 0002), então o teste não pode depender dele.
+     */
+    const validacao = await fetch(`${servidor}${BASE}/validar/demo/${codigoValidacao}`);
+    expect(validacao.status).toBe(200);
+    const corpo = await validacao.json();
+    expect(corpo.vigente).toBe(true);
+    expect(corpo.versao).toBe(1);
+    expect(corpo.tipo).toBe('original');
+    expect(corpo.instituicao).toBeTruthy();
+    expect(corpo.caso).toBeTruthy();
+    // M11 seção 88: resposta deliberadamente pobre - nada de dado clínico.
+    const textoDaResposta = JSON.stringify(corpo);
+    expect(textoDaResposta).not.toContain('Mastocitoma');
+    expect(textoDaResposta).not.toContain('diagnostic');
+
+    /**
+     * Código ou instituição errados devolvem a mesma "não encontrado" - o
+     * mesmo cuidado do login, para não deixar ninguém adivinhar qual dos dois
+     * está errado.
+     */
+    const codigoErrado = await fetch(`${servidor}${BASE}/validar/demo/CODIGO-QUE-NAO-EXISTE`);
+    expect(codigoErrado.status).toBe(404);
+
+    const instituicaoErrada = await fetch(
+      `${servidor}${BASE}/validar/instituicao-que-nao-existe/${codigoValidacao}`,
+    );
+    expect(instituicaoErrada.status).toBe(404);
+  });
+
   test('13. adendo cria nova versão e preserva a anterior', async () => {
     const r = await req('POST', `/laudos/${laudoId}/versoes`, {
       tipo: 'adendo',
@@ -719,6 +767,16 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
 
     const dossie = await req('GET', `/casos/${casoId}`);
     expect(dossie.body.linhaDoTempo.map((e: any) => e.tipo)).toContain('laudo.adendo_criado');
+
+    /**
+     * M11 seção 89: o PDF já entregue continua autêntico, mas o QR Code agora
+     * avisa que existe versão mais nova - o aviso é da resposta, não do PDF
+     * congelado (ADR 0005), então quem já baixou o documento antigo não vê os
+     * bytes mudarem.
+     */
+    const revalidacao = await fetch(`${servidor}${BASE}/validar/demo/${codigoValidacao}`);
+    expect(revalidacao.status).toBe(200);
+    expect((await revalidacao.json()).vigente).toBe(false);
   });
 
   test('14. adendo exige motivo', async () => {

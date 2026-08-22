@@ -19,8 +19,10 @@ import Typography from '@mui/material/Typography';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import BiotechOutlined from '@mui/icons-material/BiotechOutlined';
 import DeleteOutline from '@mui/icons-material/DeleteOutlined';
+import DownloadOutlined from '@mui/icons-material/DownloadOutlined';
 import LockOutlined from '@mui/icons-material/LockOutlined';
 import SendOutlined from '@mui/icons-material/SendOutlined';
+import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
 import {
   LATERALIDADE,
   RESULTADO_MARGEM,
@@ -29,6 +31,7 @@ import {
 } from '@lapato/shared';
 import {
   api,
+  baixarArquivo,
   ErroApi,
   type Dossie as DadosDossie,
   type LaudoDoCaso,
@@ -157,12 +160,14 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
   const [discordancia, setDiscordancia] = useState(false);
   const [motivoVersao, setMotivoVersao] = useState('');
   const [codigoAssinatura, setCodigoAssinatura] = useState<string | null>(null);
+  const [processandoPdf, setProcessandoPdf] = useState<'previa' | 'download' | null>(null);
 
   const veNotaInterna = permissoes.includes('laudo:ver_nota_interna');
   const podeEditar = permissoes.includes('laudo:editar');
   const podeRevisar = permissoes.includes('laudo:revisar');
   const podeAssinar = permissoes.includes('laudo:assinar') && !exigeSupervisao;
   const podeLiberar = permissoes.includes('laudo:liberar');
+  const podeVerPdf = permissoes.includes('laudo:visualizar');
 
   const carregar = useCallback((dados: LaudoDoCaso | null) => {
     setLaudo(dados);
@@ -369,6 +374,47 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
     }, `Não foi possível criar a ${tipo === 'adendo' ? 'nova versão de adendo' : 'correção'}.`);
   }
 
+  /**
+   * Pré-visualização: mostra exatamente o documento que seria disponibilizado
+   * (M11 seção 71), com a marca d'água RASCUNHO quando ainda não assinado.
+   * Gerada na hora, nunca gravada — abre em nova aba, não baixa.
+   */
+  async function preVisualizarPdf() {
+    if (!versao) return;
+    setErro(null);
+    setProcessandoPdf('previa');
+    try {
+      const blob = await baixarArquivo(`/laudos/versoes/${versao.id}/pdf/pre-visualizacao`);
+      window.open(URL.createObjectURL(blob), '_blank', 'noopener');
+    } catch (err) {
+      setErro(
+        err instanceof ErroApi ? err.detalhe : 'Não foi possível gerar a pré-visualização.',
+      );
+    } finally {
+      setProcessandoPdf(null);
+    }
+  }
+
+  /** Os bytes congelados na assinatura (ADR 0005) — nunca regerados. */
+  async function baixarPdfAssinado() {
+    if (!versao) return;
+    setErro(null);
+    setProcessandoPdf('download');
+    try {
+      const blob = await baixarArquivo(`/laudos/versoes/${versao.id}/pdf`);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${dossie!.caso.identificador}-v${versao.versao}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível baixar o PDF.');
+    } finally {
+      setProcessandoPdf(null);
+    }
+  }
+
   if (!carregado || !dossie) {
     return erro ? (
       <Alert severity="error">{erro}</Alert>
@@ -387,14 +433,37 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
         sx={{ mb: 0.5, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}
       >
         <Typography variant="h2">Microscopia e laudo</Typography>
-        {laudo && (
-          <Chip
-            size="small"
-            variant="outlined"
-            color={laudo.status === 'retornado_para_correcao' ? 'warning' : 'primary'}
-            label={`${STATUS_LABEL[laudo.status] ?? laudo.status} · v${versao?.versao}`}
-          />
-        )}
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          {laudo && (
+            <Chip
+              size="small"
+              variant="outlined"
+              color={laudo.status === 'retornado_para_correcao' ? 'warning' : 'primary'}
+              label={`${STATUS_LABEL[laudo.status] ?? laudo.status} · v${versao?.versao}`}
+            />
+          )}
+          {laudo && podeVerPdf && (
+            <Button
+              size="small"
+              startIcon={<VisibilityOutlined />}
+              onClick={() => void preVisualizarPdf()}
+              disabled={processandoPdf !== null}
+            >
+              {processandoPdf === 'previa' ? 'Gerando…' : 'Pré-visualizar PDF'}
+            </Button>
+          )}
+          {assinada && podeVerPdf && (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<DownloadOutlined />}
+              onClick={() => void baixarPdfAssinado()}
+              disabled={processandoPdf !== null}
+            >
+              {processandoPdf === 'download' ? 'Baixando…' : 'Baixar PDF'}
+            </Button>
+          )}
+        </Stack>
       </Stack>
       <Typography sx={{ fontSize: 13, color: 'text.secondary', mb: 3 }}>
         O laudo é o dado estruturado e versionado — o PDF é só a representação documental.

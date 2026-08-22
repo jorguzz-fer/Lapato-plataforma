@@ -44,6 +44,27 @@ const envSchema = z.object({
   /** M17 / ADR 0007: `stub` mantem o sistema funcionando sem LLM. */
   COPILOT_PROVIDER: z.enum(['stub', 'claude']).default('stub'),
   ANTHROPIC_API_KEY: z.string().optional(),
+
+  /**
+   * Armazenamento de arquivos (M11: PDF do laudo; M16 reutiliza depois).
+   *
+   * `local` grava em disco e nao exige credencial - e o padrao de dev e teste,
+   * no mesmo espirito do `COPILOT_PROVIDER=stub`: a ausencia de um servico
+   * externo nao pode impedir rodar a suite nem subir localmente.
+   */
+  STORAGE_PROVIDER: z.enum(['local', 'r2']).default('local'),
+  STORAGE_LOCAL_DIR: z.string().default('.storage-local'),
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET: z.string().optional(),
+
+  /**
+   * Base publica do front - usada para montar a URL que o QR Code do laudo
+   * aponta (M11 secao 88). Nao e o mesmo que `API_CORS_ORIGINS`: aqui e so a
+   * origem que o QR leva, sem lista.
+   */
+  WEB_PUBLIC_URL: z.string().default('http://localhost:5173'),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -67,6 +88,15 @@ export function carregarEnv(fonte: NodeJS.ProcessEnv = process.env): Env {
 
   if (env.COPILOT_PROVIDER === 'claude' && !env.ANTHROPIC_API_KEY) {
     throw new Error('COPILOT_PROVIDER=claude exige ANTHROPIC_API_KEY.');
+  }
+
+  if (
+    env.STORAGE_PROVIDER === 'r2' &&
+    (!env.R2_ACCOUNT_ID || !env.R2_ACCESS_KEY_ID || !env.R2_SECRET_ACCESS_KEY || !env.R2_BUCKET)
+  ) {
+    throw new Error(
+      'STORAGE_PROVIDER=r2 exige R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY e R2_BUCKET.',
+    );
   }
 
   return env;

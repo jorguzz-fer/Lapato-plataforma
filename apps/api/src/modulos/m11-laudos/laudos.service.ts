@@ -2,19 +2,27 @@ import { randomBytes } from 'node:crypto';
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import {
+  amostra,
   assinaturaProfissional,
   caso,
+  cliente,
   diagnostico,
   laudo,
   laudoVersao,
   margemMicroscopica,
+  paciente,
   revisaoLaudo,
   notificacaoPendente,
+  servico,
+  tenant,
+  termo,
+  veterinario,
   type Transacao,
 } from '@lapato/db';
 import {
@@ -31,6 +39,9 @@ import { GuardianService } from '../../core/guardian/guardian.service.js';
 import { SugestoesService } from '../../core/ia/sugestoes.service.js';
 import { FluxoService } from '../m07-fluxo/fluxo.service.js';
 import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
+import { ENV, type Env } from '../../core/config/env.js';
+import { StorageFactory } from '../../core/storage/storage.provider.js';
+import { LaudoPdfService, type DadosLaudoPdf } from './laudo-pdf.service.js';
 
 export interface DadosLaudo {
   descricaoMicroscopica?: string;
@@ -80,6 +91,9 @@ export class LaudosService {
     private readonly guardian: GuardianService,
     private readonly sugestoes: SugestoesService,
     private readonly fluxo: FluxoService,
+    private readonly storage: StorageFactory,
+    private readonly pdf: LaudoPdfService,
+    @Inject(ENV) private readonly env: Env,
   ) {}
 
   /** Abre (ou recupera) o laudo do caso e sua versao corrente. */
@@ -447,15 +461,40 @@ export class LaudosService {
 
       // M11: codigo do QR Code de validacao de autenticidade do documento.
       const codigoValidacao = randomBytes(9).toString('base64url').toUpperCase();
+      const assinadaEm = new Date();
+      const identificacao = assinatura?.identificacaoProfissional ?? null;
+
+      /**
+       * O PDF nasce AQUI, dentro da mesma operacao que assina - nunca antes.
+       * ADR 0005: "uma versao assinada nunca e regerada com conteudo
+       * diferente". Gerar cedo demais correria o risco de gravar bytes que nao
+       * refletem a versao que de fato foi assinada, se o Guardian bloqueasse
+       * depois da geracao.
+       *
+       * Se a instituicao ainda nao tiver identificacao profissional cadastrada
+       * (`assinatura` nulo), o PDF sai sem o nome do profissional no rodape em
+       * vez de falhar a assinatura por um cadastro incompleto - a assinatura em
+       * si (quem, quando, versao) ja esta registrada no banco de qualquer jeito.
+       */
+      const dadosPdf = await this.montarDadosPdf(tx, versaoId, {
+        identificacao: identificacao ?? 'Assinatura sem identificação profissional cadastrada',
+        assinadaEm,
+        codigoValidacao,
+      });
+      const pdfBytes = await this.pdf.gerar(dadosPdf);
+      const chave = `laudos/${ctx.tenantId}/${versaoId}.pdf`;
+      const { hash } = await this.storage.criar().salvar(chave, pdfBytes, 'application/pdf');
 
       await tx
         .update(laudoVersao)
         .set({
-          assinadaEm: new Date(),
+          assinadaEm,
           assinadaPorId: ctx.usuarioId,
-          assinaturaIdentificacao: assinatura?.identificacaoProfissional ?? null,
+          assinaturaIdentificacao: identificacao,
           assinaturaMecanismo: mecanismo,
           codigoValidacao,
+          pdfChave: chave,
+          pdfHash: hash,
         })
         .where(eq(laudoVersao.id, versaoId));
 
@@ -636,7 +675,192 @@ export class LaudosService {
     });
   }
 
+  /**
+   * Pre-visualizacao (M11 secao 71): "deve mostrar exatamente o documento que
+   * sera disponibilizado". Mesmo gerador da assinatura, mas os bytes NAO sao
+   * guardados - rascunho pode ser salvo dezenas de vezes, e nada aqui e
+   * versionado ate a assinatura existir de verdade.
+   */
+  async preVisualizarPdf(versaoId: string): Promise<Buffer> {
+    return this.db.executar(async (tx) => {
+      const dados = await this.montarDadosPdf(tx, versaoId, null);
+      return this.pdf.gerar(dados);
+    });
+  }
+
+  /**
+   * Bytes do PDF assinado - os MESMOS bytes gravados na assinatura, nunca
+   * regerados (ADR 0005). So existe depois de assinada: antes disso o unico
+   * documento possivel e a pre-visualizacao.
+   */
+  async baixarPdf(versaoId: string): Promise<{ bytes: Buffer; nomeArquivo: string }> {
+    return this.db.executar(async (tx) => {
+      const versao = await this.buscarVersao(tx, versaoId);
+
+      if (!versao.pdfChave) {
+        throw new BadRequestException(
+          'Este laudo ainda não foi assinado. Use a pré-visualização.',
+        );
+      }
+
+      const bytes = await this.storage.criar().baixar(versao.pdfChave);
+      return { bytes, nomeArquivo: `${versao.casoIdentificador}-v${versao.versao}.pdf` };
+    });
+  }
+
+  /**
+   * Validacao publica do QR Code (M11 secao 88).
+   *
+   * Sem sessao - por isso o slug da instituicao vem na propria URL, do mesmo
+   * jeito que o login resolve o tenant antes de a sessao existir (ADR 0002).
+   * A resposta e deliberadamente pobre: nada de dados clinicos, diagnostico ou
+   * paciente. So o que autentica o documento perante terceiros.
+   */
+  async validarPublico(tenantSlug: string, codigo: string) {
+    const [instituicao] = await this.db.raw
+      .select({ id: tenant.id, nome: tenant.nomeFantasia })
+      .from(tenant)
+      .where(and(eq(tenant.slug, tenantSlug), isNull(tenant.inativadoEm)))
+      .limit(1);
+
+    if (!instituicao) throw new NotFoundException('Documento não encontrado.');
+
+    return this.db.executarComTenant(instituicao.id, async (tx) => {
+      const [linha] = await tx
+        .select({
+          versao: laudoVersao.versao,
+          tipo: laudoVersao.tipo,
+          assinadaEm: laudoVersao.assinadaEm,
+          assinaturaIdentificacao: laudoVersao.assinaturaIdentificacao,
+          substituida: laudoVersao.substituida,
+          casoIdentificador: caso.identificador,
+        })
+        .from(laudoVersao)
+        .innerJoin(laudo, eq(laudo.id, laudoVersao.laudoId))
+        .innerJoin(caso, eq(caso.id, laudo.casoId))
+        .where(and(eq(laudoVersao.tenantId, instituicao.id), eq(laudoVersao.codigoValidacao, codigo)))
+        .limit(1);
+
+      if (!linha || !linha.assinadaEm) throw new NotFoundException('Documento não encontrado.');
+
+      return {
+        instituicao: instituicao.nome,
+        caso: linha.casoIdentificador,
+        versao: linha.versao,
+        tipo: linha.tipo,
+        assinadoPor: linha.assinaturaIdentificacao,
+        assinadoEm: linha.assinadaEm,
+        // M11 secao 89: versao substituida continua autentica - so nao e mais
+        // a vigente. A distincao importa para quem recebeu o PDF antigo.
+        vigente: !linha.substituida,
+      };
+    });
+  }
+
   // --- internos ------------------------------------------------------------
+
+  /** Monta os dados formatados que `LaudoPdfService` usa - nunca decide nada. */
+  private async montarDadosPdf(
+    tx: Transacao,
+    versaoId: string,
+    assinaturaInfo: { identificacao: string; assinadaEm: Date; codigoValidacao: string } | null,
+  ): Promise<DadosLaudoPdf> {
+    const ctx = exigirContexto();
+    const especieTermo = termo;
+
+    const [linha] = await tx
+      .select({
+        versao: laudoVersao,
+        casoIdentificador: caso.identificador,
+        pacienteNome: paciente.nome,
+        pacienteSexo: paciente.sexo,
+        pacienteIdadeInformada: paciente.idadeInformada,
+        pacienteDataNascimento: paciente.dataNascimento,
+        pacienteEspecie: especieTermo.valor,
+        clienteNome: cliente.nomeFantasia,
+        veterinarioNome: veterinario.nome,
+        veterinarioCrmv: veterinario.crmv,
+        servicoNome: servico.nome,
+        instituicaoNome: tenant.nomeFantasia,
+        instituicaoSlug: tenant.slug,
+      })
+      .from(laudoVersao)
+      .innerJoin(laudo, eq(laudo.id, laudoVersao.laudoId))
+      .innerJoin(caso, eq(caso.id, laudo.casoId))
+      .innerJoin(paciente, eq(paciente.id, caso.pacienteId))
+      .innerJoin(cliente, eq(cliente.id, caso.clienteId))
+      .innerJoin(servico, eq(servico.id, caso.servicoId))
+      .innerJoin(tenant, eq(tenant.id, laudoVersao.tenantId))
+      .leftJoin(veterinario, eq(veterinario.id, caso.veterinarioId))
+      .leftJoin(especieTermo, eq(especieTermo.id, paciente.especieId))
+      .where(and(eq(laudoVersao.tenantId, ctx.tenantId), eq(laudoVersao.id, versaoId)))
+      .limit(1);
+
+    if (!linha) throw new NotFoundException('Versão de laudo não encontrada.');
+
+    const [diagnosticos, margens] = await Promise.all([
+      tx
+        .select({
+          textoExibido: diagnostico.textoExibido,
+          amostraIdentificador: amostra.identificador,
+        })
+        .from(diagnostico)
+        .leftJoin(amostra, eq(amostra.id, diagnostico.amostraId))
+        .where(eq(diagnostico.laudoVersaoId, versaoId))
+        .orderBy(asc(diagnostico.ordem)),
+      tx
+        .select({
+          nome: margemMicroscopica.nome,
+          resultado: margemMicroscopica.resultado,
+          distanciaMm: margemMicroscopica.distanciaMm,
+        })
+        .from(margemMicroscopica)
+        .where(eq(margemMicroscopica.laudoVersaoId, versaoId))
+        .orderBy(asc(margemMicroscopica.nome)),
+    ]);
+
+    return {
+      instituicao: { nome: linha.instituicaoNome },
+      caso: { identificador: linha.casoIdentificador },
+      paciente: {
+        nome: linha.pacienteNome,
+        especie: linha.pacienteEspecie,
+        sexo: linha.pacienteSexo,
+        idade: linha.pacienteIdadeInformada ?? this.idadeAPartirDoNascimento(linha.pacienteDataNascimento),
+      },
+      cliente: { nome: linha.clienteNome },
+      veterinario: linha.veterinarioNome
+        ? { nome: linha.veterinarioNome, crmv: linha.veterinarioCrmv }
+        : null,
+      servico: { nome: linha.servicoNome },
+      versao: {
+        numero: linha.versao.versao,
+        tipo: linha.versao.tipo,
+        motivo: linha.versao.motivo,
+        descricaoMicroscopica: linha.versao.descricaoMicroscopica,
+        comentarios: linha.versao.comentarios,
+        conclusao: linha.versao.conclusao,
+      },
+      diagnosticos,
+      margens,
+      assinatura: assinaturaInfo
+        ? { identificacao: assinaturaInfo.identificacao, assinadaEm: assinaturaInfo.assinadaEm }
+        : null,
+      urlValidacao: assinaturaInfo
+        ? `${this.env.WEB_PUBLIC_URL}/validar/${linha.instituicaoSlug}/${assinaturaInfo.codigoValidacao}`
+        : null,
+    };
+  }
+
+  /** Idade aproximada em anos/meses, quando ha data de nascimento exata. */
+  private idadeAPartirDoNascimento(dataNascimento: string | null): string | null {
+    if (!dataNascimento) return null;
+    const nascimento = new Date(dataNascimento);
+    const meses =
+      (Date.now() - nascimento.getTime()) / (1000 * 60 * 60 * 24 * 30.4375);
+    if (meses < 12) return `${Math.floor(meses)} meses`;
+    return `${Math.floor(meses / 12)} anos`;
+  }
 
   private async versaoCorrente(tx: Transacao, laudoId: string) {
     const ctx = exigirContexto();

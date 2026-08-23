@@ -485,7 +485,7 @@
 
   <section class="placar" aria-label="Resumo do estado dos módulos">
     <div class="metrica is-pronto">
-      <span class="n">14</span>
+      <span class="n">15</span>
       <span class="r">Prontos de ponta a ponta</span>
     </div>
     <div class="metrica is-parcial">
@@ -493,7 +493,7 @@
       <span class="r">Domínio pronto, sem tela</span>
     </div>
     <div class="metrica is-ausente">
-      <span class="n">4</span>
+      <span class="n">3</span>
       <span class="r">Adiados por decisão</span>
     </div>
     <div class="metrica is-semdoc">
@@ -673,9 +673,9 @@
     <div class="modulo">
       <span class="num">04</span>
       <span class="nome">Portal do Cliente</span>
-      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Preparado</span></span>
-      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-adiado"><span class="glifo" aria-hidden="true">—</span> Adiado</span></span>
-      <span class="nota">Identidade externa já existe no modelo, para encaixar sem refatoração.</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="nota">O cliente acompanha o exame, complementa a história clínica e baixa o laudo liberado. Isolamento na camada de dados: o escopo sai da conta, nunca da URL. Financeiro, coleta e notificações dependem de módulos ainda sem documentação.</span>
     </div>
 
     <div class="modulo">
@@ -812,7 +812,8 @@
       agora o PDF com QR Code de validação pública — de ponta a ponta, com teste automatizado
       cobrindo o caminho inteiro. A citologia entrou com bancada e workflow próprios, e o
       laudo passou a sair ilustrado: as fotografias do caso agora vivem no acervo, não no
-      celular de quem as tirou. O que segue são as extensões que faltam para o dia a
+      celular de quem as tirou. E o laudo chega ao cliente pelo Portal, sem ninguém
+      anexar PDF em mensagem. O que segue são as extensões que faltam para o dia a
       dia do laboratório e para tirar a IA do modo stub.
     </p>
 
@@ -826,9 +827,9 @@
       </li>
       <li class="passo">
         <div>
-          <h3>Portal do Cliente e necropsia</h3>
-          <p class="marca">M04 · M14 · M15 · M18</p>
-          <p>Entregar o laudo sem enviar PDF à mão, necropsia com captura por voz, controle de cadáveres e bioteca — documentados e adiados por decisão de fase. A ordem entre eles é escolha de negócio, não técnica.</p>
+          <h3>Necropsia, cadáveres e bioteca</h3>
+          <p class="marca">M14 · M15 · M18</p>
+          <p>Necropsia com captura por voz, controle de cadáveres e bioteca — documentados e adiados por decisão de fase. A ordem entre eles é escolha de negócio, não técnica.</p>
         </div>
       </li>
     </ol>

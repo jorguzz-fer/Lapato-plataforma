@@ -455,38 +455,113 @@ testada**. Backup que nunca foi restaurado não é backup.
 
 | Item | Onde | Crítico |
 |---|---|---|
-| Banco Postgres | recurso gerenciado do Coolify | **Sim** |
+| Banco Postgres | backup agendado do Coolify → R2 | **Sim** — coberto |
 | Variáveis de ambiente | interface do Coolify | **Sim** — copie para o cofre |
-| Imagens e documentos | ainda não existem (M16) | Quando o M16 entrar |
+| PDFs de laudo e imagens | bucket `lapato` no R2 | **Sim** — sem cópia própria hoje |
+
+O bucket da aplicação **não tem backup**: ele é a fonte, não uma cópia. O R2
+replica internamente, o que protege contra falha de disco, mas não contra
+exclusão acidental nem contra token comprometido. Quando o volume de imagens
+justificar, o caminho é versionamento de objeto no bucket ou uma cópia periódica
+para outro bucket.
 
 As variáveis são o item que se esquece: elas não estão no repositório, por
 decisão, e vivem só no Coolify. Perder o host sem uma cópia delas significa
 reconstruir `SESSION_SECRET` e senhas do zero — e um `SESSION_SECRET` novo
 derruba todas as sessões.
 
-### Backup agendado
+### Backup agendado — como está configurado
 
-Ligue o backup do PostgreSQL na interface do Coolify, com destino S3. Ele cuida
-de agendamento, retenção e cópia off-site.
+O backup roda pelo próprio Coolify, com cópia off-site no Cloudflare R2. Foi
+configurado em duas partes.
+
+**1. Destino S3** (uma vez) — Coolify → **Storages** → *+ Add*:
+
+| Campo | Valor |
+|---|---|
+| Name | `r2-backups` |
+| Protocol | `https` |
+| Host | `<account-id>.r2.cloudflarestorage.com` — **sem** `https://` |
+| Port | `443` |
+| Path | `/` — o formulário aceita vazio, mas a validação recusa; `/` passa |
+| Bucket | `lapato-backups` |
+| Region | `auto` |
+
+**Bucket separado do bucket da aplicação, com token próprio.** O token da API
+tem leitura e escrita em `lapato` (PDFs e imagens); se o backup morasse lá,
+quem tivesse esse token leria o dump inteiro — que carrega dado clínico, dado
+pessoal de tutores e **os segredos TOTP em texto puro** (ver §7).
+
+**2. Agendamento** — Coolify → recurso PostgreSQL → **Backups** → *+ Add*:
+
+- Frequency: `0 3 * * *` (03:00 UTC = meia-noite em Fortaleza)
+- S3 storage: `r2-backups`, com *Local copy: **Delete after S3 upload***
+- Retention S3: 14 backups; local fica irrelevante, porque não sobra cópia local
+
+> O interruptor de S3 **nasce desligado**. Um agendamento com
+> `S3 storage: Local only` grava o dump no disco do próprio servidor — o que não
+> protege contra o cenário que mais importa, que é perder o servidor. Confira a
+> coluna **Availability** da execução: tem de dizer `S3 Available`, não só
+> `Local Available`.
+
+> Os campos de retenção têm botão de salvar próprio e se perdem se você mexer em
+> outro bloco antes de salvar. Se não persistirem, não trave: uma **regra de
+> ciclo de vida** no bucket do R2 (Configurações → excluir objetos com mais de N
+> dias) faz a mesma limpeza e não depende da interface do Coolify.
 
 `infra/backup.sh` continua servindo para uma cópia independente do Coolify: gera
 dump comprimido, cifra com GPG e descarta locais com mais de 7 dias. Ele recusa
-rodar sem `BACKUP_GPG_RECIPIENT` — o dump carrega dados clínicos, pessoais e
-segredos de MFA.
+rodar sem `BACKUP_GPG_RECIPIENT`. O backup do Coolify **não é cifrado** — a
+proteção do dump é o bucket privado e o token restrito a ele.
 
-### Restauração — teste antes de precisar
+### Restauração — testada, e como repetir
 
-Restaure um dump real num banco descartável **antes do go-live**, e anote quanto
-tempo levou: esse número é o seu RTO. Um backup nunca restaurado é uma suposição,
-não uma garantia.
+**O `pg_dump` do Coolify é da versão 17; o banco roda Postgres 16.** O arquivo
+sai no formato de arquivo 1.16, e o `pg_restore` do 16 o recusa com
+`unsupported version (1.16) in file header`. **Restaurar exige ferramenta 17 ou
+mais nova.** Isto não é defeito do backup, mas descobrir num desastre custaria
+horas.
 
-### RPO e RTO — a definir
+O teste roda num Postgres descartável — produção não é tocada, e é o cenário
+real: restaurar onde não existe nada.
 
-- **RPO** (perda aceitável): com backup diário, até 24 h. Se o laboratório não
-  aceitar perder um dia de laudos, é preciso PITR com WAL archiving.
-- **RTO** (tempo até voltar): medido no teste de restauração.
+```bash
+docker run -d --rm --name pg-teste -e POSTGRES_PASSWORD=teste postgres:17-alpine
+until docker exec pg-teste pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done
 
-Ambos precisam de decisão do dono do produto antes do go-live.
+# Os papéis existem no dump; sem eles o restore reclama a cada GRANT.
+# Um `-c` por comando: CREATE DATABASE não roda dentro de transação.
+docker exec pg-teste psql -U postgres -c "CREATE ROLE lapato_owner LOGIN PASSWORD 'x'"
+docker exec pg-teste psql -U postgres -c "CREATE ROLE lapato_app LOGIN PASSWORD 'x'"
+docker exec pg-teste createdb -U postgres -O lapato_owner lapato
+
+DUMP=$(ls -t /data/coolify/backups/databases/root-team-0/postgres-lapato-*/pg-dump-lapato-*.dmp | head -1)
+docker cp "$DUMP" pg-teste:/tmp/dump.dmp
+time docker exec pg-teste pg_restore -U postgres -d lapato --no-owner --no-privileges /tmp/dump.dmp
+
+docker exec pg-teste psql -U postgres -d lapato -c \
+  "SELECT (SELECT count(*) FROM caso) casos, (SELECT count(*) FROM laudo) laudos,
+          (SELECT count(*) FROM usuario) usuarios, (SELECT count(*) FROM tenant) instituicoes;"
+
+docker stop pg-teste
+```
+
+A conferência roda como superusuário, que **passa por cima da RLS** — é por isso
+que ela devolve linhas. Como `lapato_app`, sem `SET app.current_tenant`, o
+resultado correto seria zero (ADR 0002).
+
+**Última restauração testada: 23/08/2026** — banco recém-provisionado (277 kB),
+`pg_restore` em **1,9 s**, contagens conferindo com a produção.
+
+### RPO e RTO
+
+- **RPO** (perda aceitável): **24 h**, com o backup diário das 03:00 UTC. Se o
+  laboratório não aceitar perder um dia de laudos, é preciso PITR com WAL
+  archiving — decisão do dono do produto.
+- **RTO** (tempo até voltar): o `pg_restore` de 1,9 s **não é o RTO**. Ele mede
+  o passo mais rápido do procedimento. O RTO real inclui provisionar servidor,
+  restaurar as variáveis de ambiente e subir a aplicação — e só é conhecido
+  quando esse caminho inteiro for cronometrado uma vez.
 
 ---
 

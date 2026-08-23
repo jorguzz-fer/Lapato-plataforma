@@ -78,6 +78,17 @@ export const imagem = pgTable(
     autorizadaTreinamentoIa: boolean('autorizada_treinamento_ia').notNull().default(false),
 
     /**
+     * M16 secao 73: miniatura para a galeria - "o arquivo original somente
+     * sera carregado quando necessario". Nao e um `nivel` da imagem: os tres
+     * niveis (original, trabalho, publicada) sao estados do CONTEUDO, e a
+     * miniatura e so uma representacao de navegacao do mesmo conteudo.
+     *
+     * Nula quando quem enviou nao produziu miniatura; a galeria cai no
+     * original nesse caso.
+     */
+    miniaturaChave: text('miniatura_chave'),
+
+    /**
      * M16: exclusao e restrita - prefere-se inativar mantendo o historico
      * (INATIVADA / MARCADA COMO NAO UTILIZAR / CAPTURA ACIDENTAL).
      */

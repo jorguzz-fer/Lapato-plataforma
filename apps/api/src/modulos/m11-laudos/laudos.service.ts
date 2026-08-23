@@ -4,12 +4,15 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import {
   amostra,
   avaliacaoCitologica,
+  imagem,
+  imagemVersao,
   assinaturaProfissional,
   caso,
   cliente,
@@ -92,6 +95,8 @@ export interface DadosLaudo {
  */
 @Injectable()
 export class LaudosService {
+  private readonly logger = new Logger(LaudosService.name);
+
   constructor(
     private readonly db: DbService,
     private readonly eventos: EventosService,
@@ -892,6 +897,13 @@ export class LaudosService {
       .where(eq(avaliacaoCitologica.laudoVersaoId, versaoId))
       .orderBy(asc(amostra.ordem));
 
+    /**
+     * M16 secoes 36-40: as selecionadas do caso, na ordem escolhida. O M11
+     * pede os bytes ao M16 em vez de ler o storage por conta propria - o
+     * arquivo tem um dono so (DIRETRIZES secao 8).
+     */
+    const imagens = await this.imagensDoLaudo(tx, linha.versao.laudoId);
+
     return {
       instituicao: { nome: linha.instituicaoNome },
       caso: { identificador: linha.casoIdentificador },
@@ -918,6 +930,7 @@ export class LaudosService {
       },
       diagnosticos,
       margens,
+      imagens,
       citologia: citologia.map((c) => ({
         amostraIdentificador: c.amostraIdentificador,
         material:
@@ -938,6 +951,69 @@ export class LaudosService {
         ? `${this.env.WEB_PUBLIC_URL}/validar/${linha.instituicaoSlug}/${assinaturaInfo.codigoValidacao}`
         : null,
     };
+  }
+
+  /**
+   * Bytes e legendas das imagens selecionadas para o laudo.
+   *
+   * Falha de leitura de UMA imagem nao derruba o documento: o storage pode
+   * estar momentaneamente indisponivel, e barrar a assinatura por causa de uma
+   * ilustracao seria trocar um problema pequeno por um grande. A imagem
+   * simplesmente nao entra, e o restante do laudo sai.
+   */
+  private async imagensDoLaudo(
+    tx: Transacao,
+    laudoId: string,
+  ): Promise<Array<{ bytes: Buffer; legenda: string | null; identificador: string }>> {
+    const ctx = exigirContexto();
+
+    const [dono] = await tx
+      .select({ casoId: laudo.casoId })
+      .from(laudo)
+      .where(and(eq(laudo.tenantId, ctx.tenantId), eq(laudo.id, laudoId)))
+      .limit(1);
+    if (!dono) return [];
+
+    const selecionadas = await tx
+      .select({
+        identificador: imagem.identificador,
+        legenda: imagem.legenda,
+        chave: imagemVersao.chaveStorage,
+      })
+      .from(imagem)
+      .innerJoin(
+        imagemVersao,
+        and(eq(imagemVersao.imagemId, imagem.id), eq(imagemVersao.nivel, 'original')),
+      )
+      .where(
+        and(
+          eq(imagem.tenantId, ctx.tenantId),
+          eq(imagem.casoId, dono.casoId),
+          eq(imagem.incluidaNoLaudo, true),
+          isNull(imagem.inativadaEm),
+        ),
+      )
+      .orderBy(asc(imagem.ordemNoLaudo));
+
+    if (selecionadas.length === 0) return [];
+
+    const provedor = this.storage.criar();
+    const resultado: Array<{ bytes: Buffer; legenda: string | null; identificador: string }> =
+      [];
+
+    for (const item of selecionadas) {
+      try {
+        resultado.push({
+          bytes: await provedor.baixar(item.chave),
+          legenda: item.legenda,
+          identificador: item.identificador,
+        });
+      } catch {
+        this.logger.warn(`Imagem ${item.identificador} não pôde ser lida do storage.`);
+      }
+    }
+
+    return resultado;
   }
 
   /** Idade aproximada em anos/meses, quando ha data de nascimento exata. */

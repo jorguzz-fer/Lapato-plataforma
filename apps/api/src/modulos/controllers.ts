@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -8,7 +9,10 @@ import {
   Post,
   Query,
   StreamableFile,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import {
@@ -22,6 +26,7 @@ import {
   METODO_AMOSTRAGEM,
   NIVEL_BLOQUEIO,
   PERMISSOES,
+  ORIGEM_IMAGEM,
   PRESERVACAO_CELULAR,
   PRIORIDADE,
   RESULTADO_MARGEM,
@@ -29,6 +34,7 @@ import {
   STATUS_CLIENTE,
   STATUS_PENDENCIA,
   TIPO_CLIENTE,
+  TIPO_IMAGEM,
   type Etapa,
 } from '@lapato/shared';
 import { ExigePermissao, Publica } from '../core/auth/guards.js';
@@ -41,6 +47,10 @@ import { MacroscopiaService } from './m08-macroscopia/macroscopia.service.js';
 import { ProcessamentoService } from './m09-processamento/processamento.service.js';
 import { LaudosService } from './m11-laudos/laudos.service.js';
 import { CitopatologiaService } from './m12-citopatologia/citopatologia.service.js';
+import {
+  ImagensService,
+  type ArquivoRecebido,
+} from './m16-imagens/imagens.service.js';
 import {
   SolicitacoesService,
   type AbaSolicitacoes,
@@ -1283,6 +1293,177 @@ export class CitopatologiaController {
       amostraId,
       validarCorpo(avaliacaoCitologicaSchema, corpo),
     );
+    return { ok: true };
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// M16 - Imagens e Gestão do Acervo Digital
+// ---------------------------------------------------------------------------
+
+/**
+ * Os campos chegam como texto porque a requisição é multipart - o corpo vem ao
+ * lado do arquivo, não em JSON. `metadados` viaja como JSON serializado.
+ */
+const novaImagemSchema = z.object({
+  tipo: z.enum(TIPO_IMAGEM),
+  origem: z.enum(ORIGEM_IMAGEM).optional(),
+  moduloContexto: z.string().min(1),
+  objetoTipo: z.string().optional(),
+  objetoId: z.string().uuid().optional(),
+  legenda: z.string().optional(),
+  descricao: z.string().optional(),
+  capturadaEm: z.string().optional(),
+  /** JSON serializado: multipart não carrega objeto aninhado. */
+  metadados: z.string().optional(),
+});
+
+const edicaoImagemSchema = z.object({
+  legenda: z.string().optional(),
+  descricao: z.string().optional(),
+  metadados: z.record(z.unknown()).optional(),
+  autorizadaEnsino: z.boolean().optional(),
+  autorizadaPesquisa: z.boolean().optional(),
+  autorizadaTreinamentoIa: z.boolean().optional(),
+});
+
+@ApiTags('M16 - Imagens')
+@Controller('imagens')
+export class ImagensController {
+  constructor(private readonly imagens: ImagensService) {}
+
+  @Get('casos/:casoId')
+  @ExigePermissao(PERMISSOES.IMAGEM_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Galeria do caso',
+    description:
+      'Acervo único: as imagens de todas as etapas num só lugar, separadas por ' +
+      'contexto e origem (M16 seções 6 e 57). Inativadas ficam de fora por padrão.',
+  })
+  async galeria(
+    @Param('casoId', ParseUUIDPipe) casoId: string,
+    @Query('inativadas') inativadas?: string,
+  ) {
+    return this.imagens.listarPorCaso(casoId, inativadas === 'sim');
+  }
+
+  @Post('casos/:casoId')
+  @ExigePermissao(PERMISSOES.IMAGEM_ENVIAR)
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'arquivo', maxCount: 1 },
+      { name: 'miniatura', maxCount: 1 },
+    ]),
+  )
+  @ApiOperation({
+    summary: 'Envia uma imagem para o acervo do caso',
+    description:
+      'O original é preservado e nunca sobrescrito (M16 §22). A miniatura é ' +
+      'opcional: sem ela, a galeria carrega o original.',
+  })
+  async enviar(
+    @Param('casoId', ParseUUIDPipe) casoId: string,
+    @UploadedFiles()
+    arquivos: { arquivo?: ArquivoRecebido[]; miniatura?: ArquivoRecebido[] },
+    @Body() corpo: unknown,
+  ) {
+    const arquivo = arquivos?.arquivo?.[0];
+    if (!arquivo) throw new BadRequestException('Envie o arquivo da imagem.');
+
+    const dados = validarCorpo(novaImagemSchema, corpo);
+
+    let metadados: Record<string, unknown> | undefined;
+    if (dados.metadados) {
+      try {
+        metadados = JSON.parse(dados.metadados) as Record<string, unknown>;
+      } catch {
+        throw new BadRequestException('O campo metadados não é um JSON válido.');
+      }
+    }
+
+    return this.imagens.enviar(
+      casoId,
+      arquivo,
+      { ...dados, metadados },
+      arquivos.miniatura?.[0],
+    );
+  }
+
+  @Get(':id/arquivo')
+  @ExigePermissao(PERMISSOES.IMAGEM_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Bytes da imagem',
+    description:
+      'O bucket é privado: o arquivo sai por aqui, depois da checagem de ' +
+      'permissão, e nunca por URL pública. `?tamanho=miniatura` serve a galeria.',
+  })
+  async arquivo(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('tamanho') tamanho?: string,
+  ) {
+    const { bytes, mimeType, nomeArquivo } = await this.imagens.baixar(
+      id,
+      tamanho === 'miniatura' ? 'miniatura' : 'original',
+    );
+    return new StreamableFile(bytes, {
+      type: mimeType,
+      disposition: `inline; filename="${nomeArquivo}"`,
+    });
+  }
+
+  @Post(':id')
+  @ExigePermissao(PERMISSOES.IMAGEM_EDITAR)
+  @ApiOperation({
+    summary: 'Legenda, metadados e autorizações de uso',
+    description:
+      'Ensino, pesquisa e treinamento de IA são autorizações explícitas: ' +
+      'armazenar a imagem não autoriza nenhum deles (M16 §§44-47).',
+  })
+  async editar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.imagens.editar(id, validarCorpo(edicaoImagemSchema, corpo));
+    return { ok: true };
+  }
+
+  @Post(':id/inativacao')
+  @ExigePermissao(PERMISSOES.IMAGEM_EDITAR)
+  @ApiOperation({
+    summary: 'Inativa a imagem',
+    description:
+      'M16 §69: imagem errada é inativada com motivo, não apagada — o histórico fica.',
+  })
+  async inativar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({ motivo: z.string().min(1, 'Inativar uma imagem exige o motivo.') }),
+      corpo,
+    );
+    await this.imagens.inativar(id, dados.motivo);
+    return { ok: true };
+  }
+
+  @Post(':id/laudo')
+  @ExigePermissao(PERMISSOES.IMAGEM_EDITAR)
+  @ApiOperation({
+    summary: 'Inclui ou retira a imagem do laudo',
+    description:
+      'Marcação com ordem; a numeração do documento ("Imagem 01") deriva dela ' +
+      'e muda sozinha quando a ordem muda (M16 §§36-39). O arquivo não é tocado.',
+  })
+  async selecionar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(z.object({ incluir: z.boolean() }), corpo);
+    await this.imagens.selecionarParaLaudo(id, dados.incluir);
+    return { ok: true };
+  }
+
+  @Post('casos/:casoId/ordem')
+  @ExigePermissao(PERMISSOES.IMAGEM_EDITAR)
+  @ApiOperation({ summary: 'Reordena as imagens selecionadas para o laudo' })
+  async reordenar(
+    @Param('casoId', ParseUUIDPipe) casoId: string,
+    @Body() corpo: unknown,
+  ) {
+    const dados = validarCorpo(z.object({ ordem: z.array(z.string().uuid()) }), corpo);
+    await this.imagens.reordenarNoLaudo(casoId, dados.ordem);
     return { ok: true };
   }
 }

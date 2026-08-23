@@ -43,6 +43,7 @@ import {
   temConteudo,
   type AvaliacaoEditavel,
 } from './laudo/PainelCitologia';
+import { GaleriaDoCaso } from './imagens/GaleriaDoCaso';
 
 /**
  * M11 + M13 - Microscopia e laudo. Parte 1: elaboracao.
@@ -924,6 +925,22 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
               ))}
             </Secao>
             )}
+
+            {/* M16 §36: escolher as imagens do laudo é parte do ato de laudar -
+                por isso a galeria também mora aqui, e não só no dossiê. A
+                numeração do documento sai da ordem da seleção (§38). */}
+            <Secao
+              titulo="Imagens"
+              descricao="As selecionadas entram no documento, numeradas pela ordem da seleção. Microfotografias podem ser enviadas por aqui."
+            >
+              {id && (
+                <GaleriaDoCaso
+                  casoId={id}
+                  permissoes={permissoes}
+                  moduloContexto="M11_LAUDOS"
+                />
+              )}
+            </Secao>
 
             <Secao titulo="Comentários e conclusão">
               <TextField

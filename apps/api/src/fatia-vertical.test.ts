@@ -55,6 +55,41 @@ async function req(
   return { status: resposta.status, body: texto ? JSON.parse(texto) : null };
 }
 
+/**
+ * Envio multipart - `req` assume corpo JSON e nao serve para arquivo.
+ *
+ * O PNG do teste e minimo de proposito: o que se prova aqui e o caminho
+ * (autorizacao, storage, registro, vinculo), nao a decodificacao de imagem.
+ */
+async function enviarArquivo(
+  caminho: string,
+  campos: Record<string, string>,
+  arquivo: { nome: string; tipo: string; bytes: Buffer },
+): Promise<{ status: number; body: any }> {
+  const form = new FormData();
+  for (const [chave, valor] of Object.entries(campos)) form.append(chave, valor);
+  form.append(
+    'arquivo',
+    new Blob([new Uint8Array(arquivo.bytes)], { type: arquivo.tipo }),
+    arquivo.nome,
+  );
+
+  const resposta = await fetch(`${servidor}${BASE}${caminho}`, {
+    method: 'POST',
+    headers: cookie ? { cookie } : {},
+    body: form,
+  });
+
+  const texto = await resposta.text();
+  return { status: resposta.status, body: texto ? JSON.parse(texto) : null };
+}
+
+/** PNG 1x1 valido - o menor arquivo que o pdfkit ainda consegue renderizar. */
+const PNG_MINIMO = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
 /** O mesmo segredo que o seed grava nos usuarios que exigem MFA. */
 const SEGREDO_MFA_DEMO = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
 
@@ -1554,6 +1589,152 @@ describe('citopatologia de ponta a ponta (M12)', () => {
     expect(laudoAtual.body.versaoCorrente.versao).toBe(2);
     expect(laudoAtual.body.diagnosticos).toHaveLength(1);
     expect(laudoAtual.body.diagnosticos[0].entidade).toBe('Mastocitoma');
+  });
+});
+
+describe('acervo de imagens (M16)', () => {
+  /**
+   * O M16 e dono do ARQUIVO; os demais modulos sao donos do contexto (secao 4).
+   * O teste percorre isso: a recepcao fotografa o que recebeu, o patologista
+   * escolhe o que entra no laudo, e a imagem retirada do acervo sai do
+   * documento junto.
+   */
+  let casoId: string;
+  let imagemId: string;
+  let laudoVersaoId: string;
+
+  test('a recepção fotografa o material e a imagem entra no acervo do caso', async () => {
+    await entrar('recepcao@lapato.local');
+
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: any) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Pepita ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Fragmento de pele' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    casoId = criado.body.id;
+
+    const envio = await enviarArquivo(
+      `/imagens/casos/${casoId}`,
+      {
+        tipo: 'recebimento',
+        moduloContexto: 'M05_RECEBIMENTO',
+        legenda: 'Frasco com identificação ilegível.',
+        metadados: JSON.stringify({ recipiente: 'FRASCO-1' }),
+      },
+      { nome: 'frasco.png', tipo: 'image/png', bytes: PNG_MINIMO },
+    );
+    expect(envio.status, JSON.stringify(envio.body)).toBe(201);
+    // Secao 8: identificador proprio, rastreavel.
+    expect(envio.body.identificador).toMatch(/^IMG-\d{4}-\d{7}$/);
+    imagemId = envio.body.id;
+
+    const galeria = await req('GET', `/imagens/casos/${casoId}`);
+    expect(galeria.status).toBe(200);
+    expect(galeria.body).toHaveLength(1);
+    // Secoes 1 e 134: origem, contexto e autoria fazem parte da imagem.
+    expect(galeria.body[0].origem).toBe('produzida_lapato');
+    expect(galeria.body[0].moduloContexto).toBe('M05_RECEBIMENTO');
+    expect(galeria.body[0].autor).toBeTruthy();
+    expect(galeria.body[0].metadados.recipiente).toBe('FRASCO-1');
+
+    // A imagem entra na linha do tempo do caso, mas nao move o fluxo:
+    // fotografar nao e etapa.
+    const dossie = await req('GET', `/casos/${casoId}`);
+    expect(dossie.body.linhaDoTempo.map((e: any) => e.tipo)).toContain('imagem.anexada');
+    expect(dossie.body.estado.etapa).toBe('aguardando_recebimento');
+  });
+
+  test('formato não aceito é recusado antes de gravar', async () => {
+    const r = await enviarArquivo(
+      `/imagens/casos/${casoId}`,
+      { tipo: 'recebimento', moduloContexto: 'M05_RECEBIMENTO' },
+      { nome: 'planilha.csv', tipo: 'text/csv', bytes: Buffer.from('a,b,c') },
+    );
+    expect(r.status).toBe(400);
+
+    const galeria = await req('GET', `/imagens/casos/${casoId}`);
+    expect(galeria.body).toHaveLength(1);
+  });
+
+  test('os bytes saem pela API, nunca por URL pública', async () => {
+    const comSessao = await fetch(`${servidor}${BASE}/imagens/${imagemId}/arquivo`, {
+      headers: { cookie },
+    });
+    expect(comSessao.status).toBe(200);
+    expect(Buffer.from(await comSessao.arrayBuffer()).subarray(0, 4)).toEqual(
+      PNG_MINIMO.subarray(0, 4),
+    );
+
+    // Bucket privado (Blueprint seção 6): sem sessão não sai nada.
+    const semSessao = await fetch(`${servidor}${BASE}/imagens/${imagemId}/arquivo`);
+    expect(semSessao.status).toBe(401);
+  });
+
+  test('o patologista inclui a imagem no laudo e ela sai no PDF', async () => {
+    await entrar('patologista@lapato.local');
+
+    const abrir = await req('POST', `/laudos/casos/${casoId}`);
+    laudoVersaoId = abrir.body.versaoId;
+
+    const paginas = async () => {
+      const r = await fetch(
+        `${servidor}${BASE}/laudos/versoes/${laudoVersaoId}/pdf/pre-visualizacao`,
+        { headers: { cookie } },
+      );
+      expect(r.status).toBe(200);
+      const bytes = Buffer.from(await r.arrayBuffer());
+      expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
+      /**
+       * O texto do PDF viaja comprimido, entao procurar a palavra "Imagens"
+       * nos bytes nao prova nada. A contagem de paginas prova: a secao de
+       * imagens abre pagina propria, e ela so existe se houver imagem
+       * selecionada.
+       */
+      return Number(/\/Count (\d+)/.exec(bytes.toString('latin1'))?.[1] ?? 0);
+    };
+
+    const antes = await paginas();
+
+    const selecao = await req('POST', `/imagens/${imagemId}/laudo`, { incluir: true });
+    expect(selecao.status, JSON.stringify(selecao.body)).toBe(201);
+
+    const galeria = await req('GET', `/imagens/casos/${casoId}`);
+    expect(galeria.body[0].incluidaNoLaudo).toBe(true);
+    // Secao 38: a numeracao do documento sai da ordem da selecao.
+    expect(galeria.body[0].ordemNoLaudo).toBe(1);
+
+    expect(await paginas()).toBe(antes + 1);
+  });
+
+  test('inativar exige motivo, tira do laudo e preserva o histórico', async () => {
+    const semMotivo = await req('POST', `/imagens/${imagemId}/inativacao`, { motivo: '' });
+    expect(semMotivo.status).toBe(400);
+
+    const r = await req('POST', `/imagens/${imagemId}/inativacao`, {
+      motivo: 'Fotografia fora de foco; refeita em seguida.',
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+
+    // Sai da galeria padrao...
+    const galeria = await req('GET', `/imagens/casos/${casoId}`);
+    expect(galeria.body).toHaveLength(0);
+
+    // ...mas continua no acervo, com o motivo - arquivo clinico nao se apaga
+    // (secao 69).
+    const comInativadas = await req('GET', `/imagens/casos/${casoId}?inativadas=sim`);
+    expect(comInativadas.body).toHaveLength(1);
+    expect(comInativadas.body[0].motivoInativacao).toContain('fora de foco');
+    // E o documento nao carrega imagem retirada do acervo.
+    expect(comInativadas.body[0].incluidaNoLaudo).toBe(false);
+
+    const recusada = await req('POST', `/imagens/${imagemId}/laudo`, { incluir: true });
+    expect(recusada.status).toBe(400);
   });
 });
 

@@ -52,6 +52,13 @@ export interface DadosLaudoPdf {
     limitacoes: string[];
     recomendacoes: string | null;
   }>;
+  /**
+   * M16 secoes 36-40: as imagens selecionadas compoem o documento, e a
+   * numeracao ("Imagem 01") sai da ORDEM da selecao - nao do nome do arquivo
+   * nem da data da captura. O M16 fornece bytes e legenda; a composicao e do
+   * motor de laudos (secao 40), que e este servico.
+   */
+  imagens: Array<{ bytes: Buffer; legenda: string | null; identificador: string }>;
   /** `null` fora do fluxo de assinatura: e o que marca RASCUNHO. */
   assinatura: { identificacao: string; assinadaEm: Date } | null;
   /** URL completa que o QR aponta; `null` quando ainda nao ha o que validar. */
@@ -107,6 +114,7 @@ export class LaudoPdfService {
     this.margens(doc, dados.margens);
     this.secaoTexto(doc, 'Comentários', dados.versao.comentarios);
     this.secaoTexto(doc, 'Conclusão', dados.versao.conclusao);
+    this.imagens(doc, dados.imagens);
     await this.rodape(doc, dados);
 
     doc.end();
@@ -256,6 +264,49 @@ export class LaudoPdfService {
       doc.moveDown(0.1);
     }
     doc.moveDown(0.5);
+  }
+
+  /**
+   * M16 secao 38: a numeracao e automatica e vem da ordem - por isso o indice
+   * do array, e nao qualquer campo guardado. Mudar a ordem renumera sozinho.
+   *
+   * As imagens entram depois do texto porque o laudo se le pelo raciocinio, e a
+   * fotografia ILUSTRA o que foi descrito; abrir o documento por elas inverteria
+   * a leitura.
+   */
+  private imagens(doc: PDFKit.PDFDocument, itens: DadosLaudoPdf['imagens']): void {
+    if (itens.length === 0) return;
+
+    doc.addPage();
+    doc.fontSize(11).font('Helvetica-Bold').text('Imagens');
+    doc.font('Helvetica').fontSize(10.5).moveDown(0.4);
+
+    const largura = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+    for (const [i, img] of itens.entries()) {
+      const numero = `Imagem ${String(i + 1).padStart(2, '0')}`;
+
+      /**
+       * Uma imagem ilegivel nao pode impedir a emissao do laudo: se os bytes
+       * nao renderizarem (formato que o pdfkit nao le, arquivo corrompido), o
+       * documento sai com a marca do que faltou, em vez de falhar a assinatura
+       * inteira. O acervo continua com o original intacto para conserto.
+       */
+      try {
+        doc.image(img.bytes, { fit: [largura, 300], align: 'center' });
+      } catch {
+        doc.fillColor('#a1382a').text(`[${numero} não pôde ser renderizada]`).fillColor('#000');
+      }
+
+      doc.moveDown(0.3);
+      doc.font('Helvetica-Bold').fontSize(9.5).text(numero, { continued: Boolean(img.legenda) });
+      if (img.legenda) {
+        doc.font('Helvetica').fontSize(9.5).text(` — ${img.legenda}`);
+      } else {
+        doc.font('Helvetica');
+      }
+      doc.moveDown(1);
+    }
   }
 
   private async rodape(doc: PDFKit.PDFDocument, dados: DadosLaudoPdf): Promise<void> {

@@ -2007,6 +2007,116 @@ describe('Portal do Cliente (M04)', () => {
   });
 });
 
+describe('laudo incompleto não vira beco sem saída (M11)', () => {
+  /**
+   * O caso que originou este bloco, reportado no uso real: um laudo sem
+   * diagnostico atravessou a revisao inteira e so foi barrado na assinatura -
+   * onde o formulario ja e leitura, para nao editar por baixo do revisor. O
+   * usuario lia "adicione um diagnostico nesta tela" numa tela que nao deixava
+   * adicionar nada, e nao havia caminho de volta.
+   *
+   * Duas saidas, testadas aqui: a completude passa a ser conferida no envio
+   * para revisao, e quem ja estiver preso pode retomar a edicao.
+   */
+  let casoId: string;
+  let versaoId: string;
+
+  test('laudo sem diagnóstico não passa do envio para revisão', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Beco ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Fragmento' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    casoId = criado.body.id;
+    await levarAteBancada(casoId);
+
+    await entrar('patologista@lapato.local');
+    const abrir = await req('POST', `/laudos/casos/${casoId}`);
+    versaoId = abrir.body.versaoId;
+    await req('POST', `/laudos/versoes/${versaoId}`, {
+      descricaoMicroscopica: 'Proliferação de células fusiformes.',
+    });
+
+    const envio = await req('POST', `/laudos/versoes/${versaoId}/revisao`);
+    expect(envio.status, JSON.stringify(envio.body)).toBe(409);
+
+    const achado = envio.body.achados.find(
+      (a: { codigo: string }) => a.codigo === 'LAUDO_SEM_DIAGNOSTICO',
+    );
+    expect(achado).toBeTruthy();
+    expect(achado.comoResolver).toContain('Diagnósticos');
+
+    /**
+     * O revisor nao chega a ver: a assinatura profissional NAO entra nesta
+     * checagem, porque quem elabora nem sempre e quem assina - cobrar aqui
+     * barraria o residente que so redige.
+     */
+    expect(
+      envio.body.achados.some(
+        (a: { codigo: string }) => a.codigo === 'ASSINATURA_INEXISTENTE_OU_EXPIRADA',
+      ),
+    ).toBe(false);
+  });
+
+  test('com diagnóstico, o envio passa e a revisão aprova', async () => {
+    await req('POST', `/laudos/versoes/${versaoId}`, {
+      diagnosticos: [{ textoExibido: 'Fibrossarcoma cutâneo' }],
+    });
+
+    const envio = await req('POST', `/laudos/versoes/${versaoId}/revisao`);
+    expect(envio.status, JSON.stringify(envio.body)).toBe(201);
+
+    await entrar('admin@lapato.local');
+    const conclusao = await req('POST', `/laudos/versoes/${versaoId}/revisao/conclusao`, {
+      resultado: 'aprovada',
+    });
+    expect(conclusao.status, JSON.stringify(conclusao.body)).toBe(201);
+
+    const laudo = await req('GET', `/laudos/casos/${casoId}`);
+    expect(laudo.body.versaoCorrente.status ?? laudo.body.status).toBe('aguardando_assinatura');
+  });
+
+  test('retomar edição volta ao rascunho e desfaz a aprovação', async () => {
+    await entrar('patologista@lapato.local');
+
+    const semMotivo = await req('POST', `/laudos/versoes/${versaoId}/reabertura`, { motivo: '' });
+    expect(semMotivo.status, 'motivo é obrigatório: o ato desfaz o trabalho do revisor').toBe(400);
+
+    const reabertura = await req('POST', `/laudos/versoes/${versaoId}/reabertura`, {
+      motivo: 'Diagnóstico precisa ser revisto antes da assinatura.',
+    });
+    expect(reabertura.status, JSON.stringify(reabertura.body)).toBe(201);
+
+    const laudo = await req('GET', `/laudos/casos/${casoId}`);
+    expect(laudo.body.status).toBe('rascunho');
+
+    // Editavel de novo - era exatamente isto que faltava.
+    const edicao = await req('POST', `/laudos/versoes/${versaoId}`, {
+      conclusao: 'Fibrossarcoma cutâneo, margens livres.',
+    });
+    expect(edicao.status, JSON.stringify(edicao.body)).toBe(201);
+
+    // O motivo fica na linha do tempo do caso.
+    const dossie = await req('GET', `/casos/${casoId}`);
+    expect(dossie.body.linhaDoTempo.map((e: { tipo: string }) => e.tipo)).toContain(
+      'laudo.reaberto_para_edicao',
+    );
+  });
+
+  test('rascunho não pode ser reaberto - só quem está aguardando assinatura', async () => {
+    const r = await req('POST', `/laudos/versoes/${versaoId}/reabertura`, {
+      motivo: 'Tentativa em estado que não permite.',
+    });
+    expect(r.status).toBe(400);
+    expect(r.body.detail).toContain('aguardando assinatura');
+  });
+});
+
 describe('assinatura profissional (M02 §45)', () => {
   /**
    * O Guardian barra a assinatura do laudo de quem nao tem assinatura

@@ -41,12 +41,73 @@ export class GuardianService {
   /**
    * Checagem consolidada antes da assinatura do laudo (M17 secao "checagem
    * consolidada antes da assinatura" + M11).
+   *
+   * Soma o conteudo do laudo a condicao de quem assina.
    */
   async verificarAssinaturaLaudo(
     tx: Transacao,
     laudoVersaoId: string,
     casoId: string,
     assinanteId: string,
+  ): Promise<AchadoGuardian[]> {
+    const achados = await this.verificarConteudoLaudo(tx, laudoVersaoId, casoId);
+    achados.push(...(await this.verificarAssinatura(tx, assinanteId)));
+    return ordenarPorGravidade(achados);
+  }
+
+  /**
+   * Assinatura profissional ativa e valida de quem vai assinar (M02).
+   *
+   * Separada do conteudo porque as duas coisas sao verificadas em momentos
+   * diferentes: o conteudo ja no envio para revisao, a assinatura so na hora de
+   * assinar - quem elabora nem sempre e quem assina.
+   */
+  private async verificarAssinatura(
+    tx: Transacao,
+    assinanteId: string,
+  ): Promise<AchadoGuardian[]> {
+    const ctx = exigirContexto();
+    const achados: AchadoGuardian[] = [];
+
+    const assinaturas = await tx
+      .select()
+      .from(assinaturaProfissional)
+      .where(
+        and(
+          eq(assinaturaProfissional.tenantId, ctx.tenantId),
+          eq(assinaturaProfissional.usuarioId, assinanteId),
+          eq(assinaturaProfissional.ativa, true),
+        ),
+      );
+
+    const agora = new Date();
+    if (!assinaturas.find((a) => !a.validoAte || a.validoAte > agora)) {
+      achados.push({
+        codigo: 'ASSINATURA_INEXISTENTE_OU_EXPIRADA',
+        nivel: 'critico',
+        mensagem:
+          'O profissional não possui assinatura ativa e válida. Assinatura expirada ou inativa bloqueia a liberação.',
+        modulo: MODULOS.M02_USUARIOS,
+        comoResolver:
+          'Um administrador cadastra a assinatura profissional em Usuários e Perfis, na ficha do profissional. Se ela existir mas estiver vencida, registre uma nova com a validade atualizada.',
+      });
+    }
+
+    return achados;
+  }
+
+  /**
+   * Completude e coerencia do laudo, sem olhar quem assina.
+   *
+   * Roda tambem no envio para revisao, e nao so na assinatura. Antes disso, um
+   * laudo sem diagnostico atravessava a revisao inteira e so era barrado na
+   * assinatura - onde o formulario ja e leitura. O usuario lia "adicione um
+   * diagnostico nesta tela" numa tela que nao deixava mais adicionar nada.
+   */
+  async verificarConteudoLaudo(
+    tx: Transacao,
+    laudoVersaoId: string,
+    casoId: string,
   ): Promise<AchadoGuardian[]> {
     const ctx = exigirContexto();
     const achados: AchadoGuardian[] = [];
@@ -88,7 +149,7 @@ export class GuardianService {
         mensagem: 'O laudo não possui diagnóstico registrado.',
         modulo: MODULOS.M11_LAUDOS,
         comoResolver:
-          'Adicione ao menos um diagnóstico no bloco “Diagnóstico” desta tela antes de assinar.',
+          'Adicione ao menos um diagnóstico no bloco “Diagnósticos”. Se o laudo já estiver aguardando assinatura, use “Retomar edição” para liberar o formulário.',
         campo: 'diagnostico',
       });
     }
@@ -114,33 +175,6 @@ export class GuardianService {
         modulo: MODULOS.M11_LAUDOS,
         comoResolver:
           'Desmarque “provisório” no diagnóstico, ou remova-o. Provisório é rascunho, não conclusão.',
-      });
-    }
-
-    // --- Assinatura profissional ativa (M02) -------------------------------
-    const assinaturas = await tx
-      .select()
-      .from(assinaturaProfissional)
-      .where(
-        and(
-          eq(assinaturaProfissional.tenantId, ctx.tenantId),
-          eq(assinaturaProfissional.usuarioId, assinanteId),
-          eq(assinaturaProfissional.ativa, true),
-        ),
-      );
-
-    const agora = new Date();
-    const valida = assinaturas.find((a) => !a.validoAte || a.validoAte > agora);
-
-    if (!valida) {
-      achados.push({
-        codigo: 'ASSINATURA_INEXISTENTE_OU_EXPIRADA',
-        nivel: 'critico',
-        mensagem:
-          'O profissional não possui assinatura ativa e válida. Assinatura expirada ou inativa bloqueia a liberação.',
-        modulo: MODULOS.M02_USUARIOS,
-        comoResolver:
-          'Um administrador cadastra a assinatura profissional em Usuários e Perfis, na ficha do profissional. Se ela existir mas estiver vencida, registre uma nova com a validade atualizada.',
       });
     }
 

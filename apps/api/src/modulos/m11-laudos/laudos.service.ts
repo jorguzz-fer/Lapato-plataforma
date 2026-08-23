@@ -380,6 +380,25 @@ export class LaudosService {
     await this.db.executar(async (tx) => {
       const versao = await this.buscarVersao(tx, versaoId);
 
+      /**
+       * A completude e conferida AQUI, e nao so na assinatura.
+       *
+       * Antes disto um laudo sem diagnostico atravessava a revisao inteira e so
+       * era barrado na assinatura - onde o formulario ja virou leitura. O
+       * usuario lia "adicione um diagnostico" numa tela que nao deixava mais
+       * adicionar. Barrar na saida da bancada devolve o problema a quem ainda
+       * pode resolve-lo, e poupa o revisor de aprovar um texto incompleto.
+       *
+       * A assinatura profissional nao entra: quem elabora nem sempre e quem
+       * assina, e cobrar aqui barraria o residente que so redige.
+       */
+      const achados = await this.guardian.verificarConteudoLaudo(
+        tx,
+        versaoId,
+        versao.casoId,
+      );
+      this.guardian.garantirSemBloqueio(achados, 'enviar o laudo para revisão');
+
       await tx
         .update(laudo)
         .set({ status: 'aguardando_revisao', revisorId: revisorId ?? null })
@@ -438,6 +457,68 @@ export class LaudosService {
       if (resultado === 'aprovada') {
         await this.fluxo.processarEvento(tx, versao.casoId, 'laudo.revisao_concluida');
       }
+    });
+  }
+
+  /**
+   * Devolve a versao aprovada para edicao (M11).
+   *
+   * Existe porque `aguardando_assinatura` era um beco: o formulario vira
+   * leitura para nao editar por baixo do revisor, e nao havia caminho de volta
+   * - so o revisor podia devolver, com "solicitar ajustes", e nessa altura ele
+   * ja tinha aprovado.
+   *
+   * Reabrir **invalida a aprovacao**: o laudo volta a rascunho e precisa passar
+   * pela revisao de novo. Aprovar e um parecer sobre um texto especifico; se o
+   * texto muda, o parecer nao acompanha.
+   *
+   * Exige motivo pela mesma razao que devolver para correcao exige: o ato
+   * desfaz o trabalho de outra pessoa, e o registro precisa dizer por que.
+   */
+  async reabrirParaEdicao(versaoId: string, motivo: string): Promise<void> {
+    await this.db.executar(async (tx) => {
+      const versao = await this.buscarVersao(tx, versaoId);
+
+      if (versao.assinadaEm) {
+        throw new BadRequestException(
+          'Versão já assinada. Crie um adendo ou uma correção para alterar o laudo.',
+        );
+      }
+
+      const [registro] = await tx
+        .select({ status: laudo.status })
+        .from(laudo)
+        .where(eq(laudo.id, versao.laudoId))
+        .limit(1);
+
+      if (registro?.status !== 'aguardando_assinatura') {
+        throw new BadRequestException(
+          'Só um laudo aguardando assinatura pode ser retomado para edição.',
+        );
+      }
+
+      await tx
+        .update(laudo)
+        .set({ status: 'rascunho', revisorId: null })
+        .where(eq(laudo.id, versao.laudoId));
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'laudo_versao',
+        entidadeId: versaoId,
+        acao: 'reabrir_para_edicao',
+        valorAnterior: { status: 'aguardando_assinatura' },
+        valorNovo: { status: 'rascunho' },
+        justificativa: motivo,
+      });
+
+      await this.eventos.publicar(tx, {
+        tipo: 'laudo.reaberto_para_edicao',
+        casoId: versao.casoId,
+        moduloOrigem: MODULOS.M11_LAUDOS,
+        objetoTipo: 'laudo_versao',
+        objetoId: versaoId,
+        payload: { motivo },
+      });
     });
   }
 

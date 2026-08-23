@@ -485,6 +485,10 @@ const laudoSchema = z.object({
     .optional(),
 });
 
+const reaberturaSchema = z.object({
+  motivo: z.string().min(5, 'Diga por que o laudo volta para edição.'),
+});
+
 const revisaoSchema = z
   .object({
     resultado: z.enum(['aprovada', 'ajustes_solicitados']),
@@ -554,6 +558,23 @@ export class LaudosController {
   async enviarRevisao(@Param('versaoId', ParseUUIDPipe) versaoId: string) {
     await this.laudos.enviarParaRevisao(versaoId);
     return { ok: true };
+  }
+
+  @Post('versoes/:versaoId/reabertura')
+  @ExigePermissao(PERMISSOES.LAUDO_EDITAR)
+  @ApiOperation({
+    summary: 'Retoma a edição de um laudo aguardando assinatura',
+    description:
+      'Devolve a versão aprovada ao rascunho. **Invalida a aprovação**: aprovar é um ' +
+      'parecer sobre um texto específico, e o laudo passa pela revisão de novo. ' +
+      'O motivo é obrigatório — o ato desfaz o trabalho do revisor.',
+  })
+  async reabrirParaEdicao(
+    @Param('versaoId', ParseUUIDPipe) versaoId: string,
+    @Body() corpo: unknown,
+  ) {
+    const dados = validarCorpo(reaberturaSchema, corpo);
+    await this.laudos.reabrirParaEdicao(versaoId, dados.motivo);
   }
 
   @Post('versoes/:versaoId/revisao/conclusao')

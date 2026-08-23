@@ -1,8 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { hash } from '@node-rs/argon2';
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
+  assinaturaProfissional,
   cliente,
   perfil,
   sessao,
@@ -66,6 +67,18 @@ export class UsuariosService {
           senhaTrocaObrigatoria: usuario.senhaTrocaObrigatoria,
           ultimoAcessoEm: usuario.ultimoAcessoEm,
           unidadePrincipal: unidade.nome,
+          /**
+           * M11 + M02: sem assinatura ativa e valida o Guardian barra a
+           * assinatura do laudo. Quem administra precisa enxergar isso na
+           * lista, e nao descobrir pelo patologista travado na bancada.
+           */
+          assinaturaAtiva: sql<boolean>`exists(
+            select 1 from ${assinaturaProfissional} ap
+            where ap.usuario_id = usuario.id
+              and ap.tenant_id = usuario.tenant_id
+              and ap.ativa = true
+              and (ap.valido_ate is null or ap.valido_ate > now())
+          )`,
           perfis: sql<string>`coalesce((
             select string_agg(p.nome, ' · ' order by p.nome)
             from ${usuarioPerfil} up
@@ -383,6 +396,138 @@ export class UsuariosService {
     // 12 bytes -> 16 chars base64url: entropia alta, digitavel, sem ambiguidade
     // de shell (sem +, / ou =).
     return randomBytes(12).toString('base64url');
+  }
+
+/**
+   * Assinaturas do profissional (M02 secao 45).
+   *
+   * Ate aqui isto so existia no CLI de provisionamento: quem nao passasse
+   * `PROVISION_ADMIN_CONSELHO` ficava com um sistema que barra a assinatura do
+   * laudo e nao oferece nenhum lugar para resolver. Um bloqueio critico sem
+   * caminho de saida dentro do produto e defeito, nao rigor.
+   */
+  async listarAssinaturas(usuarioId: string): Promise<unknown[]> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      await this.buscar(tx, usuarioId);
+
+      return tx
+        .select({
+          id: assinaturaProfissional.id,
+          tipo: assinaturaProfissional.tipo,
+          identificacaoProfissional: assinaturaProfissional.identificacaoProfissional,
+          validoDe: assinaturaProfissional.validoDe,
+          validoAte: assinaturaProfissional.validoAte,
+          ativa: assinaturaProfissional.ativa,
+        })
+        .from(assinaturaProfissional)
+        .where(
+          and(
+            eq(assinaturaProfissional.tenantId, ctx.tenantId),
+            eq(assinaturaProfissional.usuarioId, usuarioId),
+          ),
+        )
+        .orderBy(desc(assinaturaProfissional.validoDe));
+    });
+  }
+
+  /**
+   * Registra uma assinatura. Renovacao cria registro novo e inativa o anterior
+   * - o laudo ja assinado precisa continuar apontando para a identificacao que
+   * valia no momento da assinatura (M11 secao 118).
+   */
+  async registrarAssinatura(
+    usuarioId: string,
+    dados: { identificacaoProfissional: string; validoAte?: string | null },
+  ): Promise<{ id: string }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const alvo = await this.buscar(tx, usuarioId);
+
+      if (alvo.categoria === 'externo') {
+        throw new BadRequestException(
+          'Conta externa não assina laudo: assinatura profissional é de usuário interno.',
+        );
+      }
+
+      const validoAte = dados.validoAte ? new Date(dados.validoAte) : null;
+      if (validoAte && validoAte <= new Date()) {
+        throw new BadRequestException('A validade informada já passou.');
+      }
+
+      await tx
+        .update(assinaturaProfissional)
+        .set({ ativa: false, atualizadoEm: new Date() })
+        .where(
+          and(
+            eq(assinaturaProfissional.tenantId, ctx.tenantId),
+            eq(assinaturaProfissional.usuarioId, usuarioId),
+            eq(assinaturaProfissional.ativa, true),
+          ),
+        );
+
+      const [nova] = await tx
+        .insert(assinaturaProfissional)
+        .values({
+          tenantId: ctx.tenantId,
+          usuarioId,
+          tipo: 'eletronica',
+          identificacaoProfissional: dados.identificacaoProfissional.trim(),
+          validoAte,
+          ativa: true,
+        })
+        .returning({ id: assinaturaProfissional.id });
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'assinatura_profissional',
+        entidadeId: nova!.id,
+        acao: 'registrar',
+        valorNovo: {
+          usuarioId,
+          identificacaoProfissional: dados.identificacaoProfissional.trim(),
+          validoAte: validoAte?.toISOString() ?? null,
+        },
+      });
+
+      return { id: nova!.id };
+    });
+  }
+
+  /** Inativa, nunca apaga (M01): o laudo assinado precisa do registro historico. */
+  async inativarAssinatura(usuarioId: string, assinaturaId: string): Promise<void> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const [atual] = await tx
+        .select()
+        .from(assinaturaProfissional)
+        .where(
+          and(
+            eq(assinaturaProfissional.tenantId, ctx.tenantId),
+            eq(assinaturaProfissional.id, assinaturaId),
+            eq(assinaturaProfissional.usuarioId, usuarioId),
+          ),
+        )
+        .limit(1);
+
+      if (!atual) throw new NotFoundException('Assinatura não encontrada.');
+      if (!atual.ativa) throw new BadRequestException('Esta assinatura já está inativa.');
+
+      await tx
+        .update(assinaturaProfissional)
+        .set({ ativa: false, atualizadoEm: new Date() })
+        .where(eq(assinaturaProfissional.id, assinaturaId));
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'assinatura_profissional',
+        entidadeId: assinaturaId,
+        acao: 'inativar',
+        valorAnterior: { ativa: true },
+        valorNovo: { ativa: false },
+      });
+    });
   }
 
   private async buscar(tx: Transacao, id: string) {

@@ -28,6 +28,7 @@ import {
   type ResultadoTriagem,
 } from '@lapato/shared';
 import { api, ErroApi, type Dossie as DadosDossie } from '../api';
+import { BloqueioGuardian } from './BloqueioGuardian';
 
 /**
  * M06 - Triagem de amostras.
@@ -583,24 +584,7 @@ export function Triagem() {
       )}
 
       {bloqueioGuardian && (
-        <Alert severity="error" sx={{ mt: 2.5 }}>
-          <AlertTitle>Triagem impedida pelo Guardian</AlertTitle>
-          <Typography sx={{ fontSize: 13, mb: 1 }}>{bloqueioGuardian.detalhe}</Typography>
-          <Stack component="ul" spacing={1} sx={{ m: 0, pl: 2.5 }}>
-            {bloqueioGuardian.achados?.map((achado) => (
-              <Box component="li" key={achado.codigo}>
-                <Typography sx={{ fontSize: 13 }}>{achado.mensagem}</Typography>
-                {achado.evidencias && (
-                  <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
-                    {Object.entries(achado.evidencias)
-                      .map(([chave, valor]) => `${chave}: ${String(valor)}`)
-                      .join(' · ')}
-                  </Typography>
-                )}
-              </Box>
-            ))}
-          </Stack>
-        </Alert>
+        <BloqueioGuardian erro={bloqueioGuardian} acao="concluir a triagem" />
       )}
 
       {erro && (

@@ -19,6 +19,7 @@ import Typography from '@mui/material/Typography';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import KeyOutlined from '@mui/icons-material/KeyOutlined';
 import ShieldOutlined from '@mui/icons-material/ShieldOutlined';
+import DrawOutlined from '@mui/icons-material/DrawOutlined';
 import {
   api,
   ErroApi,
@@ -27,6 +28,7 @@ import {
   type UnidadeAdmin,
   type UsuarioLista,
 } from '../api';
+import { DialogoAssinatura } from './DialogoAssinatura';
 
 /**
  * M02 - gestao de usuarios (a autenticacao ja existe; aqui e o ciclo de vida
@@ -59,6 +61,7 @@ export function Usuarios({ permissoes }: { permissoes: string[] }) {
   const [unidades, setUnidades] = useState<UnidadeAdmin[]>([]);
   const [criando, setCriando] = useState(false);
   const [emEdicao, setEmEdicao] = useState<UsuarioLista | null>(null);
+  const [emAssinatura, setEmAssinatura] = useState<UsuarioLista | null>(null);
   const [senhaGerada, setSenhaGerada] = useState<{ titulo: string; senha: string } | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -164,6 +167,15 @@ export function Usuarios({ permissoes }: { permissoes: string[] }) {
                   {u.senhaTrocaObrigatoria && (
                     <Chip size="small" variant="outlined" color="warning" label="Senha provisória" />
                   )}
+                  {/* So faz sentido cobrar de quem assina: conta externa nao assina laudo. */}
+                  {u.categoria !== 'externo' && !u.assinaturaAtiva && (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      color="warning"
+                      label="Sem assinatura"
+                    />
+                  )}
                 </Stack>
                 <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.25 }}>
                   {u.email}
@@ -189,6 +201,15 @@ export function Usuarios({ permissoes }: { permissoes: string[] }) {
                     >
                       Redefinir senha
                     </Button>
+                    {u.categoria !== 'externo' && (
+                      <Button
+                        size="small"
+                        startIcon={<DrawOutlined sx={{ fontSize: 15 }} />}
+                        onClick={() => setEmAssinatura(u)}
+                      >
+                        Assinatura
+                      </Button>
+                    )}
                   </>
                 )}
                 {podeBloquear &&
@@ -225,6 +246,12 @@ export function Usuarios({ permissoes }: { permissoes: string[] }) {
           </Card>
         ))}
       </Stack>
+
+      <DialogoAssinatura
+        usuario={emAssinatura}
+        aoFechar={() => setEmAssinatura(null)}
+        aoMudar={recarregar}
+      />
 
       <DialogoUsuario
         aberto={criando || emEdicao !== null}

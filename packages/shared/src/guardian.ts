@@ -23,6 +23,18 @@ export interface AchadoGuardian {
   mensagem: string;
   /** Modulo cuja regra produziu o achado. */
   modulo: Modulo;
+  /**
+   * O que fazer para resolver, em uma frase, na voz de quem vai agir.
+   *
+   * M17 secao 11: o alerta existe para o profissional decidir, e decidir exige
+   * saber qual e a saida. "O profissional nao possui assinatura ativa" diz o
+   * que esta errado e deixa a pessoa parada; dizer onde se cadastra a
+   * assinatura devolve o controle a ela.
+   *
+   * Quando quem resolve nao e quem esta vendo o alerta, a frase diz isso -
+   * assinatura profissional, por exemplo, e cadastro de administrador.
+   */
+  comoResolver?: string;
   /** Campo ou objeto ao qual o achado se refere, quando aplicavel. */
   campo?: string;
   /**

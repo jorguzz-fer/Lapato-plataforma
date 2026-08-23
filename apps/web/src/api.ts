@@ -607,8 +607,23 @@ export interface UsuarioLista {
   senhaTrocaObrigatoria: boolean;
   ultimoAcessoEm: string | null;
   unidadePrincipal: string | null;
+  /**
+   * M11: sem assinatura ativa e valida o Guardian barra a assinatura do laudo.
+   * Fica na lista para o administrador ver antes de o patologista travar.
+   */
+  assinaturaAtiva: boolean;
   /** Nomes dos perfis, separados por " · ". */
   perfis: string;
+}
+
+/** M02 secao 45. `validoAte` nulo = sem prazo. */
+export interface AssinaturaProfissional {
+  id: string;
+  tipo: string;
+  identificacaoProfissional: string;
+  validoDe: string;
+  validoAte: string | null;
+  ativa: boolean;
 }
 
 export interface PerfilResumo {

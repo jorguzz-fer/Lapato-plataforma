@@ -38,6 +38,7 @@ import {
   type LaudoDoCaso,
   type VocabularioCitologia,
 } from '../api';
+import { AvisoBancadaBloqueada, impedimentoDeBancada } from './AvisoBancadaBloqueada';
 import {
   PainelCitologia,
   temConteudo,
@@ -476,6 +477,15 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
         <Skeleton variant="rounded" height={340} />
       </Stack>
     );
+  }
+
+  /**
+   * M05 secao 12: nao se abre laudo de material que o laboratorio nunca
+   * registrou ter recebido. Vale so enquanto o laudo nao existe - depois de
+   * aberto, ele continua acessivel mesmo que alguem mexa na triagem.
+   */
+  if (!laudo && impedimentoDeBancada(dossie, 'microscopia')) {
+    return <AvisoBancadaBloqueada dossie={dossie} etapa="microscopia" />;
   }
 
   return (

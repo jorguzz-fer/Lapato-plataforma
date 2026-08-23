@@ -18,6 +18,13 @@ import { z } from 'zod';
 import {
   ADEQUACAO_CITOLOGICA,
   CELULARIDADE,
+  CONSERVACAO_CADAVER,
+  DESTINACAO_CADAVER,
+  EMBALAGEM_CADAVER,
+  IDENTIFICACAO_EXTERNA,
+  INTEGRIDADE_CADAVER,
+  TIPO_BLOQUEIO_CADAVER,
+  type StatusCadaver,
   ETAPA,
   GRAVIDADE_NC,
   GRAU_CERTEZA,
@@ -49,6 +56,7 @@ import { MacroscopiaService } from './m08-macroscopia/macroscopia.service.js';
 import { ProcessamentoService } from './m09-processamento/processamento.service.js';
 import { LaudosService } from './m11-laudos/laudos.service.js';
 import { CitopatologiaService } from './m12-citopatologia/citopatologia.service.js';
+import { CadaveresService } from './m15-cadaveres/cadaveres.service.js';
 import {
   ImagensService,
   TAMANHO_MAXIMO,
@@ -1656,5 +1664,220 @@ export class PortalController {
     return new StreamableFile(bytes, {
       disposition: `inline; filename="${nomeParaCabecalho(nomeArquivo)}"`,
     });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// M15 - Controle de Cadáveres
+// ---------------------------------------------------------------------------
+
+/**
+ * §6: a entrada provisória exige o mínimo que impede a perda de identidade —
+ * espécie, origem, quem recebeu. O caso pode faltar; a espécie não.
+ */
+const recebimentoCadaverSchema = z.object({
+  casoId: z.string().uuid().nullish(),
+  especie: z.string().min(1, 'Informe a espécie.'),
+  nomeAnimal: z.string().nullish(),
+  sexo: z.string().nullish(),
+  raca: z.string().nullish(),
+  pelagem: z.string().nullish(),
+  microchip: z.string().nullish(),
+  origemResponsavel: z.string().nullish(),
+  obitoEm: z.string().datetime({ offset: true }).nullish(),
+  conservacaoRecebimento: z.enum(CONSERVACAO_CADAVER).nullish(),
+  embalagem: z.enum(EMBALAGEM_CADAVER).nullish(),
+  integridade: z.enum(INTEGRIDADE_CADAVER).nullish(),
+  identificacaoExterna: z.enum(IDENTIFICACAO_EXTERNA).nullish(),
+  observacoesRecebimento: z.string().nullish(),
+  prazoGuardaDias: z.number().int().positive().nullish(),
+});
+
+const armazenamentoSchema = z.object({
+  localId: z.string().uuid(),
+  conservacao: z.enum(CONSERVACAO_CADAVER).nullish(),
+  observacao: z.string().nullish(),
+});
+
+const bloqueioSchema = z.object({
+  tipo: z.enum(TIPO_BLOQUEIO_CADAVER),
+  motivo: z.string().min(5, 'Diga por que o cadáver está bloqueado.'),
+});
+
+const destinacaoSchema = z.object({
+  destinacao: z.enum(DESTINACAO_CADAVER),
+  justificativa: z.string().nullish(),
+});
+
+/** §44: a entrega identifica quem levou. Sem nome não há entrega registrada. */
+const entregaSchema = z.object({
+  nome: z.string().min(3, 'Informe quem está retirando.'),
+  documento: z.string().nullish(),
+  vinculo: z.string().nullish(),
+  empresa: z.string().nullish(),
+});
+
+@ApiTags('M15 - Controle de Cadáveres')
+@Controller('cadaveres')
+export class CadaveresController {
+  constructor(private readonly cadaveres: CadaveresService) {}
+
+  @Get()
+  @ExigePermissao(PERMISSOES.CADAVER_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Painel operacional',
+    description:
+      'Quem está sob responsabilidade do laboratório, onde, há quanto tempo e com ' +
+      'que pendências (§37). Busca por identificador, nome ou microchip (§39).',
+  })
+  async listar(@Query('status') status?: string, @Query('q') busca?: string) {
+    return this.cadaveres.listar({
+      status: status ? (status as StatusCadaver) : undefined,
+      busca,
+    });
+  }
+
+  @Get('mapa')
+  @ExigePermissao(PERMISSOES.CADAVER_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Mapa de armazenamento',
+    description:
+      'Posições e quem ocupa cada uma (§19), mais quem está fora do armazenamento — ' +
+      'porque nenhum cadáver desaparece do mapa quando é retirado (§29).',
+  })
+  async mapa() {
+    return this.cadaveres.mapa();
+  }
+
+  @Get('conferencia')
+  @ExigePermissao(PERMISSOES.CADAVER_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Conferências do Guardian sobre o acervo',
+    description:
+      'Incoerências que já existem (§70): retirado ocupando posição, sem localização, ' +
+      'liberado sem destinação, liberado apesar de bloqueio. Não barra nada — é trabalho pendente.',
+  })
+  async conferencia() {
+    return this.cadaveres.conferencia();
+  }
+
+  @Get(':id')
+  @ExigePermissao(PERMISSOES.CADAVER_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Ficha operacional',
+    description: 'O que o QR Code abre (§10): identidade, localização, histórico e bloqueios.',
+  })
+  async ficha(@Param('id', ParseUUIDPipe) id: string) {
+    return this.cadaveres.ficha(id);
+  }
+
+  @Post()
+  @ExigePermissao(PERMISSOES.CADAVER_RECEBER)
+  @ApiOperation({
+    summary: 'Registra a entrada física',
+    description:
+      'O caso é opcional (§5): um corpo pode chegar antes do cadastro administrativo, ' +
+      'e recusá-lo aqui significaria um corpo sem registro nenhum na câmara.',
+  })
+  async receber(@Body() corpo: unknown) {
+    return this.cadaveres.receber(validarCorpo(recebimentoCadaverSchema, corpo));
+  }
+
+  @Post(':id/vinculo')
+  @ExigePermissao(PERMISSOES.CADAVER_RECEBER)
+  @ApiOperation({ summary: 'Reconcilia a entrada provisória com o caso definitivo (§5)' })
+  async vincular(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(z.object({ casoId: z.string().uuid() }), corpo);
+    await this.cadaveres.vincularAoCaso(id, dados.casoId);
+  }
+
+  @Post(':id/armazenamento')
+  @ExigePermissao(PERMISSOES.CADAVER_MOVIMENTAR)
+  @ApiOperation({
+    summary: 'Armazena ou transfere de posição',
+    description: 'Posição ocupada recusa a movimentação (§25) — é assim que a identidade se perde.',
+  })
+  async armazenar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.cadaveres.armazenar(id, validarCorpo(armazenamentoSchema, corpo));
+  }
+
+  @Post(':id/retirada-necropsia')
+  @ExigePermissao(PERMISSOES.CADAVER_MOVIMENTAR)
+  @ApiOperation({
+    summary: 'Retira para necropsia',
+    description: 'A posição fica livre, mas o cadáver continua no mapa, marcado como fora (§29).',
+  })
+  async retirarParaNecropsia(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(z.object({ motivo: z.string().nullish() }), corpo ?? {});
+    await this.cadaveres.retirarParaNecropsia(id, dados.motivo ?? undefined);
+  }
+
+  @Post(':id/bloqueios')
+  @ExigePermissao(PERMISSOES.CADAVER_BLOQUEAR)
+  @ApiOperation({
+    summary: 'Bloqueia a saída',
+    description: 'Não muda onde o corpo está: impede que ele saia (§31).',
+  })
+  async bloquear(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    return this.cadaveres.bloquear(id, validarCorpo(bloqueioSchema, corpo));
+  }
+
+  @Post('bloqueios/:bloqueioId/resolucao')
+  @ExigePermissao(PERMISSOES.CADAVER_LIBERAR)
+  @ApiOperation({
+    summary: 'Resolve um bloqueio',
+    description: 'Exige justificativa — o bloqueio existia por uma razão (§88).',
+  })
+  async resolverBloqueio(
+    @Param('bloqueioId', ParseUUIDPipe) bloqueioId: string,
+    @Body() corpo: unknown,
+  ) {
+    const dados = validarCorpo(
+      z.object({ justificativa: z.string().min(5, 'Diga como o bloqueio foi resolvido.') }),
+      corpo,
+    );
+    await this.cadaveres.resolverBloqueio(bloqueioId, dados.justificativa);
+  }
+
+  @Post(':id/destinacao')
+  @ExigePermissao(PERMISSOES.CADAVER_LIBERAR)
+  @ApiOperation({
+    summary: 'Define ou altera a destinação autorizada',
+    description: 'Alterar preserva a escolha anterior no histórico — nunca sobrescreve (§41).',
+  })
+  async definirDestinacao(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.cadaveres.definirDestinacao(id, validarCorpo(destinacaoSchema, corpo));
+  }
+
+  @Post(':id/liberacao')
+  @ExigePermissao(PERMISSOES.CADAVER_LIBERAR)
+  @ApiOperation({
+    summary: 'Liberação técnica',
+    description:
+      'Diz que o corpo PODE ser entregue; ele continua no laboratório (§43). ' +
+      'Bloqueio ativo impede — e não se contorna mudando o status na mão (§32).',
+  })
+  async liberar(@Param('id', ParseUUIDPipe) id: string) {
+    await this.cadaveres.liberar(id);
+  }
+
+  @Post(':id/entrega')
+  @ExigePermissao(PERMISSOES.CADAVER_ENTREGAR)
+  @ApiOperation({
+    summary: 'Registra a saída física',
+    description: 'É aqui que a posição volta a ficar livre no mapa (§§49 e 88).',
+  })
+  async registrarEntrega(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.cadaveres.registrarEntrega(id, validarCorpo(entregaSchema, corpo));
+  }
+
+  @Post(':id/destinacao/confirmacao')
+  @ExigePermissao(PERMISSOES.CADAVER_ENTREGAR)
+  @ApiOperation({
+    summary: 'Confirma a destinação e encerra fisicamente',
+    description: 'Destinação não é exclusão: o registro permanece inteiro (§50).',
+  })
+  async confirmarDestinacao(@Param('id', ParseUUIDPipe) id: string) {
+    await this.cadaveres.confirmarDestinacao(id);
   }
 }

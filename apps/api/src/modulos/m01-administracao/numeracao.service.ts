@@ -4,6 +4,7 @@ import { sequenciaNumeracao, type Transacao } from '@lapato/db';
 import {
   MASCARA_CASO_PADRAO,
   formatarIdentificadorCaso,
+  identificadorCadaver,
   identificadorImagem,
   identificadorRemessa,
   identificadorSolicitacao,
@@ -100,6 +101,10 @@ export class NumeracaoService {
 
   async proximaRemessa(tx: Transacao, ano: number): Promise<string> {
     return identificadorRemessa(ano, await this.proximo(tx, 'remessa', ano));
+  }
+
+  async proximoCadaver(tx: Transacao, ano: number): Promise<string> {
+    return identificadorCadaver(ano, await this.proximo(tx, 'cadaver', ano));
   }
 
   /** Lote de envio ao laboratorio de apoio (M09), identificado pela data. */

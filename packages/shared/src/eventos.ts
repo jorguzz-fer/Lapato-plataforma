@@ -62,6 +62,11 @@ export const TIPO_EVENTO = [
   'laudo.rascunho_salvo',
   'laudo.enviado_revisao',
   'laudo.reaberto_para_edicao',
+
+  // M15 Controle de Cadaveres
+  'cadaver.recebido',
+  'cadaver.liberado',
+  'cadaver.retirado',
   'laudo.revisao_concluida',
   'laudo.assinado',
   'laudo.liberado',
@@ -153,6 +158,9 @@ export const EVENTO_LABEL: Record<TipoEvento, string> = {
   'laudo.rascunho_salvo': 'Rascunho de laudo salvo',
   'laudo.enviado_revisao': 'Laudo enviado para revisão',
   'laudo.reaberto_para_edicao': 'Laudo retomado para edição',
+  'cadaver.recebido': 'Cadáver recebido',
+  'cadaver.liberado': 'Cadáver liberado para retirada',
+  'cadaver.retirado': 'Cadáver retirado do laboratório',
   'laudo.revisao_concluida': 'Revisão concluída',
   'laudo.assinado': 'Laudo assinado',
   'laudo.liberado': 'Laudo liberado',

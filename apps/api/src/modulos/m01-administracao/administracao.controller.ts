@@ -56,6 +56,20 @@ const unidadeSchema = z.object({
   responsavel: z.string().optional(),
 });
 
+/**
+ * M01 secao 7.3 + M15 secao 18: a arvore de locais. `paiId` ausente cria a raiz
+ * (a sala ou o equipamento); presente pendura o filho (a prateleira, a posicao).
+ */
+const localSchema = z.object({
+  unidadeId: z.string().uuid(),
+  paiId: z.string().uuid().nullish(),
+  nome: z.string().min(1, 'Informe o nome.'),
+  codigo: z.string().min(1, 'Informe o código.'),
+  categoria: z.string().min(1, 'Informe a categoria — câmara, prateleira, posição…'),
+  capacidade: z.number().int().positive().nullish(),
+  condicaoAmbiental: z.string().nullish(),
+});
+
 const setorSchema = z.object({
   nome: z.string().min(1),
   codigo: z
@@ -257,6 +271,43 @@ export class AdministracaoController {
   @ApiOperation({ summary: 'Reativa setor' })
   async reativarSetor(@Param('id', ParseUUIDPipe) id: string) {
     await this.admin.alternarSetor(id, true);
+    return { ok: true };
+  }
+
+  // --- locais fisicos ---------------------------------------------------------
+
+  @Get('locais')
+  @ExigePermissao(PERMISSOES.UNIDADE_GERENCIAR)
+  @ApiOperation({
+    summary: 'Locais físicos, em árvore',
+    description:
+      'Unidade → sala → equipamento → compartimento → posição. O M01 define o que ' +
+      'existe; Controle de Cadáveres e Bioteca registram o que está em cada um.',
+  })
+  async locais() {
+    return this.admin.listarLocais();
+  }
+
+  @Post('locais')
+  @ExigePermissao(PERMISSOES.UNIDADE_GERENCIAR)
+  @ApiOperation({ summary: 'Cria local físico' })
+  async criarLocal(@Body() corpo: unknown) {
+    return this.admin.criarLocal(validarCorpo(localSchema, corpo));
+  }
+
+  @Post('locais/:id/inativacao')
+  @ExigePermissao(PERMISSOES.UNIDADE_GERENCIAR)
+  @ApiOperation({ summary: 'Inativa local — nunca exclui: a posição guarda histórico' })
+  async inativarLocal(@Param('id', ParseUUIDPipe) id: string) {
+    await this.admin.alternarLocal(id, false);
+    return { ok: true };
+  }
+
+  @Post('locais/:id/reativacao')
+  @ExigePermissao(PERMISSOES.UNIDADE_GERENCIAR)
+  @ApiOperation({ summary: 'Reativa local' })
+  async reativarLocal(@Param('id', ParseUUIDPipe) id: string) {
+    await this.admin.alternarLocal(id, true);
     return { ok: true };
   }
 

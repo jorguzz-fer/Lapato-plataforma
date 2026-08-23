@@ -70,6 +70,14 @@ export const PERFIS: Array<{
        * e o desfecho do trabalho dela, nao um privilegio tecnico.
        */
       PERMISSOES.PENDENCIA_RESOLVER,
+      /**
+       * M15 secao 68: a recepcao recebe o corpo, etiqueta, consulta e registra
+       * a entrega. Nao move dentro da camara nem libera - sao papeis do tecnico
+       * e do supervisor.
+       */
+      PERMISSOES.CADAVER_VISUALIZAR,
+      PERMISSOES.CADAVER_RECEBER,
+      PERMISSOES.CADAVER_ENTREGAR,
     ],
   },
   {
@@ -91,6 +99,9 @@ export const PERFIS: Array<{
        * interpretacao do resultado continua no modulo diagnostico (secao 26).
        */
       PERMISSOES.SOLICITACAO_EXECUTAR,
+      /** M15 secao 68: o tecnico armazena, transfere, retira para exame e retorna. */
+      PERMISSOES.CADAVER_VISUALIZAR,
+      PERMISSOES.CADAVER_MOVIMENTAR,
       PERMISSOES.IMAGEM_VISUALIZAR,
       PERMISSOES.IMAGEM_ENVIAR,
       PERMISSOES.IMAGEM_EDITAR,
@@ -140,6 +151,16 @@ export const PERFIS: Array<{
        * organizacao do arquivo.
        */
       PERMISSOES.IMAGEM_EDITAR,
+      /**
+       * M15 secao 68: o patologista consulta a localizacao e aplica retencao
+       * tecnica; a liberacao e dele porque exige julgamento tecnico - necropsia
+       * concluida, coletas finalizadas, ausencia de bloqueios (secao 42). Note
+       * que `CADAVER_MOVIMENTAR` esta ausente de proposito: mover o corpo
+       * dentro da camara e trabalho do tecnico.
+       */
+      PERMISSOES.CADAVER_VISUALIZAR,
+      PERMISSOES.CADAVER_BLOQUEAR,
+      PERMISSOES.CADAVER_LIBERAR,
       PERMISSOES.CLIENTE_VISUALIZAR,
       PERMISSOES.VETERINARIO_VISUALIZAR,
     ],

@@ -616,6 +616,114 @@ export interface UsuarioLista {
   perfis: string;
 }
 
+// --- M15 Controle de Cadaveres ---------------------------------------------
+
+export interface CadaverLista {
+  id: string;
+  identificador: string;
+  nomeAnimal: string | null;
+  especie: string;
+  status: string;
+  casoId: string | null;
+  casoIdentificador: string | null;
+  localCodigo: string | null;
+  localNome: string | null;
+  conservacaoAtual: string | null;
+  recebidoEm: string | null;
+  /** Desde quando esta fora do armazenamento (M15 secao 30). */
+  foraDesde: string | null;
+  prazoGuardaAte: string | null;
+  destinacao: string | null;
+  bloqueios: number;
+}
+
+export interface PosicaoMapa {
+  id: string;
+  codigo: string;
+  nome: string;
+  paiId: string | null;
+  categoria: string;
+  condicaoAmbiental: string | null;
+  ocupanteId: string | null;
+  ocupanteIdentificador: string | null;
+  ocupanteNome: string | null;
+  ocupanteStatus: string | null;
+}
+
+export interface MapaArmazenamento {
+  posicoes: PosicaoMapa[];
+  /** M15 secao 29: quem esta fora nao some do mapa. */
+  foraDoArmazenamento: Array<{
+    id: string;
+    identificador: string;
+    nomeAnimal: string | null;
+    status: string;
+    foraDesde: string | null;
+    origemCodigo: string | null;
+  }>;
+}
+
+export interface FichaCadaver {
+  cadaver: Record<string, unknown> & {
+    id: string;
+    identificador: string;
+    nomeAnimal: string | null;
+    especie: string;
+    status: string;
+    casoId: string | null;
+    microchip: string | null;
+    origemResponsavel: string | null;
+    conservacaoAtual: string | null;
+    recebidoEm: string | null;
+    foraDesde: string | null;
+    prazoGuardaAte: string | null;
+    destinacao: string | null;
+    retiradoPorNome: string | null;
+  };
+  local: { id: string; codigo: string; nome: string } | null;
+  movimentacoes: Array<{
+    id: string;
+    tipo: string;
+    origem: string | null;
+    destino: string | null;
+    destinoDescricao: string | null;
+    conservacao: string | null;
+    motivo: string | null;
+    observacao: string | null;
+    ocorridoEm: string;
+    usuario: string | null;
+  }>;
+  bloqueios: Array<{
+    id: string;
+    tipo: string;
+    motivo: string;
+    resolvidoEm: string | null;
+    justificativaResolucao: string | null;
+  }>;
+  destinacoes: Array<{
+    id: string;
+    anterior: string | null;
+    nova: string;
+    justificativa: string | null;
+    criadoEm: string;
+  }>;
+  cadastroIncompleto: boolean;
+}
+
+export interface LocalFisicoAdmin {
+  id: string;
+  nome: string;
+  codigo: string;
+  categoria: string;
+  paiId: string | null;
+  unidadeId: string;
+  unidadeNome: string | null;
+  capacidade: number | null;
+  condicaoAmbiental: string | null;
+  status: string;
+  inativadoEm: string | null;
+}
+
 /** M02 secao 45. `validoAte` nulo = sem prazo. */
 export interface AssinaturaProfissional {
   id: string;

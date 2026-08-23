@@ -25,6 +25,7 @@ import ViewList from '@mui/icons-material/ViewListOutlined';
 import LocalShipping from '@mui/icons-material/LocalShippingOutlined';
 import PendingActions from '@mui/icons-material/PendingActionsOutlined';
 import Contacts from '@mui/icons-material/ContactsOutlined';
+import Inventory2 from '@mui/icons-material/Inventory2Outlined';
 import Tune from '@mui/icons-material/TuneOutlined';
 import Group from '@mui/icons-material/GroupOutlined';
 import Password from '@mui/icons-material/PasswordOutlined';
@@ -83,6 +84,13 @@ const MENU = [
     icone: <PendingActions fontSize="small" />,
     rotulo: MODULO_LABEL[MODULOS.M10_SOLICITACOES],
     permissao: 'solicitacao:visualizar',
+  },
+  {
+    /* M15: a fila é física e atravessa casos - quem está na câmara agora. */
+    para: '/cadaveres',
+    icone: <Inventory2 fontSize="small" />,
+    rotulo: MODULO_LABEL[MODULOS.M15_CADAVERES],
+    permissao: 'cadaver:visualizar',
   },
   {
     /* M03: fonte única dos dados cadastrais - o degrau zero de qualquer caso. */

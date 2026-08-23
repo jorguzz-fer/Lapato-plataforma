@@ -2007,6 +2007,250 @@ describe('Portal do Cliente (M04)', () => {
   });
 });
 
+describe('controle de cadáveres (M15)', () => {
+  /**
+   * O modulo responde, a qualquer momento (secao 4): quem esta sob
+   * responsabilidade do laboratorio, onde, e o que impede a saida.
+   *
+   * O teste percorre o ciclo inteiro e checa as regras que a secao 88 nao
+   * negocia - com atencao especial as duas que sao faceis de colapsar por
+   * descuido: **posicao nao recebe dois corpos** e **liberado nao e retirado**.
+   */
+  let camaraId: string;
+  let posA: string;
+  let posB: string;
+  let cadaverId: string;
+  let bloqueioId: string;
+  const marca = Date.now().toString().slice(-5);
+
+  test('estrutura de armazenamento nasce no M01, não aqui', async () => {
+    await entrar('admin@lapato.local');
+
+    const unidades = await req('GET', '/administracao/unidades');
+    const camara = await req('POST', '/administracao/locais', {
+      unidadeId: unidades.body[0].id,
+      nome: 'Câmara Refrigerada 01',
+      codigo: `CAM-${marca}`,
+      categoria: 'camara_refrigerada',
+      condicaoAmbiental: 'refrigerado',
+    });
+    expect(camara.status, JSON.stringify(camara.body)).toBe(201);
+    camaraId = camara.body.id;
+
+    for (const codigo of ['A01', 'A02']) {
+      const p = await req('POST', '/administracao/locais', {
+        unidadeId: unidades.body[0].id,
+        paiId: camaraId,
+        nome: `Posição ${codigo}`,
+        codigo: `${codigo}-${marca}`,
+        categoria: 'posicao',
+        condicaoAmbiental: 'refrigerado',
+      });
+      expect(p.status, JSON.stringify(p.body)).toBe(201);
+      if (codigo === 'A01') posA = p.body.id;
+      else posB = p.body.id;
+    }
+  });
+
+  test('corpo que chega antes do cadastro entra assim mesmo, marcado (§5)', async () => {
+    await entrar('recepcao@lapato.local');
+
+    const r = await req('POST', '/cadaveres', {
+      especie: 'Canino',
+      nomeAnimal: 'Nina',
+      origemResponsavel: 'Clínica Veterinária Central',
+      conservacaoRecebimento: 'refrigerado',
+      embalagem: 'saco_cadaverico',
+      integridade: 'integra',
+      prazoGuardaDias: 15,
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(r.body.identificador).toMatch(/^CAD-\d{4}-\d{5}$/);
+    cadaverId = r.body.id;
+
+    const ficha = await req('GET', `/cadaveres/${cadaverId}`);
+    expect(ficha.body.cadastroIncompleto, 'sem caso, a ficha precisa gritar').toBe(true);
+    // Secao 88: toda movimentacao registrada - inclusive a entrada.
+    expect(ficha.body.movimentacoes).toHaveLength(1);
+    expect(ficha.body.movimentacoes[0].tipo).toBe('recebimento');
+  });
+
+  test('a mesma posição não recebe dois cadáveres (§25)', async () => {
+    await entrar('tecnico@lapato.local');
+    const primeiro = await req('POST', `/cadaveres/${cadaverId}/armazenamento`, { localId: posA });
+    expect(primeiro.status, JSON.stringify(primeiro.body)).toBe(201);
+
+    await entrar('recepcao@lapato.local');
+    const outro = await req('POST', '/cadaveres', { especie: 'Felino', nomeAnimal: 'Mimi' });
+
+    await entrar('tecnico@lapato.local');
+    const colisao = await req('POST', `/cadaveres/${outro.body.id}/armazenamento`, {
+      localId: posA,
+    });
+    expect(colisao.status, JSON.stringify(colisao.body)).toBe(400);
+    expect(colisao.body.detail).toContain('já ocupada');
+
+    const outroLugar = await req('POST', `/cadaveres/${outro.body.id}/armazenamento`, {
+      localId: posB,
+    });
+    expect(outroLugar.status).toBe(201);
+  });
+
+  test('sai para necropsia sem sumir do mapa (§29)', async () => {
+    const r = await req('POST', `/cadaveres/${cadaverId}/retirada-necropsia`, {
+      motivo: 'Necropsia agendada',
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+
+    const mapa = await req('GET', '/cadaveres/mapa');
+    const posicao = mapa.body.posicoes.find((p: { id: string }) => p.id === posA);
+    expect(posicao.ocupanteId, 'a posição volta a ficar livre').toBeNull();
+
+    // Mas o corpo continua visível — só não está numa posição.
+    const fora = mapa.body.foraDoArmazenamento.find((c: { id: string }) => c.id === cadaverId);
+    expect(fora, 'cadáver fora do armazenamento sumiu do mapa').toBeTruthy();
+    expect(fora.origemCodigo).toContain('A01');
+  });
+
+  test('bloqueio impede a liberação, e não se contorna mudando o status (§32)', async () => {
+    await entrar('patologista@lapato.local');
+    const bloqueio = await req('POST', `/cadaveres/${cadaverId}/bloqueios`, {
+      tipo: 'aguardar_exame_complementar',
+      motivo: 'Histopatologia dos fragmentos pendente.',
+    });
+    expect(bloqueio.status, JSON.stringify(bloqueio.body)).toBe(201);
+    bloqueioId = bloqueio.body.id;
+
+    // Em necropsia nem chega a testar o bloqueio: precisa voltar primeiro.
+    const emNecropsia = await req('POST', `/cadaveres/${cadaverId}/liberacao`);
+    expect(emNecropsia.status).toBe(400);
+    expect(emNecropsia.body.detail).toContain('necropsia');
+
+    await entrar('tecnico@lapato.local');
+    const retorno = await req('POST', `/cadaveres/${cadaverId}/armazenamento`, {
+      localId: posA,
+      conservacao: 'congelado',
+    });
+    expect(retorno.status).toBe(201);
+
+    await entrar('patologista@lapato.local');
+    const comBloqueio = await req('POST', `/cadaveres/${cadaverId}/liberacao`);
+    expect(comBloqueio.status).toBe(400);
+    expect(comBloqueio.body.detail).toContain('bloqueio');
+  });
+
+  test('resolver o bloqueio exige dizer como (§88)', async () => {
+    const semJustificativa = await req('POST', `/cadaveres/bloqueios/${bloqueioId}/resolucao`, {
+      justificativa: '',
+    });
+    expect(semJustificativa.status).toBe(400);
+
+    const r = await req('POST', `/cadaveres/bloqueios/${bloqueioId}/resolucao`, {
+      justificativa: 'Histopatologia concluída e laudo liberado.',
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+  });
+
+  test('liberado NÃO é retirado: continua na posição (§43)', async () => {
+    const liberacao = await req('POST', `/cadaveres/${cadaverId}/liberacao`);
+    expect(liberacao.status, JSON.stringify(liberacao.body)).toBe(201);
+
+    const mapa = await req('GET', '/cadaveres/mapa');
+    const posicao = mapa.body.posicoes.find((p: { id: string }) => p.id === posA);
+    expect(
+      posicao.ocupanteId,
+      'liberar não é sair: o corpo continua ocupando a posição',
+    ).toBe(cadaverId);
+  });
+
+  test('alterar a destinação preserva a anterior (§41)', async () => {
+    const primeira = await req('POST', `/cadaveres/${cadaverId}/destinacao`, {
+      destinacao: 'cremacao_individual',
+    });
+    expect(primeira.status).toBe(201);
+
+    const semJustificativa = await req('POST', `/cadaveres/${cadaverId}/destinacao`, {
+      destinacao: 'retirada_responsavel',
+    });
+    expect(semJustificativa.status, 'trocar sem justificativa não pode passar').toBe(400);
+
+    const troca = await req('POST', `/cadaveres/${cadaverId}/destinacao`, {
+      destinacao: 'retirada_responsavel',
+      justificativa: 'Tutor optou por retirar o corpo.',
+    });
+    expect(troca.status).toBe(201);
+
+    const ficha = await req('GET', `/cadaveres/${cadaverId}`);
+    expect(ficha.body.destinacoes, 'a escolha anterior não pode ser sobrescrita').toHaveLength(2);
+    const ultima = ficha.body.destinacoes[0];
+    expect(ultima.anterior).toBe('cremacao_individual');
+    expect(ultima.nova).toBe('retirada_responsavel');
+  });
+
+  test('a saída física é o que libera a posição (§§49 e 88)', async () => {
+    await entrar('recepcao@lapato.local');
+
+    const entrega = await req('POST', `/cadaveres/${cadaverId}/entrega`, {
+      nome: 'Fernanda Alves',
+      documento: '123.456.789-00',
+      vinculo: 'Tutora',
+    });
+    expect(entrega.status, JSON.stringify(entrega.body)).toBe(201);
+
+    const mapa = await req('GET', '/cadaveres/mapa');
+    const posicao = mapa.body.posicoes.find((p: { id: string }) => p.id === posA);
+    expect(posicao.ocupanteId, 'a posição só se libera na saída física').toBeNull();
+  });
+
+  test('destinação não é exclusão: o histórico permanece inteiro (§50)', async () => {
+    const confirmacao = await req('POST', `/cadaveres/${cadaverId}/destinacao/confirmacao`);
+    expect(confirmacao.status, JSON.stringify(confirmacao.body)).toBe(201);
+
+    await entrar('admin@lapato.local');
+    const ficha = await req('GET', `/cadaveres/${cadaverId}`);
+    expect(ficha.body.cadaver.status).toBe('destinado');
+    expect(ficha.body.cadaver.retiradoPorNome).toBe('Fernanda Alves');
+
+    /**
+     * Recebimento, armazenamento, retirada, retorno e saida: o historico
+     * termico e de custodia inteiro (secoes 16 e 66).
+     */
+    const tipos = ficha.body.movimentacoes.map((m: { tipo: string }) => m.tipo);
+    expect(tipos).toEqual([
+      'recebimento',
+      'armazenamento',
+      'retirada_necropsia',
+      'retorno_necropsia',
+      'saida_fisica',
+    ]);
+  });
+
+  test('a recepção não move nem libera - são papéis diferentes (§68)', async () => {
+    await entrar('recepcao@lapato.local');
+    const outro = await req('POST', '/cadaveres', { especie: 'Canino' });
+
+    const movimentar = await req('POST', `/cadaveres/${outro.body.id}/armazenamento`, {
+      localId: posB,
+    });
+    expect(movimentar.status).toBe(403);
+
+    const liberar = await req('POST', `/cadaveres/${outro.body.id}/liberacao`);
+    expect(liberar.status).toBe(403);
+  });
+
+  test('o Guardian acha o corpo sem localização (§70)', async () => {
+    await entrar('admin@lapato.local');
+    const achados = await req('GET', '/cadaveres/conferencia');
+    expect(achados.status, JSON.stringify(achados.body)).toBe(200);
+
+    // Os cadáveres criados como `recebido` e nunca armazenados são o caso
+    // esperado aqui; o que não pode é a varredura barrar alguma coisa.
+    const codigos = achados.body.map((a: { codigo: string }) => a.codigo);
+    expect(Array.isArray(achados.body)).toBe(true);
+    expect(codigos.every((c: string) => c.startsWith('CADAVER_'))).toBe(true);
+  });
+});
+
 describe('laudo incompleto não vira beco sem saída (M11)', () => {
   /**
    * O caso que originou este bloco, reportado no uso real: um laudo sem

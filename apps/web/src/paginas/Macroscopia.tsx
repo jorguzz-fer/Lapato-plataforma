@@ -33,6 +33,7 @@ import {
   type Dossie as DadosDossie,
   type FichaMacroscopia,
 } from '../api';
+import { BloqueioGuardian } from './BloqueioGuardian';
 import { AvisoBancadaBloqueada, impedimentoDeBancada } from './AvisoBancadaBloqueada';
 
 /**
@@ -779,24 +780,7 @@ export function Macroscopia({ exigeSupervisao }: Props) {
           </Stack>
 
           {bloqueioGuardian && (
-            <Alert severity="error" sx={{ mt: 2.5 }}>
-              <AlertTitle>Conclusão impedida pelo Guardian</AlertTitle>
-              <Typography sx={{ fontSize: 13, mb: 1 }}>{bloqueioGuardian.detalhe}</Typography>
-              <Stack component="ul" spacing={1} sx={{ m: 0, pl: 2.5 }}>
-                {bloqueioGuardian.achados?.map((achado) => (
-                  <Box component="li" key={achado.codigo}>
-                    <Typography sx={{ fontSize: 13 }}>{achado.mensagem}</Typography>
-                    {achado.evidencias && (
-                      <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
-                        {Object.entries(achado.evidencias)
-                          .map(([chave, valor]) => `${chave}: ${String(valor)}`)
-                          .join(' · ')}
-                      </Typography>
-                    )}
-                  </Box>
-                ))}
-              </Stack>
-            </Alert>
+            <BloqueioGuardian erro={bloqueioGuardian} acao="concluir a macroscopia" />
           )}
 
           {erro && (

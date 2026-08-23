@@ -2007,6 +2007,118 @@ describe('Portal do Cliente (M04)', () => {
   });
 });
 
+describe('assinatura profissional (M02 §45)', () => {
+  /**
+   * O Guardian barra a assinatura do laudo de quem nao tem assinatura
+   * profissional valida - e ate agora ela so existia no CLI de
+   * provisionamento. Quem provisionasse a instituicao sem informar o conselho
+   * ficava com um bloqueio critico e **nenhum caminho de saida dentro do
+   * produto**. Foi o que travou o primeiro uso real.
+   *
+   * O teste percorre o ciclo nos dois sentidos, no patologista do seed: tirar a
+   * assinatura barra, registrar de volta libera. Termina com assinatura valida,
+   * porque outros blocos do arquivo assinam com esta mesma conta.
+   */
+  let usuarioId: string;
+  let versaoId: string;
+
+  test('a lista de usuários mostra quem está apto a assinar', async () => {
+    await entrar('admin@lapato.local');
+
+    const lista = await req('GET', '/usuarios');
+    expect(lista.status, JSON.stringify(lista.body)).toBe(200);
+
+    const patologista = lista.body.find(
+      (u: { email: string }) => u.email === 'patologista@lapato.local',
+    );
+    expect(patologista, 'patologista do seed ausente').toBeTruthy();
+    expect(patologista.assinaturaAtiva).toBe(true);
+    usuarioId = patologista.id;
+  });
+
+  test('validade no passado é recusada', async () => {
+    const r = await req('POST', `/usuarios/${usuarioId}/assinaturas`, {
+      identificacaoProfissional: 'CRMV-CE 00000',
+      validoAte: '2020-01-01T00:00:00.000Z',
+    });
+    expect(r.status).toBe(400);
+    expect(r.body.detail).toContain('validade');
+  });
+
+  test('sem assinatura válida o Guardian barra - e o achado diz como resolver', async () => {
+    // Um caso pronto para a bancada, com laudo elaborado.
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Assinatura ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Fragmento' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    await levarAteBancada(criado.body.id);
+
+    await entrar('patologista@lapato.local');
+    const abrir = await req('POST', `/laudos/casos/${criado.body.id}`);
+    versaoId = abrir.body.versaoId;
+    await req('POST', `/laudos/versoes/${versaoId}`, {
+      descricaoMicroscopica: 'Proliferação de células fusiformes.',
+      diagnosticos: [{ textoExibido: 'Fibrossarcoma' }],
+    });
+
+    // O administrador inativa a assinatura vigente.
+    await entrar('admin@lapato.local');
+    const assinaturas = await req('GET', `/usuarios/${usuarioId}/assinaturas`);
+    const vigente = assinaturas.body.find((a: { ativa: boolean }) => a.ativa);
+    expect(vigente, JSON.stringify(assinaturas.body)).toBeTruthy();
+    const inativacao = await req(
+      'POST',
+      `/usuarios/${usuarioId}/assinaturas/${vigente.id}/inativacao`,
+    );
+    expect(inativacao.status, JSON.stringify(inativacao.body)).toBe(201);
+
+    const lista = await req('GET', '/usuarios');
+    expect(lista.body.find((u: { id: string }) => u.id === usuarioId).assinaturaAtiva).toBe(false);
+
+    // Agora a assinatura do laudo e barrada.
+    await entrar('patologista@lapato.local');
+    const tentativa = await req('POST', `/laudos/versoes/${versaoId}/assinatura`);
+    expect(tentativa.status, JSON.stringify(tentativa.body)).toBe(409);
+
+    const achado = tentativa.body.achados.find(
+      (a: { codigo: string }) => a.codigo === 'ASSINATURA_INEXISTENTE_OU_EXPIRADA',
+    );
+    expect(achado, JSON.stringify(tentativa.body)).toBeTruthy();
+
+    /**
+     * M17 secao 11: o alerta existe para o profissional decidir, e decidir
+     * exige saber a saida. Sem isto a pessoa le "nao possui assinatura ativa" e
+     * fica parada - foi exatamente o que aconteceu no primeiro uso real.
+     */
+    expect(achado.comoResolver).toContain('Usuários e Perfis');
+  });
+
+  test('registrar pela interface devolve a capacidade de assinar', async () => {
+    await entrar('admin@lapato.local');
+
+    const registro = await req('POST', `/usuarios/${usuarioId}/assinaturas`, {
+      identificacaoProfissional: 'CRMV-CE 4321',
+    });
+    expect(registro.status, JSON.stringify(registro.body)).toBe(201);
+
+    // Inativacao, nunca exclusao (M01): a anterior continua no historico,
+    // porque o laudo ja assinado aponta para ela.
+    const assinaturas = await req('GET', `/usuarios/${usuarioId}/assinaturas`);
+    expect(assinaturas.body.length).toBeGreaterThanOrEqual(2);
+    expect(assinaturas.body.filter((a: { ativa: boolean }) => a.ativa)).toHaveLength(1);
+
+    await entrar('patologista@lapato.local');
+    const assinatura = await req('POST', `/laudos/versoes/${versaoId}/assinatura`);
+    expect(assinatura.status, JSON.stringify(assinatura.body)).toBe(201);
+  });
+});
+
 describe('material sem recebimento não chega à bancada', () => {
   /**
    * M05 secao 12: solicitado, cadastrado, recebido e triado sao quatro momentos

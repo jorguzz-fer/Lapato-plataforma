@@ -64,6 +64,8 @@ export class GuardianService {
           nivel: 'critico',
           mensagem: 'A versão do laudo não foi encontrada.',
           modulo: MODULOS.M11_LAUDOS,
+          comoResolver:
+            'Recarregue a tela do laudo. Se persistir, o laudo foi removido ou pertence a outro caso.',
         },
       ];
     }
@@ -85,6 +87,8 @@ export class GuardianService {
         nivel: 'critico',
         mensagem: 'O laudo não possui diagnóstico registrado.',
         modulo: MODULOS.M11_LAUDOS,
+        comoResolver:
+          'Adicione ao menos um diagnóstico no bloco “Diagnóstico” desta tela antes de assinar.',
         campo: 'diagnostico',
       });
     }
@@ -95,6 +99,8 @@ export class GuardianService {
         nivel: 'atencao',
         mensagem: 'A descrição microscópica está vazia.',
         modulo: MODULOS.M11_LAUDOS,
+        comoResolver:
+          'Preencha a descrição microscópica. Não é obrigatória para assinar, mas o laudo sai sem ela.',
         campo: 'descricaoMicroscopica',
       });
     }
@@ -106,6 +112,8 @@ export class GuardianService {
         mensagem:
           'Existe diagnóstico marcado como provisório. Diagnóstico provisório não equivale a liberado.',
         modulo: MODULOS.M11_LAUDOS,
+        comoResolver:
+          'Desmarque “provisório” no diagnóstico, ou remova-o. Provisório é rascunho, não conclusão.',
       });
     }
 
@@ -131,6 +139,8 @@ export class GuardianService {
         mensagem:
           'O profissional não possui assinatura ativa e válida. Assinatura expirada ou inativa bloqueia a liberação.',
         modulo: MODULOS.M02_USUARIOS,
+        comoResolver:
+          'Um administrador cadastra a assinatura profissional em Usuários e Perfis, na ficha do profissional. Se ela existir mas estiver vencida, registre uma nova com a validade atualizada.',
       });
     }
 
@@ -187,6 +197,8 @@ export class GuardianService {
             `Lateralidade divergente na amostra ${origem.ident}: ` +
             `cadastro indica "${origem.lateralidade}", o laudo indica "${d.lateralidade}".`,
           modulo: MODULOS.M17_IA,
+          comoResolver:
+            'Confira o lado no cadastro da amostra e no texto do laudo. Corrija o que estiver errado — o Guardian não escolhe qual dos dois vale.',
           campo: 'lateralidade',
           evidencias: {
             amostra: origem.ident,
@@ -246,6 +258,8 @@ export class GuardianService {
           `Há ${comprometidas.length} margem(ns) marcada(s) como comprometida no campo estruturado, ` +
           'mas o texto do laudo afirma margens livres.',
         modulo: MODULOS.M17_IA,
+        comoResolver:
+          'Alinhe a margem estruturada com o que o texto afirma. Se o texto estiver certo, ajuste a margem; se a margem estiver certa, ajuste o texto.',
         campo: 'margens',
         evidencias: { margensComprometidas: comprometidas.map((m) => m.nome) },
       });
@@ -259,6 +273,8 @@ export class GuardianService {
         nivel: 'sugestao',
         mensagem: `Margens ainda indeterminadas: ${semResultado.map((m) => m.nome).join(', ')}.`,
         modulo: MODULOS.M13_HISTOPATOLOGIA,
+        comoResolver:
+          'Registre o resultado da margem, ou explique no texto por que ela não pôde ser avaliada.',
         campo: 'margens',
       });
     }
@@ -326,6 +342,8 @@ export class GuardianService {
           .map((a) => a.identificador)
           .join(', ')}.`,
         modulo: MODULOS.M12_CITOPATOLOGIA,
+        comoResolver:
+          'Preencha a avaliação citológica da amostra no painel de citologia. Cada amostra tem a sua.',
         campo: 'avaliacaoCitologica',
       });
     }
@@ -353,6 +371,8 @@ export class GuardianService {
           `A amostra foi classificada como ${inconclusivas[0]!.adequacao === 'nao_diagnostica' ? 'não diagnóstica' : 'insatisfatória'}, ` +
           'mas o laudo traz diagnóstico afirmativo. Revise a adequação, o grau de certeza ou a redação.',
         modulo: MODULOS.M12_CITOPATOLOGIA,
+        comoResolver:
+          'Ou registre a amostra como adequada, se ela for, ou troque o diagnóstico por uma conclusão que assuma a limitação do material.',
         campo: 'adequacao',
         evidencias: { diagnosticos: afirmativos.map((d) => d.textoExibido) },
       });
@@ -373,6 +393,8 @@ export class GuardianService {
         mensagem:
           'Grau de certeza "alta" registrado sobre amostra com limitações. Confirmar se a limitação não afeta a conclusão.',
         modulo: MODULOS.M12_CITOPATOLOGIA,
+        comoResolver:
+          'Reveja o grau de certeza: material com limitação raramente sustenta conclusão definitiva.',
         campo: 'grauCerteza',
       });
     }
@@ -396,6 +418,8 @@ export class GuardianService {
         mensagem:
           'Diagnóstico de neoplasia maligna sem nenhum critério de malignidade estruturado. Confirmar?',
         modulo: MODULOS.M12_CITOPATOLOGIA,
+        comoResolver:
+          'Marque no painel de citologia quais critérios de malignidade sustentam a conclusão.',
         campo: 'criteriosMalignidade',
       });
     }
@@ -432,6 +456,8 @@ export class GuardianService {
           nivel: 'critico',
           mensagem: 'Caso não encontrado.',
           modulo: MODULOS.M05_RECEBIMENTO,
+          comoResolver:
+            'Recarregue a tela. Se persistir, o caso foi cancelado ou pertence a outra instituição.',
         },
       ];
     }
@@ -461,6 +487,8 @@ export class GuardianService {
             `O microchip ${registro.microchip} também está registrado em ` +
             `${outros.map((o) => o.nome).join(', ')}. Verifique a identidade antes de prosseguir.`,
           modulo: MODULOS.M05_RECEBIMENTO,
+          comoResolver:
+            'Confira o microchip digitado. Se o animal já tem cadastro, use o paciente existente em vez de criar outro.',
           campo: 'microchip',
           evidencias: { microchip: registro.microchip, pacientes: outros },
         });
@@ -495,6 +523,8 @@ export class GuardianService {
         nivel: 'atencao',
         mensagem: 'Nenhum cassete foi gerado nesta macroscopia.',
         modulo: MODULOS.M08_MACROSCOPIA,
+        comoResolver:
+          'Adicione ao menos um cassete no bloco “Cassetes”, ou marque o material como totalmente incluído.',
       });
     }
 
@@ -505,6 +535,8 @@ export class GuardianService {
           nivel: 'critico',
           mensagem: `O cassete ${c.identificador} não tem tecido de origem identificado.`,
           modulo: MODULOS.M08_MACROSCOPIA,
+          comoResolver:
+            'Informe o tecido de origem do cassete. É o primeiro elo da rastreabilidade até a lâmina.',
           campo: 'tecidoOrigem',
           evidencias: { cassete: c.identificador },
         });

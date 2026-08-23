@@ -688,6 +688,17 @@ const novoUsuarioSchema = z.object({
   clienteId: z.string().uuid().optional(),
 });
 
+/**
+ * M02 secao 45: a identificacao profissional e o que sai impresso no laudo
+ * (conselho e registro). `validoAte` vazio significa sem prazo.
+ */
+const novaAssinaturaSchema = z.object({
+  identificacaoProfissional: z
+    .string()
+    .min(3, 'Informe o conselho e o registro, como aparecerá no laudo.'),
+  validoAte: z.string().datetime({ offset: true }).nullish(),
+});
+
 const edicaoUsuarioSchema = z.object({
   nomeCompleto: z.string().min(1).optional(),
   perfilIds: z.array(z.string().uuid()).min(1).optional(),
@@ -754,6 +765,42 @@ export class UsuariosController {
   })
   async redefinirSenha(@Param('id', ParseUUIDPipe) id: string) {
     return this.usuarios.redefinirSenha(id);
+  }
+
+  @Get(':id/assinaturas')
+  @ExigePermissao(PERMISSOES.USUARIO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Assinaturas profissionais do usuário',
+    description: 'Histórico completo: a inativa fica, porque o laudo assinado aponta para ela.',
+  })
+  async assinaturas(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usuarios.listarAssinaturas(id);
+  }
+
+  @Post(':id/assinaturas')
+  @ExigePermissao(PERMISSOES.USUARIO_EDITAR)
+  @ApiOperation({
+    summary: 'Registra a assinatura profissional',
+    description:
+      'Sem assinatura ativa e válida o Guardian barra a assinatura do laudo (M11). ' +
+      'Renovar cria um registro novo e inativa o anterior — o laudo já assinado ' +
+      'continua apontando para a identificação que valia na época (M11 §118).',
+  })
+  async registrarAssinatura(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    return this.usuarios.registrarAssinatura(id, validarCorpo(novaAssinaturaSchema, corpo));
+  }
+
+  @Post(':id/assinaturas/:assinaturaId/inativacao')
+  @ExigePermissao(PERMISSOES.USUARIO_EDITAR)
+  @ApiOperation({
+    summary: 'Inativa a assinatura profissional',
+    description: 'Inativação, nunca exclusão (M01): o registro histórico é preservado.',
+  })
+  async inativarAssinatura(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('assinaturaId', ParseUUIDPipe) assinaturaId: string,
+  ) {
+    await this.usuarios.inativarAssinatura(id, assinaturaId);
   }
 
   @Post(':id')

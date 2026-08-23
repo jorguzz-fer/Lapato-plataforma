@@ -485,7 +485,7 @@
 
   <section class="placar" aria-label="Resumo do estado dos módulos">
     <div class="metrica is-pronto">
-      <span class="n">13</span>
+      <span class="n">14</span>
       <span class="r">Prontos de ponta a ponta</span>
     </div>
     <div class="metrica is-parcial">
@@ -493,7 +493,7 @@
       <span class="r">Domínio pronto, sem tela</span>
     </div>
     <div class="metrica is-ausente">
-      <span class="n">5</span>
+      <span class="n">4</span>
       <span class="r">Adiados por decisão</span>
     </div>
     <div class="metrica is-semdoc">
@@ -601,9 +601,9 @@
     <div class="modulo">
       <span class="num">12</span>
       <span class="nome">Citopatologia</span>
-      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-adiado"><span class="glifo" aria-hidden="true">—</span> Adiado</span></span>
-      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-adiado"><span class="glifo" aria-hidden="true">—</span> Adiado</span></span>
-      <span class="nota">Fora da fatia vertical. O modelo de amostra já comporta.</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="nota">Workflow próprio — a lâmina chega pronta da coleta, então a triagem apta já libera a leitura. Avaliação por amostra: adequação, fundo, populações, critérios e interpretação. O Guardian barra diagnóstico afirmativo sobre material declarado não diagnóstico.</span>
     </div>
 
     <div class="modulo">
@@ -810,8 +810,9 @@
       A fatia vertical está fechada: cadastro, recebimento, triagem, macroscopia,
       processamento terceirizado, microscopia, laudo estruturado, assinatura, liberação e
       agora o PDF com QR Code de validação pública — de ponta a ponta, com teste automatizado
-      cobrindo o caminho inteiro. O que segue são as extensões que faltam para o dia a dia do
-      laboratório e para tirar a IA do modo stub.
+      cobrindo o caminho inteiro — e a citologia entrou com bancada e workflow próprios, não
+      como histopatologia simplificada. O que segue são as extensões que faltam para o dia a
+      dia do laboratório e para tirar a IA do modo stub.
     </p>
 
     <ol class="passos">
@@ -824,9 +825,9 @@
       </li>
       <li class="passo">
         <div>
-          <h3>Próximas modalidades e o Portal</h3>
-          <p class="marca">M12 · M14 · M04 · M16</p>
-          <p>Citopatologia, necropsia, Portal do Cliente e imagens — documentados e adiados por decisão de fase. A ordem entre eles é escolha de negócio, não técnica.</p>
+          <h3>Imagens, Portal e necropsia</h3>
+          <p class="marca">M16 · M04 · M14</p>
+          <p>Imagens no laudo, Portal do Cliente e necropsia — documentados e adiados por decisão de fase. A ordem entre eles é escolha de negócio, não técnica.</p>
         </div>
       </li>
     </ol>

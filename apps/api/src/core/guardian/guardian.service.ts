@@ -8,6 +8,11 @@ import {
   cadaver,
   caso,
   cassete,
+  emprestimo,
+  emprestimoItem,
+  localFisico,
+  objetoBiologico,
+  reservaObjeto,
   causaMortis,
   exameOrgao,
   lesaoNecroscopica,
@@ -22,8 +27,13 @@ import {
 import {
   BloqueioGuardianError,
   MODULOS,
+  STATUS_EMPRESTIMO_ABERTOS,
+  TIPOS_QUE_EXIGEM_FRIO,
+  motivoDescarteBloqueado,
   ordenarPorGravidade,
+  prioridadeFinalidade,
   type AchadoGuardian,
+  type FinalidadeUso,
 } from '@lapato/shared';
 import { exigirContexto } from '../contexto/contexto-requisicao.js';
 
@@ -773,9 +783,17 @@ export class GuardianService {
         localAtualId: cadaver.localAtualId,
         destinacao: cadaver.destinacao,
         foraDesde: cadaver.foraDesde,
+        /**
+         * A coluna externa vai escrita por extenso (`cadaver.id`), e nao como
+         * `${cadaver.id}`: numa consulta de tabela unica o drizzle emite so
+         * `"id"`, que dentro da subconsulta resolve para o `id` do escopo
+         * interno. A correlacao vira `b.id = b.id`, nao da erro e devolve a
+         * contagem errada em silencio.
+         */
         bloqueios: sql<number>`(
           select count(*) from ${bloqueioCadaver} b
-          where b.cadaver_id = ${cadaver.id} and b.resolvido_em is null
+          where b.cadaver_id = cadaver.id and b.tenant_id = cadaver.tenant_id
+            and b.resolvido_em is null
         )`,
       })
       .from(cadaver)
@@ -879,6 +897,323 @@ export class GuardianService {
             'Informe o tecido de origem do cassete. É o primeiro elo da rastreabilidade até a lâmina.',
           campo: 'tecidoOrigem',
           evidencias: { cassete: c.identificador },
+        });
+      }
+    }
+
+    return ordenarPorGravidade(achados);
+  }
+
+  /**
+   * Varredura do acervo biologico (M18 secao 86).
+   *
+   * A lista da secao 86 e literal: solicitacao de IHQ em bloco esgotado,
+   * material reservado para pericia sendo solicitado para ensino, lamina
+   * emprestada ha 30 dias, material sem localizacao, objeto elegivel para
+   * descarte porem associado a processo ativo, tecido congelado armazenado em
+   * equipamento incompativel com sua regra.
+   *
+   * Nenhum destes barra acao: sao incoerencias que **ja existem** no acervo, e
+   * o painel as mostra como trabalho pendente da operacao.
+   */
+  async verificarBioteca(tx: Transacao): Promise<AchadoGuardian[]> {
+    const ctx = exigirContexto();
+    const achados: AchadoGuardian[] = [];
+
+    const objetos = await tx
+      .select({
+        id: objetoBiologico.id,
+        identificador: objetoBiologico.identificador,
+        tipo: objetoBiologico.tipo,
+        status: objetoBiologico.status,
+        condicao: objetoBiologico.condicao,
+        localAtualId: objetoBiologico.localAtualId,
+        localizacaoDescritiva: objetoBiologico.localizacaoDescritiva,
+        restricoes: objetoBiologico.restricoes,
+        retencaoAte: objetoBiologico.retencaoAte,
+        quantidadeDisponivel: objetoBiologico.quantidadeDisponivel,
+        localCodigo: localFisico.codigo,
+        localCondicao: localFisico.condicaoAmbiental,
+        localStatus: localFisico.status,
+        /** Coluna externa por extenso — ver a nota em `verificarCadaveres`. */
+        reservasAtivas: sql<number>`(
+          select count(*) from ${reservaObjeto} r
+          where r.objeto_id = objeto_biologico.id
+            and r.tenant_id = objeto_biologico.tenant_id
+            and r.ativa = true
+        )`,
+        emprestimosAbertos: sql<number>`(
+          select count(*) from ${emprestimoItem} i
+          join ${emprestimo} e on e.id = i.emprestimo_id
+          where i.objeto_id = objeto_biologico.id
+            and i.tenant_id = objeto_biologico.tenant_id
+            and i.devolvido_em is null
+            and e.status = any(${sql.raw(
+              `ARRAY[${STATUS_EMPRESTIMO_ABERTOS.map((s) => `'${s}'`).join(',')}]::status_emprestimo[]`,
+            )})
+        )`,
+      })
+      .from(objetoBiologico)
+      .leftJoin(localFisico, eq(localFisico.id, objetoBiologico.localAtualId))
+      .where(eq(objetoBiologico.tenantId, ctx.tenantId));
+
+    const agora = new Date();
+    /**
+     * Vencidos e livres viram UM achado com a contagem, nao um por material.
+     *
+     * Um acervo de dez anos tem centenas deles a qualquer momento; enumerar
+     * cada um faria o painel rolar por paginas e esconderia o emprestimo
+     * atrasado que precisa de alguem hoje. A lista item a item vive na aba
+     * Destinacao, que e onde se age sobre ela.
+     */
+    const livresParaDestinacao: string[] = [];
+
+    for (const o of objetos) {
+      // "Material sem localizacao."
+      if (
+        !o.localAtualId &&
+        !o.localizacaoDescritiva &&
+        o.status !== 'descartado' &&
+        o.status !== 'perdido'
+      ) {
+        achados.push({
+          codigo: 'BIOTECA_SEM_LOCALIZACAO',
+          nivel: 'critico',
+          mensagem: `${o.identificador} está no acervo sem posição nem destino registrados.`,
+          modulo: MODULOS.M18_BIOTECA,
+          comoResolver:
+            'Arquive o material numa posição pela ação “Transferir” na ficha, ou registre onde ele está.',
+          evidencias: { identificador: o.identificador, status: o.status },
+        });
+      }
+
+      // "Tecido congelado armazenado em equipamento incompativel com sua regra."
+      if (
+        TIPOS_QUE_EXIGEM_FRIO.includes(o.tipo) &&
+        o.localAtualId &&
+        o.localCondicao !== 'congelado'
+      ) {
+        achados.push({
+          codigo: 'BIOTECA_EQUIPAMENTO_INCOMPATIVEL',
+          nivel: 'critico',
+          mensagem: `${o.identificador} exige congelamento e está em ${o.localCodigo}, com condição "${o.localCondicao ?? 'não informada'}".`,
+          modulo: MODULOS.M18_BIOTECA,
+          comoResolver:
+            'Transfira o material para um equipamento de congelamento. Enquanto isso não acontece, o que se conclui dele fica comprometido.',
+          evidencias: { identificador: o.identificador, local: o.localCodigo },
+        });
+      }
+
+      // Secao 62: equipamento fora de servico com material dentro.
+      if (o.localAtualId && o.localStatus && o.localStatus !== 'operacional') {
+        achados.push({
+          codigo: 'BIOTECA_EQUIPAMENTO_INDISPONIVEL',
+          nivel: 'atencao',
+          mensagem: `${o.identificador} está em ${o.localCodigo}, que consta como "${o.localStatus}".`,
+          modulo: MODULOS.M18_BIOTECA,
+          comoResolver:
+            'Use a transferência emergencial para mover o conteúdo do equipamento, ou devolva o equipamento à operação.',
+          evidencias: { identificador: o.identificador, local: o.localCodigo },
+        });
+      }
+
+      // "Objeto elegivel para descarte, porem associado a processo ativo."
+      const vencido = o.retencaoAte != null && new Date(o.retencaoAte) <= agora;
+      if (vencido && o.status !== 'descartado') {
+        const motivo = motivoDescarteBloqueado({
+          status: o.status,
+          restricoes: o.restricoes,
+          temEmprestimoAberto: Number(o.emprestimosAbertos) > 0,
+          temReservaAtiva: Number(o.reservasAtivas) > 0,
+          retencaoAte: new Date(o.retencaoAte!),
+          agora,
+        });
+
+        if (motivo) {
+          achados.push({
+            codigo: 'BIOTECA_VENCIDO_COM_BLOQUEIO',
+            nivel: 'atencao',
+            mensagem: `${o.identificador} passou do prazo de guarda, mas não pode ser descartado: ${motivo}`,
+            modulo: MODULOS.M18_BIOTECA,
+            comoResolver:
+              'Resolva o que está segurando o material — devolução, reserva ou restrição — antes de incluí-lo num lote de destinação.',
+            evidencias: { identificador: o.identificador, motivo },
+          });
+        } else {
+          livresParaDestinacao.push(o.identificador);
+        }
+      }
+
+      /**
+       * O esgotamento NAO vira achado aqui de proposito.
+       *
+       * A secao 25 quer o esgotamento visivel "antes de solicitar novos
+       * complementares" - e esse e o momento do pedido, coberto por
+       * `verificarMaterialParaComplementar`. Listar cada bloco esgotado numa
+       * varredura de acervo transforma o painel numa segunda copia da lista de
+       * materiais e afoga o achado que de fato exige acao. Na tela, o
+       * esgotamento ja e um chip vermelho e um contador.
+       */
+    }
+
+    // "Lamina emprestada ha 30 dias."
+    const atrasados = await tx
+      .select({
+        identificador: emprestimo.identificador,
+        destinatario: emprestimo.destinatario,
+        prazoDevolucao: emprestimo.prazoDevolucao,
+        tipo: emprestimo.tipo,
+        dias: sql<number>`greatest(0, (current_date - ${emprestimo.prazoDevolucao})::int)`,
+        pendentes: sql<number>`(
+          select count(*) from ${emprestimoItem} i
+          where i.emprestimo_id = emprestimo.id and i.devolvido_em is null
+        )`,
+      })
+      .from(emprestimo)
+      .where(
+        and(
+          eq(emprestimo.tenantId, ctx.tenantId),
+          sql`${emprestimo.prazoDevolucao} < current_date`,
+          sql`${emprestimo.status} <> 'devolvido'`,
+        ),
+      );
+
+    if (livresParaDestinacao.length > 0) {
+      achados.push({
+        codigo: 'BIOTECA_RETENCAO_VENCIDA',
+        nivel: 'informacao',
+        mensagem: `${livresParaDestinacao.length} material(is) passaram do prazo de guarda e estão livres para destinação.`,
+        modulo: MODULOS.M18_BIOTECA,
+        comoResolver:
+          'Abra a aba Destinação para conferir a lista e montar o lote, ou amplie a retenção com justificativa registrada.',
+        evidencias: {
+          total: livresParaDestinacao.length,
+          exemplos: livresParaDestinacao.slice(0, 5).join(', '),
+        },
+      });
+    }
+
+    for (const e of atrasados) {
+      if (Number(e.pendentes) === 0) continue;
+      achados.push({
+        codigo: 'BIOTECA_EMPRESTIMO_ATRASADO',
+        nivel: Number(e.dias) >= 30 ? 'critico' : 'atencao',
+        mensagem: `${e.identificador} está ${e.dias} dia(s) atrasado — ${e.pendentes} material(is) com ${e.destinatario}.`,
+        modulo: MODULOS.M18_BIOTECA,
+        comoResolver:
+          'Cobre a devolução. Se o material não vai voltar, registre isso — a seção 39 proíbe encerrar o empréstimo sem devolução.',
+        evidencias: {
+          emprestimo: e.identificador,
+          destinatario: e.destinatario,
+          dias: e.dias,
+          tipo: e.tipo,
+        },
+      });
+    }
+
+    return ordenarPorGravidade(achados);
+  }
+
+  /**
+   * Disponibilidade do material antes de um pedido de complementar (M18 secoes
+   * 25, 26 e 76).
+   *
+   * A cena da secao 26 e exatamente esta: "patologista solicita nova IHQ; o
+   * Guardian consulta o Modulo 17: o Bloco A2 esta registrado como esgotado; a
+   * solicitacao devera ser revisada". Nao barra o pedido - o patologista pode
+   * ter razao para insistir, e a decisao continua dele (M17 secao 11).
+   */
+  async verificarMaterialParaComplementar(
+    tx: Transacao,
+    casoId: string,
+    finalidade: FinalidadeUso = 'complementar',
+  ): Promise<AchadoGuardian[]> {
+    const ctx = exigirContexto();
+    const achados: AchadoGuardian[] = [];
+
+    const objetos = await tx
+      .select({
+        identificador: objetoBiologico.identificador,
+        tipo: objetoBiologico.tipo,
+        status: objetoBiologico.status,
+        quantidadeDisponivel: objetoBiologico.quantidadeDisponivel,
+        restricoes: objetoBiologico.restricoes,
+      })
+      .from(objetoBiologico)
+      .where(and(eq(objetoBiologico.tenantId, ctx.tenantId), eq(objetoBiologico.casoId, casoId)));
+
+    if (objetos.length === 0) return achados;
+
+    const utilizaveis = objetos.filter(
+      (o) => o.quantidadeDisponivel > 0 && o.status !== 'esgotado' && o.status !== 'descartado',
+    );
+
+    if (utilizaveis.length === 0) {
+      achados.push({
+        codigo: 'BIOTECA_SEM_MATERIAL_DISPONIVEL',
+        nivel: 'critico',
+        mensagem:
+          'Todo o material arquivado deste caso está esgotado ou descartado — não há sobre o que fazer o complementar.',
+        modulo: MODULOS.M18_BIOTECA,
+        comoResolver:
+          'Verifique se existe tecido remanescente para reamostragem. Se não existir, o complementar precisa ser revisto.',
+        evidencias: { materiais: objetos.length },
+      });
+      return ordenarPorGravidade(achados);
+    }
+
+    for (const o of objetos) {
+      if (o.status === 'esgotado' || o.quantidadeDisponivel === 0) {
+        achados.push({
+          codigo: 'BIOTECA_BLOCO_ESGOTADO',
+          nivel: 'atencao',
+          mensagem: `${o.identificador} está registrado como esgotado. A solicitação deverá ser revisada.`,
+          modulo: MODULOS.M18_BIOTECA,
+          comoResolver: `Escolha outro material do caso — há ${utilizaveis.length} ainda utilizável(is) — ou peça reamostragem do tecido remanescente.`,
+          evidencias: { identificador: o.identificador },
+        });
+      }
+
+      if (o.status === 'proximo_esgotamento') {
+        achados.push({
+          codigo: 'BIOTECA_PROXIMO_ESGOTAMENTO',
+          nivel: 'informacao',
+          mensagem: `${o.identificador} está próximo do esgotamento (${o.quantidadeDisponivel} restante).`,
+          modulo: MODULOS.M18_BIOTECA,
+          comoResolver:
+            'Considere reservar o que resta para o uso diagnóstico antes de destinar a outra finalidade.',
+          evidencias: { identificador: o.identificador, restante: o.quantidadeDisponivel },
+        });
+      }
+    }
+
+    // Secao 86: "material reservado para pericia sendo solicitado para ensino".
+    const reservas = await tx
+      .select({
+        identificador: objetoBiologico.identificador,
+        finalidade: reservaObjeto.finalidade,
+        projeto: reservaObjeto.projeto,
+      })
+      .from(reservaObjeto)
+      .innerJoin(objetoBiologico, eq(objetoBiologico.id, reservaObjeto.objetoId))
+      .where(
+        and(
+          eq(reservaObjeto.tenantId, ctx.tenantId),
+          eq(reservaObjeto.ativa, true),
+          eq(objetoBiologico.casoId, casoId),
+        ),
+      );
+
+    for (const r of reservas) {
+      if (prioridadeFinalidade(r.finalidade) < prioridadeFinalidade(finalidade)) {
+        achados.push({
+          codigo: 'BIOTECA_RESERVA_DE_PRECEDENCIA_MAIOR',
+          nivel: 'critico',
+          mensagem: `${r.identificador} está reservado para ${r.finalidade}${r.projeto ? ` (${r.projeto})` : ''}, que tem precedência sobre ${finalidade}.`,
+          modulo: MODULOS.M18_BIOTECA,
+          comoResolver:
+            'Use outro material do caso, ou encerre a reserva com justificativa e autorização institucional.',
+          evidencias: { identificador: r.identificador, reservadoPara: r.finalidade },
         });
       }
     }

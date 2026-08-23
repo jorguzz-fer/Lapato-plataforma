@@ -26,6 +26,7 @@ import { LaudosService } from './modulos/m11-laudos/laudos.service.js';
 import { CitopatologiaService } from './modulos/m12-citopatologia/citopatologia.service.js';
 import { NecropsiaService } from './modulos/m14-necropsia/necropsia.service.js';
 import { CadaveresService } from './modulos/m15-cadaveres/cadaveres.service.js';
+import { BiotecaService } from './modulos/m18-bioteca/bioteca.service.js';
 import { ImagensService } from './modulos/m16-imagens/imagens.service.js';
 import { PortalService } from './modulos/m04-portal/portal.service.js';
 import { LaudoPdfService } from './modulos/m11-laudos/laudo-pdf.service.js';
@@ -39,6 +40,7 @@ import {
   FluxoController,
   CitopatologiaController,
   NecropsiaController,
+  BiotecaController,
   CadaveresController,
   ImagensController,
   PortalController,
@@ -102,6 +104,7 @@ import {
     CitopatologiaController,
     NecropsiaController,
     CadaveresController,
+    BiotecaController,
     ImagensController,
     PortalController,
     ValidacaoController,
@@ -125,6 +128,7 @@ import {
     CitopatologiaService,
     NecropsiaService,
     CadaveresService,
+    BiotecaService,
     ImagensService,
     PortalService,
     LaudoPdfService,

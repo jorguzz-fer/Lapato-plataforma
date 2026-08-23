@@ -123,6 +123,29 @@ export const PERMISSOES = {
   /** Registrar a entrega fisica e a destinacao (secoes 44 e 49). */
   CADAVER_ENTREGAR: 'cadaver:entregar',
 
+  // M18 Bioteca e Gestao de Acervo Biologico
+  BIOTECA_VISUALIZAR: 'bioteca:visualizar',
+  /** Arquivar objeto, mover entre posicoes, retirar e devolver (secao 84). */
+  BIOTECA_MOVIMENTAR: 'bioteca:movimentar',
+  /**
+   * Reservar material para uma finalidade. Separada de `movimentar` porque
+   * reservar nao mexe no material - decide quem tem precedencia sobre ele
+   * (secoes 28-29), e essa e uma decisao de politica, nao de bancada.
+   */
+  BIOTECA_RESERVAR: 'bioteca:reservar',
+  /** Emprestar e registrar devolucao; o emprestimo externo tem controle ampliado. */
+  BIOTECA_EMPRESTAR: 'bioteca:emprestar',
+  /** Abrir inventario, registrar leituras e reconciliar divergencias (secoes 54-57). */
+  BIOTECA_INVENTARIAR: 'bioteca:inventariar',
+  /**
+   * Descartar. E a unica acao do modulo que retira material do acervo em
+   * definitivo - a secao 50 exige que "a decisao devera ser confirmada por
+   * usuario autorizado", e por isso ela nao acompanha `movimentar`.
+   */
+  BIOTECA_DESCARTAR: 'bioteca:descartar',
+  /** Corrigir localizacao errada e mudar restricoes do objeto (secoes 83 e 85). */
+  BIOTECA_ADMINISTRAR: 'bioteca:administrar',
+
   // M04 Portal do Cliente
   /** Sem ela, nenhuma rota do Portal responde - e a porta do ambiente externo. */
   PORTAL_ACESSAR: 'portal:acessar',
@@ -166,6 +189,8 @@ export const PERFIS_PADRAO = {
   PATOLOGISTA_REVISOR: 'patologista_revisor',
   RESIDENTE: 'residente',
   LABORATORIO_APOIO: 'laboratorio_apoio',
+  /** M18 secao 84: administra o acervo - inventaria, empresta e descarta. */
+  CURADOR_BIOTECA: 'curador_bioteca',
   QUALIDADE: 'qualidade',
   CLIENTE: 'cliente',
   VETERINARIO_SOLICITANTE: 'veterinario_solicitante',

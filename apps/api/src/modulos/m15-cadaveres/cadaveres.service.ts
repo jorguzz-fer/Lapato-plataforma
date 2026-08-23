@@ -612,10 +612,10 @@ export class CadaveresService {
           id: movimentacaoCadaver.id,
           tipo: movimentacaoCadaver.tipo,
           origem: sql<string | null>`(
-            select l.codigo from ${localFisico} l where l.id = ${movimentacaoCadaver.origemLocalId}
+            select l.codigo from ${localFisico} l where l.id = movimentacao_cadaver.origem_local_id
           )`,
           destino: sql<string | null>`(
-            select l.codigo from ${localFisico} l where l.id = ${movimentacaoCadaver.destinoLocalId}
+            select l.codigo from ${localFisico} l where l.id = movimentacao_cadaver.destino_local_id
           )`,
           destinoDescricao: movimentacaoCadaver.destinoDescricao,
           conservacao: movimentacaoCadaver.conservacao,
@@ -708,7 +708,7 @@ export class CadaveresService {
           status: cadaver.status,
           foraDesde: cadaver.foraDesde,
           origemCodigo: sql<string | null>`(
-            select l.codigo from ${localFisico} l where l.id = ${cadaver.localAnteriorId}
+            select l.codigo from ${localFisico} l where l.id = cadaver.local_anterior_id
           )`,
         })
         .from(cadaver)

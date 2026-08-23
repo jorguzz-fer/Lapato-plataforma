@@ -140,3 +140,30 @@ export function identificadorCadaver(ano: number, sequencial: number): string {
 export function identificadorRemessa(ano: number, sequencial: number): string {
   return `REM-${ano}-${String(sequencial).padStart(5, '0')}`;
 }
+
+/**
+ * Identificador de custodia do Objeto Biologico: `BIO-2026-000123` (M18 secao 15).
+ *
+ * Serie propria, e nao o numero do caso, porque um mesmo caso gera dezenas de
+ * objetos - blocos, laminas, fragmentos congelados - e cada um precisa de uma
+ * identidade que caiba numa etiqueta e num QR Code de gaveta (secao 16). O
+ * vinculo com o caso continua nas colunas de genealogia, nao no codigo.
+ */
+export function identificadorObjetoBiologico(ano: number, sequencial: number): string {
+  return `BIO-${ano}-${String(sequencial).padStart(6, '0')}`;
+}
+
+/** Emprestimo de material do acervo: `EMP-2026-00042` (M18 secao 37). */
+export function identificadorEmprestimo(ano: number, sequencial: number): string {
+  return `EMP-${ano}-${String(sequencial).padStart(5, '0')}`;
+}
+
+/** Inventario fisico da Bioteca: `INV-2026-00007` (M18 secao 54). */
+export function identificadorInventario(ano: number, sequencial: number): string {
+  return `INV-${ano}-${String(sequencial).padStart(5, '0')}`;
+}
+
+/** Lote de destinacao final: `BIO-DESC-2026-00004` (M18 secao 51). */
+export function identificadorLoteDescarte(ano: number, sequencial: number): string {
+  return `BIO-DESC-${ano}-${String(sequencial).padStart(5, '0')}`;
+}

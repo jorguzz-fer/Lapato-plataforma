@@ -72,6 +72,12 @@ export const TIPO_EVENTO = [
   'cadaver.recebido',
   'cadaver.liberado',
   'cadaver.retirado',
+
+  // M18 Bioteca e Gestao de Acervo Biologico
+  'bioteca.objeto_arquivado',
+  'bioteca.material_esgotado',
+  'bioteca.material_emprestado',
+  'bioteca.material_descartado',
   'laudo.revisao_concluida',
   'laudo.assinado',
   'laudo.liberado',
@@ -169,6 +175,10 @@ export const EVENTO_LABEL: Record<TipoEvento, string> = {
   'cadaver.recebido': 'Cadáver recebido',
   'cadaver.liberado': 'Cadáver liberado para retirada',
   'cadaver.retirado': 'Cadáver retirado do laboratório',
+  'bioteca.objeto_arquivado': 'Material arquivado no acervo biológico',
+  'bioteca.material_esgotado': 'Material esgotado — não há mais tecido útil',
+  'bioteca.material_emprestado': 'Material emprestado',
+  'bioteca.material_descartado': 'Material destinado',
   'laudo.revisao_concluida': 'Revisão concluída',
   'laudo.assinado': 'Laudo assinado',
   'laudo.liberado': 'Laudo liberado',

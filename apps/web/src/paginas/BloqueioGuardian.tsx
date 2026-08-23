@@ -62,8 +62,11 @@ function ListaDeAchados({ achados }: { achados: AchadoGuardian[] }) {
 
   return (
     <Stack component="ul" spacing={1.5} sx={{ m: 0, pl: 2.5 }}>
-      {achados.map((achado) => (
-        <Box component="li" key={achado.codigo}>
+      {achados.map((achado, i) => (
+        /* A chave leva o indice porque a mesma regra dispara varias vezes numa
+           varredura de acervo - dez materiais esgotados sao dez achados com o
+           mesmo codigo. */
+        <Box component="li" key={`${achado.codigo}-${i}`}>
           <Typography sx={{ fontSize: 13 }}>{achado.mensagem}</Typography>
 
           {achado.comoResolver && (
@@ -82,5 +85,55 @@ function ListaDeAchados({ achados }: { achados: AchadoGuardian[] }) {
         </Box>
       ))}
     </Stack>
+  );
+}
+
+/**
+ * Varredura do Guardian sobre um acervo inteiro, e nao sobre uma acao.
+ *
+ * A diferenca com `BloqueioGuardian` nao e visual, e de natureza: la o achado
+ * barrou alguem agora; aqui ele descreve incoerencia que **ja existe** e
+ * continua existindo ate alguem resolver (M15 secao 70, M18 secao 86). Por
+ * isso o severity acompanha o pior nivel encontrado em vez de ser sempre
+ * vermelho - um acervo com tres avisos informativos nao e um acervo em
+ * emergencia.
+ */
+export function ConferenciaGuardian({
+  achados,
+  titulo,
+}: {
+  achados: AchadoGuardian[];
+  titulo: string;
+}) {
+  if (achados.length === 0) return null;
+
+  const impedem = achados.filter((a) => a.nivel === 'critico');
+  const observacoes = achados.filter((a) => a.nivel !== 'critico');
+
+  return (
+    <Alert severity={impedem.length > 0 ? 'error' : 'warning'}>
+      <AlertTitle>
+        {titulo}
+        {impedem.length > 0 ? ` — ${impedem.length} exige(m) ação` : ''}
+      </AlertTitle>
+
+      <ListaDeAchados achados={impedem} />
+
+      {observacoes.length > 0 && (
+        <>
+          {impedem.length > 0 && <Divider sx={{ my: 1.5 }} />}
+          {impedem.length > 0 && (
+            <Typography sx={{ fontSize: 12, fontWeight: 600, mb: 0.75 }}>
+              Não impedem, mas vale conferir
+            </Typography>
+          )}
+          <ListaDeAchados achados={observacoes} />
+        </>
+      )}
+
+      <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mt: 1.5 }}>
+        Verificação automática do LAPATO Guardian.
+      </Typography>
+    </Alert>
   );
 }

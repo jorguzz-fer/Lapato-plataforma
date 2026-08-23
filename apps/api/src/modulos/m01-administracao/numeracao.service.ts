@@ -5,6 +5,10 @@ import {
   MASCARA_CASO_PADRAO,
   formatarIdentificadorCaso,
   identificadorCadaver,
+  identificadorEmprestimo,
+  identificadorInventario,
+  identificadorLoteDescarte,
+  identificadorObjetoBiologico,
   identificadorImagem,
   identificadorRemessa,
   identificadorSolicitacao,
@@ -105,6 +109,22 @@ export class NumeracaoService {
 
   async proximoCadaver(tx: Transacao, ano: number): Promise<string> {
     return identificadorCadaver(ano, await this.proximo(tx, 'cadaver', ano));
+  }
+
+  async proximoObjetoBiologico(tx: Transacao, ano: number): Promise<string> {
+    return identificadorObjetoBiologico(ano, await this.proximo(tx, 'objeto_biologico', ano));
+  }
+
+  async proximoEmprestimo(tx: Transacao, ano: number): Promise<string> {
+    return identificadorEmprestimo(ano, await this.proximo(tx, 'emprestimo', ano));
+  }
+
+  async proximoInventario(tx: Transacao, ano: number): Promise<string> {
+    return identificadorInventario(ano, await this.proximo(tx, 'inventario', ano));
+  }
+
+  async proximoLoteDescarte(tx: Transacao, ano: number): Promise<string> {
+    return identificadorLoteDescarte(ano, await this.proximo(tx, 'lote_descarte', ano));
   }
 
   /** Lote de envio ao laboratorio de apoio (M09), identificado pela data. */

@@ -17,6 +17,15 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import {
   ADEQUACAO_CITOLOGICA,
+  CONDICAO_OBJETO,
+  FINALIDADE_USO,
+  METODO_DESCARTE,
+  MOTIVO_RETENCAO_AMPLIADA,
+  RESTRICAO_OBJETO,
+  TIPO_EMPRESTIMO,
+  TIPO_OBJETO_BIOLOGICO,
+  type StatusObjetoBiologico,
+  type TipoObjetoBiologico,
   CAVIDADE_NECROPSIA,
   CELULARIDADE,
   CLASSIFICACAO_LESAO,
@@ -67,6 +76,7 @@ import { LaudosService } from './m11-laudos/laudos.service.js';
 import { CitopatologiaService } from './m12-citopatologia/citopatologia.service.js';
 import { NecropsiaService } from './m14-necropsia/necropsia.service.js';
 import { CadaveresService } from './m15-cadaveres/cadaveres.service.js';
+import { BiotecaService } from './m18-bioteca/bioteca.service.js';
 import {
   ImagensService,
   TAMANHO_MAXIMO,
@@ -2097,5 +2107,463 @@ export class NecropsiaController {
       corpo,
     );
     await this.necropsia.reabrir(id, dados.motivo);
+  }
+}
+
+// --- M18 Bioteca e Gestão de Acervo Biológico -------------------------------
+
+const arquivamentoSchema = z.object({
+  tipo: z.enum(TIPO_OBJETO_BIOLOGICO),
+  descricao: z.string().nullish(),
+  casoId: z.string().uuid().nullish(),
+  amostraId: z.string().uuid().nullish(),
+  blocoId: z.string().uuid().nullish(),
+  laminaId: z.string().uuid().nullish(),
+  objetoPaiId: z.string().uuid().nullish(),
+  orgao: z.string().nullish(),
+  localId: z.string().uuid().nullish(),
+  quantidade: z.number().int().min(1).nullish(),
+  recipiente: z.string().nullish(),
+  fixador: z.string().nullish(),
+  temperaturaPrevista: z.string().nullish(),
+  restricoes: z.array(z.enum(RESTRICAO_OBJETO)).nullish(),
+  preservacaoEspecial: z.boolean().nullish(),
+  retencaoMeses: z.number().int().min(0).nullish(),
+  condicao: z.enum(CONDICAO_OBJETO).nullish(),
+});
+
+/** §30: toda retirada exige responsável e finalidade — o destino diz onde procurar. */
+const retiradaSchema = z.object({
+  finalidade: z.enum(FINALIDADE_USO),
+  destino: z.string().min(2, 'Informe para onde o material está indo.'),
+  previsaoDevolucao: z.string().nullish(),
+  observacao: z.string().nullish(),
+});
+
+const emprestimoSchema = z.object({
+  tipo: z.enum(TIPO_EMPRESTIMO),
+  finalidade: z.enum(FINALIDADE_USO),
+  destinatario: z.string().min(3, 'Informe quem fica responsável pelo material.'),
+  contatoDestinatario: z.string().nullish(),
+  unidadeDestinoId: z.string().uuid().nullish(),
+  /** §38: sem prazo não há alerta de vencimento nem material atrasado. */
+  prazoDevolucao: z.string().min(10, 'Empréstimo sem prazo de devolução não é permitido.'),
+  condicoes: z.string().nullish(),
+  observacoes: z.string().nullish(),
+  objetoIds: z.array(z.string().uuid()).min(1, 'Selecione ao menos um material.'),
+});
+
+@ApiTags('M18 - Bioteca')
+@Controller('bioteca')
+export class BiotecaController {
+  constructor(private readonly bioteca: BiotecaService) {}
+
+  @Get()
+  @ExigePermissao(PERMISSOES.BIOTECA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Acervo biológico',
+    description:
+      'Busca por identificador, descrição, órgão, tipo, status, caso e localização (§77), ' +
+      'com filtro de disponibilidade (§79).',
+  })
+  async listar(
+    @Query('status') status?: string,
+    @Query('tipo') tipo?: string,
+    @Query('casoId') casoId?: string,
+    @Query('localId') localId?: string,
+    @Query('q') busca?: string,
+    @Query('disponiveis') disponiveis?: string,
+  ) {
+    return this.bioteca.listar({
+      status: status ? (status as StatusObjetoBiologico) : undefined,
+      tipo: tipo ? (tipo as TipoObjetoBiologico) : undefined,
+      casoId: casoId || undefined,
+      localId: localId || undefined,
+      busca: busca || undefined,
+      apenasDisponiveis: disponiveis === 'true',
+    });
+  }
+
+  @Get('mapa')
+  @ExigePermissao(PERMISSOES.BIOTECA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Mapa de posições e ocupação',
+    description:
+      'Total, ocupadas e livres por local (§20), mais o que está fora do acervo — porque ' +
+      'material retirado não desaparece do sistema (§33).',
+  })
+  async mapa() {
+    return this.bioteca.mapa();
+  }
+
+  @Get('conferencia')
+  @ExigePermissao(PERMISSOES.BIOTECA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Conferências do Guardian sobre o acervo',
+    description:
+      'Material sem localização, congelado em equipamento incompatível, empréstimo atrasado, ' +
+      'vencido preso por processo ativo (§86). Não barra nada — é trabalho pendente.',
+  })
+  async conferencia() {
+    return this.bioteca.conferencia();
+  }
+
+  @Get('emprestimos')
+  @ExigePermissao(PERMISSOES.BIOTECA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Empréstimos e vencimentos',
+    description: 'Marca os vencidos na leitura (§38) e mostra quantos itens ainda não voltaram.',
+  })
+  async emprestimos(@Query('abertos') abertos?: string) {
+    return this.bioteca.emprestimos({ apenasAbertos: abertos === 'true' });
+  }
+
+  @Get('emprestimos/:id')
+  @ExigePermissao(PERMISSOES.BIOTECA_VISUALIZAR)
+  @ApiOperation({ summary: 'Termo de empréstimo com os materiais (§37)' })
+  async emprestimoDetalhe(@Param('id', ParseUUIDPipe) id: string) {
+    return this.bioteca.emprestimoDetalhe(id);
+  }
+
+  @Get('inventarios')
+  @ExigePermissao(PERMISSOES.BIOTECA_VISUALIZAR)
+  @ApiOperation({ summary: 'Inventários físicos realizados (§54)' })
+  async inventarios() {
+    return this.bioteca.listarInventarios();
+  }
+
+  @Get('inventarios/:id')
+  @ExigePermissao(PERMISSOES.BIOTECA_VISUALIZAR)
+  @ApiOperation({ summary: 'Inventário com itens, divergências e reconciliações (§56-57)' })
+  async inventarioDetalhe(@Param('id', ParseUUIDPipe) id: string) {
+    return this.bioteca.inventarioDetalhe(id);
+  }
+
+  @Get('descarte/elegiveis')
+  @ExigePermissao(PERMISSOES.BIOTECA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Elegíveis para destinação',
+    description:
+      'Devolve também os bloqueados, com o motivo de cada um (§49-50): uma lista que só ' +
+      'mostra elegíveis esconde por que o material vencido continua no armário.',
+  })
+  async elegiveis(@Query('tipo') tipo?: string, @Query('localId') localId?: string) {
+    return this.bioteca.elegiveisParaDescarte({
+      tipo: tipo ? (tipo as TipoObjetoBiologico) : undefined,
+      localId: localId || undefined,
+    });
+  }
+
+  @Get('casos/:casoId')
+  @ExigePermissao(PERMISSOES.BIOTECA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Material preservado do caso',
+    description:
+      'A resposta da §76 para "ainda existe bloco deste caso?": cada material com seu estado, ' +
+      'não um sim ou não.',
+  })
+  async porCaso(@Param('casoId', ParseUUIDPipe) casoId: string) {
+    return this.bioteca.porCaso(casoId);
+  }
+
+  @Get(':id')
+  @ExigePermissao(PERMISSOES.BIOTECA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Ficha do Objeto Biológico',
+    description:
+      'Identificação, origem, condição, localização, reservas, empréstimos, retenção e a ' +
+      'linha do tempo completa (§80-81).',
+  })
+  async ficha(@Param('id', ParseUUIDPipe) id: string) {
+    return this.bioteca.ficha(id);
+  }
+
+  @Post()
+  @ExigePermissao(PERMISSOES.BIOTECA_MOVIMENTAR)
+  @ApiOperation({
+    summary: 'Arquiva material no acervo',
+    description:
+      'O local é opcional: material recém-produzido existe antes de ter gaveta, e recusá-lo ' +
+      'aqui criaria a "caixa sem registro" que o módulo existe para eliminar (§115).',
+  })
+  async arquivar(@Body() corpo: unknown) {
+    return this.bioteca.arquivar(validarCorpo(arquivamentoSchema, corpo));
+  }
+
+  @Post(':id/transferencia')
+  @ExigePermissao(PERMISSOES.BIOTECA_MOVIMENTAR)
+  @ApiOperation({ summary: 'Move o material entre posições do acervo (§17)' })
+  async transferir(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({ localId: z.string().uuid(), motivo: z.string().nullish() }),
+      corpo,
+    );
+    await this.bioteca.transferir(id, dados.localId, dados.motivo ?? undefined);
+  }
+
+  @Post(':id/retirada')
+  @ExigePermissao(PERMISSOES.BIOTECA_MOVIMENTAR)
+  @ApiOperation({
+    summary: 'Retirada física',
+    description:
+      'O objeto sai da posição mas continua rastreável: a posição de origem é preservada ' +
+      'e é para lá que ele volta (§33).',
+  })
+  async retirar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.bioteca.retirar(id, validarCorpo(retiradaSchema, corpo));
+  }
+
+  @Post(':id/devolucao')
+  @ExigePermissao(PERMISSOES.BIOTECA_MOVIMENTAR)
+  @ApiOperation({ summary: 'Devolve o material à posição de origem, com a condição de volta (§34)' })
+  async devolver(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        localId: z.string().uuid().nullish(),
+        condicao: z.enum(CONDICAO_OBJETO).nullish(),
+        observacao: z.string().nullish(),
+      }),
+      corpo,
+    );
+    await this.bioteca.devolver(id, dados);
+  }
+
+  @Post(':id/consumo')
+  @ExigePermissao(PERMISSOES.BIOTECA_MOVIMENTAR)
+  @ApiOperation({
+    summary: 'Registra consumo do material',
+    description:
+      'Debita a quantidade e marca o esgotamento — que precisa ficar visível ao patologista ' +
+      'antes do próximo pedido de complementar (§25).',
+  })
+  async consumir(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        quantidade: z.number().int().min(1).nullish(),
+        finalidade: z.enum(FINALIDADE_USO),
+        observacao: z.string().nullish(),
+      }),
+      corpo,
+    );
+    return this.bioteca.consumir(id, dados);
+  }
+
+  @Post(':id/reserva')
+  @ExigePermissao(PERMISSOES.BIOTECA_RESERVAR)
+  @ApiOperation({
+    summary: 'Reserva o material para uma finalidade',
+    description:
+      'A hierarquia da §29 vale: diagnóstico e perícia têm precedência sobre ensino e pesquisa, ' +
+      'e uma reserva de precedência menor não passa por cima de outra maior.',
+  })
+  async reservar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        finalidade: z.enum(FINALIDADE_USO),
+        projeto: z.string().nullish(),
+        justificativa: z.string().nullish(),
+        vigenciaAte: z.string().nullish(),
+      }),
+      corpo,
+    );
+    return this.bioteca.reservar(id, dados);
+  }
+
+  @Post('reservas/:id/encerramento')
+  @ExigePermissao(PERMISSOES.BIOTECA_RESERVAR)
+  @ApiOperation({ summary: 'Encerra a reserva, com motivo registrado' })
+  async encerrarReserva(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({ motivo: z.string().min(5, 'Diga por que a reserva está sendo encerrada.') }),
+      corpo,
+    );
+    await this.bioteca.encerrarReserva(id, dados.motivo);
+  }
+
+  @Post(':id/restricoes')
+  @ExigePermissao(PERMISSOES.BIOTECA_ADMINISTRAR)
+  @ApiOperation({
+    summary: 'Define restrições e retenção ampliada',
+    description: 'Retenção ampliada exige justificativa registrada (§48).',
+  })
+  async definirRestricoes(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        restricoes: z.array(z.enum(RESTRICAO_OBJETO)),
+        preservacaoEspecial: z.boolean().nullish(),
+        motivoRetencaoAmpliada: z.enum(MOTIVO_RETENCAO_AMPLIADA).nullish(),
+        justificativa: z.string().nullish(),
+      }),
+      corpo,
+    );
+    await this.bioteca.definirRestricoes(id, dados);
+  }
+
+  @Post(':id/correcao-localizacao')
+  @ExigePermissao(PERMISSOES.BIOTECA_ADMINISTRAR)
+  @ApiOperation({
+    summary: 'Corrige um registro de localização errado',
+    description:
+      'Não é transferência: o material não se moveu, o registro é que estava errado. ' +
+      'O evento anterior permanece (§83).',
+  })
+  async corrigirLocalizacao(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        localId: z.string().uuid(),
+        motivo: z.string().min(5, 'A correção de localização exige motivo registrado.'),
+      }),
+      corpo,
+    );
+    await this.bioteca.corrigirLocalizacao(id, dados.localId, dados.motivo);
+  }
+
+  @Post('emprestimos')
+  @ExigePermissao(PERMISSOES.BIOTECA_EMPRESTAR)
+  @ApiOperation({
+    summary: 'Empresta material do acervo',
+    description:
+      'Vários objetos num mesmo termo (§41). Material com restrição "não emprestar" ou sob ' +
+      'restrição pericial é recusado aqui, não na entrega.',
+  })
+  async emprestar(@Body() corpo: unknown) {
+    return this.bioteca.emprestar(validarCorpo(emprestimoSchema, corpo));
+  }
+
+  @Post('emprestimos/:id/devolucao')
+  @ExigePermissao(PERMISSOES.BIOTECA_EMPRESTAR)
+  @ApiOperation({
+    summary: 'Devolve um material do empréstimo',
+    description:
+      'O empréstimo só encerra quando o último item volta — a §39 proíbe encerrar um ' +
+      'empréstimo cujo material não voltou.',
+  })
+  async devolverEmprestimo(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        objetoId: z.string().uuid(),
+        localId: z.string().uuid().nullish(),
+        condicao: z.enum(CONDICAO_OBJETO).nullish(),
+        observacao: z.string().nullish(),
+      }),
+      corpo,
+    );
+    return this.bioteca.devolverEmprestimo(id, dados);
+  }
+
+  @Post('inventarios')
+  @ExigePermissao(PERMISSOES.BIOTECA_INVENTARIAR)
+  @ApiOperation({
+    summary: 'Abre um inventário físico',
+    description: 'Por localização ou por tipo (§54-55). Congela a lista do que deveria estar lá.',
+  })
+  async abrirInventario(@Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        descricao: z.string().nullish(),
+        localId: z.string().uuid().nullish(),
+        tipoFiltro: z.enum(TIPO_OBJETO_BIOLOGICO).nullish(),
+      }),
+      corpo,
+    );
+    return this.bioteca.abrirInventario(dados);
+  }
+
+  @Post('inventarios/:id/leitura')
+  @ExigePermissao(PERMISSOES.BIOTECA_INVENTARIAR)
+  @ApiOperation({
+    summary: 'Registra a leitura de um material',
+    description:
+      'Aponta posição incorreta, condição divergente e objeto não cadastrado (§56). ' +
+      '"Não localizado" só aparece no fechamento, porque é a ausência de leitura.',
+  })
+  async registrarLeitura(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        objetoId: z.string().uuid().nullish(),
+        codigoLido: z.string().nullish(),
+        localEncontradoId: z.string().uuid().nullish(),
+        condicaoEncontrada: z.enum(CONDICAO_OBJETO).nullish(),
+      }),
+      corpo,
+    );
+    return this.bioteca.registrarLeitura(id, dados);
+  }
+
+  @Post('inventarios/itens/:id/reconciliacao')
+  @ExigePermissao(PERMISSOES.BIOTECA_INVENTARIAR)
+  @ApiOperation({
+    summary: 'Reconcilia uma divergência',
+    description:
+      'Preserva localização anterior, localização encontrada, usuário, data e justificativa (§57).',
+  })
+  async reconciliar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({ justificativa: z.string().min(5, 'A reconciliação exige justificativa.') }),
+      corpo,
+    );
+    await this.bioteca.reconciliar(id, dados.justificativa);
+  }
+
+  @Post('inventarios/:id/conclusao')
+  @ExigePermissao(PERMISSOES.BIOTECA_INVENTARIAR)
+  @ApiOperation({
+    summary: 'Conclui o inventário',
+    description: 'O que não foi lido vira "não localizado" — a divergência por ausência (§56).',
+  })
+  async concluirInventario(@Param('id', ParseUUIDPipe) id: string) {
+    return this.bioteca.concluirInventario(id);
+  }
+
+  @Post('descarte')
+  @ExigePermissao(PERMISSOES.BIOTECA_DESCARTAR)
+  @ApiOperation({
+    summary: 'Lote de destinação final',
+    description:
+      'Cada objeto é revalidado individualmente na confirmação (§51). Descartar não apaga ' +
+      'o registro: muda o status e o histórico permanece consultável (§53).',
+  })
+  async descartar(@Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        metodo: z.enum(METODO_DESCARTE),
+        empresa: z.string().nullish(),
+        observacoes: z.string().nullish(),
+        objetoIds: z.array(z.string().uuid()).min(1, 'Selecione ao menos um material.'),
+      }),
+      corpo,
+    );
+    return this.bioteca.descartar(dados);
+  }
+
+  @Post('colecoes')
+  @ExigePermissao(PERMISSOES.BIOTECA_ADMINISTRAR)
+  @ApiOperation({
+    summary: 'Cria uma coleção biológica',
+    description:
+      'Relação virtual: os materiais continuam nas suas posições físicas originais (§74).',
+  })
+  async criarColecao(@Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        nome: z.string().min(3),
+        descricao: z.string().nullish(),
+        finalidade: z.enum(FINALIDADE_USO).nullish(),
+        projeto: z.string().nullish(),
+      }),
+      corpo,
+    );
+    return this.bioteca.criarColecao(dados);
+  }
+
+  @Post('colecoes/:id/itens')
+  @ExigePermissao(PERMISSOES.BIOTECA_ADMINISTRAR)
+  @ApiOperation({ summary: 'Adiciona material à coleção, sem duplicar o registro (§67)' })
+  async adicionarNaColecao(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({ objetoId: z.string().uuid(), nota: z.string().nullish() }),
+      corpo,
+    );
+    await this.bioteca.adicionarNaColecao(id, dados.objetoId, dados.nota);
   }
 }

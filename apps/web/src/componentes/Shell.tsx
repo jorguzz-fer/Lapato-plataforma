@@ -24,6 +24,7 @@ import AddCircle from '@mui/icons-material/AddCircleOutlineOutlined';
 import ViewList from '@mui/icons-material/ViewListOutlined';
 import LocalShipping from '@mui/icons-material/LocalShippingOutlined';
 import PendingActions from '@mui/icons-material/PendingActionsOutlined';
+import Science from '@mui/icons-material/ScienceOutlined';
 import Contacts from '@mui/icons-material/ContactsOutlined';
 import Inventory2 from '@mui/icons-material/Inventory2Outlined';
 import Tune from '@mui/icons-material/TuneOutlined';
@@ -91,6 +92,14 @@ const MENU = [
     icone: <Inventory2 fontSize="small" />,
     rotulo: MODULO_LABEL[MODULOS.M15_CADAVERES],
     permissao: 'cadaver:visualizar',
+  },
+  {
+    /* M18: o acervo atravessa casos e anos - "onde está o bloco A3" não mora
+       dentro de um caso, mora no armário. */
+    para: '/bioteca',
+    icone: <Science fontSize="small" />,
+    rotulo: MODULO_LABEL[MODULOS.M18_BIOTECA],
+    permissao: 'bioteca:visualizar',
   },
   {
     /* M03: fonte única dos dados cadastrais - o degrau zero de qualquer caso. */

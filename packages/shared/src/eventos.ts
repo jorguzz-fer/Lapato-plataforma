@@ -66,6 +66,8 @@ export const TIPO_EVENTO = [
   'laudo.liberado',
   'laudo.adendo_criado',
   'laudo.corrigido',
+  // M04 Portal do Cliente
+  'historico.complementado',
   // M16 Imagens
   'imagem.anexada',
   // M07 Rastreamento (derivados)
@@ -154,6 +156,7 @@ export const EVENTO_LABEL: Record<TipoEvento, string> = {
   'laudo.liberado': 'Laudo liberado',
   'laudo.adendo_criado': 'Adendo criado',
   'laudo.corrigido': 'Laudo corrigido',
+  'historico.complementado': 'Histórico clínico complementado pelo cliente',
   'imagem.anexada': 'Imagem anexada ao caso',
   'fluxo.etapa_alterada': 'Etapa alterada',
   'fluxo.bloqueado': 'Fluxo bloqueado',

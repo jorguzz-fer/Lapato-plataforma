@@ -22,6 +22,7 @@ import ShieldOutlined from '@mui/icons-material/ShieldOutlined';
 import {
   api,
   ErroApi,
+  type ClienteResumo,
   type PerfilResumo,
   type UnidadeAdmin,
   type UsuarioLista,
@@ -287,6 +288,8 @@ function DialogoUsuario({
   const [email, setEmail] = useState('');
   const [perfilIds, setPerfilIds] = useState<string[]>([]);
   const [unidadeId, setUnidadeId] = useState('');
+  const [clienteId, setClienteId] = useState('');
+  const [clientes, setClientes] = useState<ClienteResumo[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
@@ -299,8 +302,27 @@ function DialogoUsuario({
       usuario ? perfis.filter((p) => usuario.perfis.includes(p.nome)).map((p) => p.id) : [],
     );
     setUnidadeId('');
+    setClienteId('');
     setErro(null);
   }, [usuario, aberto, perfis]);
+
+  /**
+   * M04: conta do Portal pertence a um CLIENTE, e é dele que sai todo o escopo
+   * externo. A lista só é buscada quando o perfil escolhido é do Portal — quem
+   * cria uma conta interna não deveria nem ver o campo.
+   */
+  const chavesPortal = new Set(['cliente', 'veterinario_solicitante']);
+  const contaDoPortal = perfis
+    .filter((p) => perfilIds.includes(p.id))
+    .some((p) => chavesPortal.has(p.chave));
+
+  useEffect(() => {
+    if (!contaDoPortal || clientes.length > 0) return;
+    api
+      .get<ClienteResumo[]>('/catalogo/clientes')
+      .then(setClientes)
+      .catch(() => setClientes([]));
+  }, [contaDoPortal, clientes.length]);
 
   async function salvar() {
     setOcupado(true);
@@ -319,6 +341,7 @@ function DialogoUsuario({
           email: email.trim(),
           perfilIds,
           ...(unidadeId ? { unidadePrincipalId: unidadeId } : {}),
+          ...(clienteId ? { clienteId } : {}),
         });
         aoSalvar(r.senhaProvisoria);
       }
@@ -378,7 +401,25 @@ function DialogoUsuario({
             </Stack>
           </Box>
 
-          {unidades.length > 0 && (
+          {contaDoPortal && !usuario && (
+            <TextField
+              select
+              label="Cliente do Portal"
+              value={clienteId}
+              onChange={(e) => setClienteId(e.target.value)}
+              required
+              helperText="A conta verá somente os exames deste cliente (M04 seção 5)."
+            >
+              <MenuItem value="">—</MenuItem>
+              {clientes.map((c) => (
+                <MenuItem key={c.id} value={c.id}>
+                  {c.nomeFantasia}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
+
+          {unidades.length > 0 && !contaDoPortal && (
             <TextField
               select
               label="Unidade principal"
@@ -408,7 +449,11 @@ function DialogoUsuario({
           variant="contained"
           onClick={() => void salvar()}
           disabled={
-            ocupado || !nome.trim() || perfilIds.length === 0 || (!usuario && !email.trim())
+            ocupado ||
+            !nome.trim() ||
+            perfilIds.length === 0 ||
+            (!usuario && !email.trim()) ||
+            (contaDoPortal && !usuario && !clienteId)
           }
         >
           {ocupado ? 'Salvando…' : usuario ? 'Salvar' : 'Criar'}

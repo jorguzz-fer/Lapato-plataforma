@@ -379,6 +379,24 @@ como está, inclusive com etapas que a instituição tenha alterado — o fluxo
 configurado é decisão dela. Vale para casos cadastrados a partir de então; casos
 já abertos seguem no workflow em que nasceram.
 
+### 3.7 Abrindo o Portal para um cliente
+
+O Portal (M04) não tem cadastro próprio nem convite por e-mail — o convite
+depende do M26, que ainda não existe. Quem abre a porta é o administrador, com
+o mesmo fluxo das contas internas:
+
+1. **Administração → Usuários → Novo usuário** (🌐 no navegador, já logado).
+2. Marque o perfil **Veterinário solicitante (Portal)** ou **Cliente (Portal)**.
+   Ao marcar, aparece o campo **Cliente do Portal** — obrigatório: é dele que
+   sai tudo o que a conta enxerga.
+3. Anote a senha provisória e entregue à pessoa pelo canal que preferir.
+   O primeiro acesso exige a troca.
+
+A conta cai direto no Portal; as telas internas não existem para ela. Se os
+perfis do Portal não aparecerem na lista, a instituição foi provisionada antes
+do M04 — rode o `sincronizar-perfis` (§3.3), que agora **cria** perfis padrão
+que nunca existiram (perfil que a instituição inativou continua intocado).
+
 ### Verificação
 
 ```bash

@@ -182,6 +182,38 @@ export const PERFIS: Array<{
       PERMISSOES.ETIQUETA_IMPRIMIR,
     ],
   },
+  /**
+   * M04 - usuarios EXTERNOS. Nao veem o sistema interno: as rotas do Portal
+   * respondem so a `portal:acessar`, e cada consulta e presa ao cliente da
+   * conta (secao 5: o isolamento e de dados, nao de tela).
+   *
+   * Os dois perfis existem porque a mesma clinica tem gente com necessidades
+   * diferentes (secao 8). O administrativo acompanha e pede; quem assina o
+   * pedido de exame e complementa a historia clinica e o veterinario.
+   */
+  {
+    chave: PERFIS_PADRAO.CLIENTE,
+    nome: 'Cliente (Portal)',
+    permissoes: [
+      PERMISSOES.PORTAL_ACESSAR,
+      PERMISSOES.PORTAL_LAUDO_BAIXAR,
+      PERMISSOES.PORTAL_SOLICITAR,
+    ],
+  },
+  {
+    chave: PERFIS_PADRAO.VETERINARIO_SOLICITANTE,
+    nome: 'Veterinário solicitante (Portal)',
+    permissoes: [
+      PERMISSOES.PORTAL_ACESSAR,
+      PERMISSOES.PORTAL_LAUDO_BAIXAR,
+      PERMISSOES.PORTAL_SOLICITAR,
+      /**
+       * M04 secao 23: complementar a historia clinica e "uma das funcoes mais
+       * uteis do Portal" - e e ato clinico, de quem atendeu o animal.
+       */
+      PERMISSOES.PORTAL_HISTORICO_COMPLEMENTAR,
+    ],
+  },
 ];
 
 /**

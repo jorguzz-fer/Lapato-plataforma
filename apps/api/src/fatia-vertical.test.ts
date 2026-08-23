@@ -1738,6 +1738,233 @@ describe('acervo de imagens (M16)', () => {
   });
 });
 
+describe('Portal do Cliente (M04)', () => {
+  /**
+   * O que este bloco prova nao e "o Portal mostra exames": e que ele mostra
+   * SO os do cliente da conta, e so o que ja pode ser visto de fora.
+   *
+   * A secao 5 do modulo chama o isolamento de "requisito critico de seguranca"
+   * e exige que ele viva na camada de dados - por isso o teste tenta alcancar
+   * o caso do outro cliente pelo id direto, que e o caminho que uma tela
+   * bem-comportada nunca oferece e um atacante tenta primeiro.
+   */
+  let casoDaCentral: string;
+  let versaoAssinada: string;
+
+  test('exame de um cliente não aparece para outro, nem pelo id direto', async () => {
+    // O caso nasce pela recepcao, para a Clinica Veterinaria Central.
+    await entrar('admin@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const central = clientes.body.find((c: any) => c.codigo === 'CV');
+    expect(central, 'cliente de demonstração ausente').toBeTruthy();
+
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: any) => s.codigo === 'HISTO').id,
+      clienteId: central.id,
+      paciente: { nome: `Frida ${Date.now().toString().slice(-5)}` },
+      historicoClinico: 'Nódulo em região inguinal, evolução de duas semanas.',
+      amostras: [{ descricao: 'Nódulo inguinal' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    casoDaCentral = criado.body.id;
+
+    // O veterinario da Central ve o exame.
+    await entrar('portal@clinicacentral.local');
+    const meus = await req('GET', '/portal/exames');
+    expect(meus.status, JSON.stringify(meus.body)).toBe(200);
+    expect(meus.body.some((e: any) => e.id === casoDaCentral)).toBe(true);
+
+    // A conta da PetCare nao ve - e nem existe para ela.
+    await entrar('portal@petcare.local');
+    const alheios = await req('GET', '/portal/exames');
+    expect(alheios.status).toBe(200);
+    expect(alheios.body.some((e: any) => e.id === casoDaCentral)).toBe(false);
+
+    /**
+     * Secao 5: "um usuario nao devera conseguir acessar dados de outro cliente
+     * modificando identificadores". 404 e nao 403 de proposito - dizer
+     * "proibido" confirmaria que o exame existe.
+     */
+    const porId = await req('GET', `/portal/exames/${casoDaCentral}`);
+    expect(porId.status).toBe(404);
+
+    const escrita = await req('POST', `/portal/exames/${casoDaCentral}/historico`, {
+      texto: 'Tentativa de escrever no caso de outro cliente.',
+    });
+    expect([403, 404]).toContain(escrita.status);
+  });
+
+  test('o status vem traduzido e o interno não vaza', async () => {
+    await entrar('portal@clinicacentral.local');
+
+    const dossie = await req('GET', `/portal/exames/${casoDaCentral}`);
+    expect(dossie.status, JSON.stringify(dossie.body)).toBe(200);
+
+    // Secao 12: o cliente ve "aguardando recebimento", nunca a etapa tecnica.
+    expect(dossie.body.status).toBe('aguardando_recebimento');
+    const texto = JSON.stringify(dossie.body);
+    expect(texto).not.toContain('aguardando_macroscopia');
+    expect(texto).not.toContain('nota_interna');
+
+    // Secao 62-63: a linha do tempo externa e traduzida, nao a interna.
+    expect(dossie.body.linhaDoTempo.map((e: any) => e.rotulo)).toContain('Exame cadastrado');
+    expect(texto).not.toContain('fluxo.etapa_alterada');
+
+    // Sem laudo liberado, nao ha laudo nenhum a mostrar (secao 20).
+    expect(dossie.body.laudo).toBeNull();
+  });
+
+  test('complementar histórico acrescenta sem apagar o que já existia', async () => {
+    const antes = await req('GET', `/portal/exames/${casoDaCentral}`);
+    const quantidadeAntes = antes.body.historicos.length;
+    expect(quantidadeAntes).toBeGreaterThan(0);
+
+    const r = await req('POST', `/portal/exames/${casoDaCentral}/historico`, {
+      texto: 'Paciente iniciou antibiótico há 5 dias; a lesão reduziu discretamente.',
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+
+    const depois = await req('GET', `/portal/exames/${casoDaCentral}`);
+    // Secao 24: o conteudo anterior permanece - o novo e complemento.
+    expect(depois.body.historicos).toHaveLength(quantidadeAntes + 1);
+    expect(depois.body.historicos[0].texto).toBe(antes.body.historicos[0].texto);
+    expect(depois.body.historicos.at(-1).complementar).toBe(true);
+
+    // E o laboratorio ve o complemento no dossie interno, na linha do tempo.
+    await entrar('patologista@lapato.local');
+    const interno = await req('GET', `/casos/${casoDaCentral}`);
+    expect(interno.body.linhaDoTempo.map((e: any) => e.tipo)).toContain(
+      'historico.complementado',
+    );
+  });
+
+  test('laudo só aparece depois de liberado, e o PDF é o assinado', async () => {
+    // O patologista elabora e assina - mas ainda NAO libera.
+    await entrar('patologista@lapato.local');
+    const abrir = await req('POST', `/laudos/casos/${casoDaCentral}`);
+    versaoAssinada = abrir.body.versaoId;
+
+    await req('POST', `/laudos/versoes/${versaoAssinada}`, {
+      descricaoMicroscopica: 'Proliferação de células fusiformes.',
+      diagnosticos: [{ textoExibido: 'Fibrossarcoma cutâneo' }],
+    });
+    const assinatura = await req('POST', `/laudos/versoes/${versaoAssinada}/assinatura`);
+    expect(assinatura.status, JSON.stringify(assinatura.body)).toBe(201);
+
+    /**
+     * Assinado nao e liberado. O documento existe e esta congelado, mas o ato
+     * que o entrega ao cliente e a liberacao (DIRETRIZES secao 17) - antes
+     * dela, o Portal nao o conhece.
+     */
+    await entrar('portal@clinicacentral.local');
+    const antes = await req('GET', `/portal/exames/${casoDaCentral}`);
+    expect(antes.body.laudo).toBeNull();
+
+    const pdfCedo = await fetch(`${servidor}${BASE}/portal/laudos/${versaoAssinada}/pdf`, {
+      headers: { cookie },
+    });
+    expect(pdfCedo.status).toBe(404);
+
+    // Liberado, aparece.
+    await entrar('patologista@lapato.local');
+    const liberacao = await req('POST', `/laudos/versoes/${versaoAssinada}/liberacao`);
+    expect(liberacao.status, JSON.stringify(liberacao.body)).toBe(201);
+
+    await entrar('portal@clinicacentral.local');
+    const depois = await req('GET', `/portal/exames/${casoDaCentral}`);
+    expect(depois.body.status).toBe('laudo_disponivel');
+    expect(depois.body.laudo.versoes).toHaveLength(1);
+    expect(depois.body.laudo.versoes[0].vigente).toBe(true);
+
+    const pdf = await fetch(`${servidor}${BASE}/portal/laudos/${versaoAssinada}/pdf`, {
+      headers: { cookie },
+    });
+    expect(pdf.status).toBe(200);
+    expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString()).toBe('%PDF-');
+
+    // O laudo do outro cliente continua fora de alcance, mesmo liberado.
+    await entrar('portal@petcare.local');
+    const alheio = await fetch(`${servidor}${BASE}/portal/laudos/${versaoAssinada}/pdf`, {
+      headers: { cookie },
+    });
+    expect(alheio.status).toBe(404);
+  });
+
+  test('o laboratório cria a conta do Portal pela tela de usuários', async () => {
+    /**
+     * Sem isto o M04 nao existe em producao: nao ha convite por e-mail (depende
+     * do M26), entao quem abre a porta e o administrador, com o mesmo fluxo de
+     * senha provisoria das contas internas.
+     */
+    await entrar('admin@lapato.local');
+
+    const perfis = await req('GET', '/usuarios/perfis');
+    const perfilPortal = perfis.body.find((p: any) => p.chave === 'veterinario_solicitante');
+    expect(perfilPortal, 'perfil do Portal ausente').toBeTruthy();
+
+    const marca = Date.now().toString().slice(-6);
+
+    // Perfil do Portal sem cliente e recusado: conta externa sem escopo entraria
+    // e nao veria nada, sem ninguem entender por que (M04 secao 5).
+    const semCliente = await req('POST', '/usuarios', {
+      nomeCompleto: `Dra. Externa ${marca}`,
+      email: `externa${marca}@clinica.local`,
+      perfilIds: [perfilPortal.id],
+    });
+    expect(semCliente.status).toBe(400);
+    expect(semCliente.body.detail).toContain('cliente');
+
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criada = await req('POST', '/usuarios', {
+      nomeCompleto: `Dra. Externa ${marca}`,
+      email: `externa${marca}@clinica.local`,
+      perfilIds: [perfilPortal.id],
+      clienteId: clientes.body.find((c: any) => c.codigo === 'CV').id,
+    });
+    expect(criada.status, JSON.stringify(criada.body)).toBe(201);
+    expect(criada.body.senhaProvisoria).toBeTruthy();
+
+    // A conta nova ja entra no Portal, presa ao cliente - depois da troca de
+    // senha obrigatoria, como qualquer conta criada por terceiro (M02 secao 31).
+    cookie = '';
+    const login = await req('POST', '/auth/login', {
+      instituicao: 'demo',
+      email: `externa${marca}@clinica.local`,
+      senha: criada.body.senhaProvisoria,
+    });
+    expect(login.body.estagio).toBe('troca_senha_obrigatoria');
+
+    const troca = await req('POST', '/auth/senha', {
+      senhaAtual: criada.body.senhaProvisoria,
+      senhaNova: `Externa!${marca}#Nova`,
+    });
+    expect(troca.status).toBe(200);
+
+    const painel = await req('GET', '/portal/painel');
+    expect(painel.status, JSON.stringify(painel.body)).toBe(200);
+    expect(painel.body.cliente).toBe('Clínica Veterinária Central');
+  });
+
+  test('conta interna não entra no Portal; conta do Portal não entra no sistema', async () => {
+    // Recepcao nao tem `portal:acessar`.
+    await entrar('recepcao@lapato.local');
+    const interna = await req('GET', '/portal/painel');
+    expect(interna.status).toBe(403);
+
+    // E a conta do Portal nao alcanca as rotas internas.
+    await entrar('portal@clinicacentral.local');
+    const fila = await req('GET', '/fluxo/casos');
+    expect(fila.status).toBe(403);
+
+    const painel = await req('GET', '/portal/painel');
+    expect(painel.status).toBe(200);
+    expect(painel.body.cliente).toBe('Clínica Veterinária Central');
+    expect(painel.body.laudosLiberados).toBeGreaterThan(0);
+  });
+});
+
 describe('triagem bloqueada impede o avanço do fluxo', () => {
   test('caso com triagem bloqueada não chega à macroscopia', async () => {
     await entrar('admin@lapato.local');

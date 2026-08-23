@@ -1,9 +1,11 @@
 import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { DbModule } from './core/db/db.module.js';
 import { IaModule } from './core/ia/ia.module.js';
 import { StorageModule } from './core/storage/storage.module.js';
 import { ConfigModule } from './core/config/config.module.js';
+import { ENV, type Env } from './core/config/env.js';
 import { AuthService } from './core/auth/auth.service.js';
 import { AuthController } from './core/auth/auth.controller.js';
 import { PermissoesGuard, SessaoGuard } from './core/auth/guards.js';
@@ -55,7 +57,31 @@ import {
  * auditoria, IA, numeracao - nunca regra de negocio de outro modulo.
  */
 @Module({
-  imports: [ConfigModule, DbModule, IaModule, StorageModule],
+  imports: [
+    ConfigModule,
+    /**
+     * Blueprint secao 6: rate limiting. O teto aqui e o geral; as rotas de
+     * entrada apertam com `@Throttle` (ver `LIMITE_ENTRADA`).
+     */
+    ThrottlerModule.forRootAsync({
+      inject: [ENV],
+      useFactory: (env: Env) => ({
+        throttlers: [
+          {
+            name: 'padrao',
+            ttl: env.RATE_LIMIT_JANELA_SEGUNDOS * 1000,
+            limit: env.RATE_LIMIT_REQUISICOES,
+          },
+        ],
+        // A mensagem padrao do pacote e "ThrottlerException: Too many
+        // requests" e chegaria assim na tela do usuario.
+        errorMessage: 'Muitas requisições em pouco tempo. Aguarde um instante e tente de novo.',
+      }),
+    }),
+    DbModule,
+    IaModule,
+    StorageModule,
+  ],
   controllers: [
     SaudeController,
     AuthController,
@@ -102,8 +128,12 @@ import {
      * Guards globais: negar por padrao (Blueprint secao 1.3). Toda rota exige
      * sessao, a menos que marque `@Publica()`.
      *
-     * A ordem importa - o de sessao roda antes do de permissao.
+     * A ordem importa. O rate limit vem primeiro de proposito: uma enxurrada de
+     * requests anonimos precisa ser cortada antes de virar consulta de sessao no
+     * banco - se ele rodasse depois, cada tentativa de forca bruta ainda custaria
+     * um SELECT. Depois o de sessao, e so entao o de permissao.
      */
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: SessaoGuard },
     { provide: APP_GUARD, useClass: PermissoesGuard },
   ],

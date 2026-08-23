@@ -400,7 +400,7 @@ que nunca existiram (perfil que a instituição inativou continua intocado).
 ### Verificação
 
 ```bash
-curl -fsS https://app.lapato.com.br/api/v1/health     # {"status":"ok","banco":"ok"}
+curl -fsS https://app.lapato.com.br/api/v1/health     # {"status":"ok","banco":"ok","schema":"ok"}
 curl -o /dev/null -w '%{http_code}\n' https://app.lapato.com.br/api/v1/fluxo/casos   # 401
 curl -sI http://app.lapato.com.br | head -1           # 301/308, redirecionando para HTTPS
 ```
@@ -417,6 +417,21 @@ Coolify consome o `/api` ao rotear por caminho. Ver
 > em texto puro num repositório público. Enquanto o tenant existir, essa
 > credencial vale.
 
+### `TRUST_PROXY=1` no `lapato-api`
+
+🌐 **Painel do Coolify** → `lapato-api` → *Environment Variables* → `TRUST_PROXY=1`.
+
+Atrás do Traefik do Coolify, sem isto **todo request parece vir do mesmo IP** —
+o do proxy. Duas coisas quebram em silêncio:
+
+- o rate limit por IP vira um balde único: a rajada de um usuário derruba todos;
+- o `audit_log` grava o IP do proxy no lugar do IP de quem agiu, e a trilha
+  exigida pelo Blueprint §6 fica sem a parte do "de onde".
+
+O valor é a quantidade de saltos confiáveis. `1` é o certo para o Coolify.
+Aumentar sem ter mesmo essa quantidade de proxies deixa o cliente escolher o
+próprio IP pelo `X-Forwarded-For`.
+
 ---
 
 ## 4. Deploys seguintes e rollback
@@ -428,11 +443,43 @@ interface. Cada aplicativo é independente: mudança só no front reimplanta só
 O **Pre-deployment Command** do `lapato-api` roda as migrations antes de o código
 novo subir. Isso não é ordem arbitrária — é o que torna o rollback possível.
 
+🌐 **Painel do Coolify** → `lapato-api` → *Configuration* → **Pre-deployment Command**:
+
+```
+node node_modules/@lapato/db/dist/cli/migrate.js
+```
+
+E a variável `DATABASE_MIGRATION_URL` precisa existir **no aplicativo** (não só no
+banco), apontando para o usuário dono do schema. Sem ela o comando falha; sem o
+comando, nada avisa.
+
+**A API recusa subir com o banco desatualizado** (ADR 0010). Se o pré-deploy não
+tiver rodado, o deploy falha na subida, com a lista de migrations pendentes no log,
+e o Coolify mantém a versão anterior no ar — que é coerente com o banco que existe.
+É o comportamento desejado: em 23/08/2026, antes dessa checagem existir, a API subiu
+contra um banco sem a coluna `miniatura_chave` e cada upload de imagem devolvia 500
+para o usuário, com a causa escondida no log do Postgres.
+
+Para subir mesmo assim, em emergência, defina `MIGRACOES_PENDENTES=avisar` no
+aplicativo. Não deixe ligado.
+
 Depois de cada deploy:
 
 ```bash
 curl -fsS https://app.lapato.com.br/api/v1/health
 ```
+
+A resposta traz o estado do schema:
+
+```json
+{ "status": "ok", "banco": "ok", "schema": "ok" }
+```
+
+| `schema` | Significa |
+|---|---|
+| `ok` | Banco e código na mesma versão |
+| `desatualizado` | Migrations pendentes — só aparece com `MIGRACOES_PENDENTES=avisar` |
+| `indeterminado` | A API não conseguiu ler o controle de migrations. Rode o `migrate.js` uma vez: é ele que concede a leitura à role da aplicação |
 
 ### Rollback
 

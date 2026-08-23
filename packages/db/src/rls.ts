@@ -151,6 +151,19 @@ export function sqlConcederAcessoApp(usuarioApp: string): string {
   return `
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${usuarioApp};
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${usuarioApp};
+
+    -- Leitura do controle de migrations do Drizzle. E o que permite a API
+    -- checar, na subida, se o schema do banco corresponde ao do codigo
+    -- (ver \`estadoMigrations\`). Somente SELECT: quem escreve ali e o migrator,
+    -- rodando com o dono do schema.
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'drizzle') THEN
+        EXECUTE 'GRANT USAGE ON SCHEMA drizzle TO ${usuarioApp}';
+        EXECUTE 'GRANT SELECT ON ALL TABLES IN SCHEMA drizzle TO ${usuarioApp}';
+      END IF;
+    END
+    $$;
   `;
 }
 

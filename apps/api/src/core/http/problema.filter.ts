@@ -41,6 +41,22 @@ export class ProblemaFilter implements ExceptionFilter {
 
     if (excecao instanceof HttpException) {
       const status = excecao.getStatus();
+      /**
+       * O multer aborta o upload no meio do stream e o Nest traduz para 413 com
+       * a mensagem em ingles do proprio multer ("File too large"). Ela chegaria
+       * assim na tela.
+       */
+      if (status === HttpStatus.PAYLOAD_TOO_LARGE) {
+        res.status(status).json({
+          type: `https://lapato.app/erros/${status}`,
+          title: 'Arquivo grande demais',
+          status,
+          detail: 'O arquivo excede o tamanho máximo aceito.',
+          requestId,
+        });
+        return;
+      }
+
       const corpo = excecao.getResponse();
       const detalhes =
         typeof corpo === 'object' && corpo !== null ? (corpo as Record<string, unknown>) : {};

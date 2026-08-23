@@ -20,6 +20,7 @@ import { Laudo } from './paginas/Laudo';
 import { Processamento } from './paginas/Processamento';
 import { Solicitacoes } from './paginas/Solicitacoes';
 import { Cadaveres } from './paginas/Cadaveres';
+import { Bioteca } from './paginas/Bioteca';
 import { Necropsia } from './paginas/Necropsia';
 import { Clientes } from './paginas/Clientes';
 import { Administracao } from './paginas/Administracao';
@@ -253,6 +254,15 @@ function App() {
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Controle de Cadáveres">
             <Cadaveres permissoes={sessao.permissoes} />
+          </Shell>
+        }
+      />
+      {/* M18: o acervo atravessa casos e anos - a pergunta e "onde esta", nao "de quem e". */}
+      <Route
+        path="/bioteca"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Bioteca e Acervo Biológico">
+            <Bioteca permissoes={sessao.permissoes} />
           </Shell>
         }
       />

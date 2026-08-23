@@ -15,21 +15,21 @@ Todo código, nome de módulo, evento e ADR deste repositório usa a numeração
 | 01 | Administração e Configurações | Governança | Núcleo implementado |
 | 02 | Usuários, Perfis e Permissões | Governança | Núcleo implementado |
 | 03 | Cadastro de Clientes e Veterinários | Relacionamento e entrada | Implementado |
-| 04 | Portal do Cliente | Relacionamento e entrada | Modelo preparado, UI adiada |
+| 04 | Portal do Cliente | Relacionamento e entrada | Implementado |
 | 05 | Recebimento e Cadastro de Amostras | Relacionamento e entrada | Implementado |
 | 06 | Triagem de Amostras | Operação laboratorial | Implementado |
 | 07 | Rastreamento e Gestão de Fluxo | Operação laboratorial | Motor implementado |
 | 08 | Macroscopia | Operação laboratorial | Implementado |
-| 09 | Processamento Histológico e Colorações | Operação laboratorial | Versão mínima |
+| 09 | Processamento Histológico e Colorações | Operação laboratorial | Implementado |
 | 10 | Solicitações e Pendências | Operação laboratorial | Implementado |
 | 11 | Laudos e Microscopia | Diagnóstico | Implementado |
-| 12 | Citopatologia | Diagnóstico | Adiado |
+| 12 | Citopatologia | Diagnóstico | Implementado |
 | 13 | Histopatologia | Diagnóstico | Implementado |
-| 14 | Necropsia | Diagnóstico | Adiado |
-| 15 | Controle de Cadáveres | Materiais e imagens | Adiado |
-| 16 | Imagens e Scanner de Lâminas | Materiais e imagens | Serviço base implementado |
+| 14 | Necropsia | Diagnóstico | Implementado |
+| 15 | Controle de Cadáveres | Materiais e imagens | Implementado |
+| 16 | Imagens e Scanner de Lâminas | Materiais e imagens | Implementado (WSI fora do v1, ADR-0004) |
 | 17 | Inteligência Artificial | Conhecimento | Guardian + painel; Copiloto stub |
-| 18 | Bioteca e Gestão de Acervo Biológico | Materiais e imagens | Adiado |
+| 18 | Bioteca e Gestão de Acervo Biológico | Materiais e imagens | Implementado |
 | 19 | Logística | Relacionamento e entrada | Sem documentação |
 | 20 | Financeiro | Gestão institucional | Sem documentação |
 | 21 | Biblioteca | Gestão institucional | Sem documentação |

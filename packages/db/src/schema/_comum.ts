@@ -1,6 +1,17 @@
 import { pgEnum, timestamp, uuid } from 'drizzle-orm/pg-core';
 import {
   ADEQUACAO_CITOLOGICA,
+  CONDICAO_OBJETO,
+  DIVERGENCIA_INVENTARIO,
+  FINALIDADE_USO,
+  METODO_DESCARTE,
+  MOTIVO_RETENCAO_AMPLIADA,
+  RESTRICAO_OBJETO,
+  STATUS_EMPRESTIMO,
+  STATUS_OBJETO_BIOLOGICO,
+  TIPO_EMPRESTIMO,
+  TIPO_MOVIMENTACAO_OBJETO,
+  TIPO_OBJETO_BIOLOGICO,
   CAVIDADE_NECROPSIA,
   CLASSIFICACAO_LESAO,
   CONSERVACAO_CADAVER,
@@ -139,3 +150,28 @@ export const grauCertezaCausaEnum = pgEnum('grau_certeza_causa', GRAU_CERTEZA_CA
  * o enum de mesmo nome.
  */
 export const relacaoLesaoEnum = pgEnum('tipo_relacao_lesao', RELACAO_LESAO);
+
+// --- M18 Bioteca e Gestao de Acervo Biologico ------------------------------
+export const tipoObjetoBiologicoEnum = pgEnum('tipo_objeto_biologico', TIPO_OBJETO_BIOLOGICO);
+export const statusObjetoBiologicoEnum = pgEnum(
+  'status_objeto_biologico',
+  STATUS_OBJETO_BIOLOGICO,
+);
+export const condicaoObjetoEnum = pgEnum('condicao_objeto', CONDICAO_OBJETO);
+export const finalidadeUsoEnum = pgEnum('finalidade_uso', FINALIDADE_USO);
+export const restricaoObjetoEnum = pgEnum('restricao_objeto', RESTRICAO_OBJETO);
+export const tipoMovimentacaoObjetoEnum = pgEnum(
+  'tipo_movimentacao_objeto',
+  TIPO_MOVIMENTACAO_OBJETO,
+);
+export const tipoEmprestimoEnum = pgEnum('tipo_emprestimo', TIPO_EMPRESTIMO);
+export const statusEmprestimoEnum = pgEnum('status_emprestimo', STATUS_EMPRESTIMO);
+export const divergenciaInventarioEnum = pgEnum(
+  'divergencia_inventario',
+  DIVERGENCIA_INVENTARIO,
+);
+export const metodoDescarteEnum = pgEnum('metodo_descarte', METODO_DESCARTE);
+export const motivoRetencaoAmpliadaEnum = pgEnum(
+  'motivo_retencao_ampliada',
+  MOTIVO_RETENCAO_AMPLIADA,
+);

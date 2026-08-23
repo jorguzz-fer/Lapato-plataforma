@@ -102,6 +102,14 @@ export const PERFIS: Array<{
       /** M15 secao 68: o tecnico armazena, transfere, retira para exame e retorna. */
       PERMISSOES.CADAVER_VISUALIZAR,
       PERMISSOES.CADAVER_MOVIMENTAR,
+      /**
+       * M18 secao 84: "Histotecnica: arquivar, retirar, devolver". A bancada
+       * que produz bloco e lamina e a mesma que os guarda e os busca de volta -
+       * mas nao e ela que decide emprestimo nem descarte.
+       */
+      PERMISSOES.BIOTECA_VISUALIZAR,
+      PERMISSOES.BIOTECA_MOVIMENTAR,
+      PERMISSOES.BIOTECA_INVENTARIAR,
       /** Auxilia na sala: acompanha o exame, nao descreve nem conclui. */
       PERMISSOES.NECROPSIA_VISUALIZAR,
       PERMISSOES.IMAGEM_VISUALIZAR,
@@ -167,6 +175,14 @@ export const PERFIS: Array<{
       PERMISSOES.NECROPSIA_VISUALIZAR,
       PERMISSOES.NECROPSIA_EXECUTAR,
       PERMISSOES.NECROPSIA_CONCLUIR,
+      /**
+       * M18 secao 84: "Patologista: consultar, solicitar, reservar para
+       * diagnostico". Reservar e dele porque a secao 29 poe o uso diagnostico
+       * acima de ensino e pesquisa - quem responde pelo diagnostico e quem
+       * segura o material. Emprestar e descartar ficam com a Bioteca.
+       */
+      PERMISSOES.BIOTECA_VISUALIZAR,
+      PERMISSOES.BIOTECA_RESERVAR,
       PERMISSOES.CLIENTE_VISUALIZAR,
       PERMISSOES.VETERINARIO_VISUALIZAR,
     ],
@@ -195,6 +211,8 @@ export const PERFIS: Array<{
        */
       PERMISSOES.NECROPSIA_VISUALIZAR,
       PERMISSOES.NECROPSIA_EXECUTAR,
+      /** M18: consulta o acervo para saber se ainda existe bloco; nao reserva nem retira. */
+      PERMISSOES.BIOTECA_VISUALIZAR,
       PERMISSOES.IMAGEM_VISUALIZAR,
       // Elabora o laudo sob supervisao - e o laudo inclui escolher as imagens.
       PERMISSOES.IMAGEM_ENVIAR,
@@ -214,6 +232,28 @@ export const PERFIS: Array<{
       PERMISSOES.PROCESSAMENTO_CONFIRMAR_RECEBIMENTO,
       PERMISSOES.PROCESSAMENTO_REGISTRAR_LAMINAS,
       PERMISSOES.ETIQUETA_IMPRIMIR,
+    ],
+  },
+  {
+    /**
+     * M18 secao 84: "Bioteca: administrar, inventariar, emprestar, descartar".
+     * E um papel proprio, e nao um adicional do tecnico, porque as quatro acoes
+     * decidem o destino do acervo - quem guarda o material nao e
+     * necessariamente quem o produz.
+     */
+    chave: PERFIS_PADRAO.CURADOR_BIOTECA,
+    nome: 'Curador da Bioteca',
+    permissoes: [
+      PERMISSOES.CASO_VISUALIZAR,
+      PERMISSOES.BIOTECA_VISUALIZAR,
+      PERMISSOES.BIOTECA_MOVIMENTAR,
+      PERMISSOES.BIOTECA_RESERVAR,
+      PERMISSOES.BIOTECA_EMPRESTAR,
+      PERMISSOES.BIOTECA_INVENTARIAR,
+      PERMISSOES.BIOTECA_DESCARTAR,
+      PERMISSOES.BIOTECA_ADMINISTRAR,
+      PERMISSOES.SOLICITACAO_VISUALIZAR,
+      PERMISSOES.FLUXO_VISUALIZAR,
     ],
   },
   /**

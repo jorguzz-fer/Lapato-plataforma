@@ -43,6 +43,13 @@
       "when": 1787519747703,
       "tag": "0005_serious_garia",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787522525453,
+      "tag": "0006_wandering_proudstar",
+      "breakpoints": true
     }
   ]
 }

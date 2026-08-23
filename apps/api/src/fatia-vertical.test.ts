@@ -2880,3 +2880,356 @@ describe('triagem bloqueada impede o avanço do fluxo', () => {
     );
   });
 });
+
+describe('bioteca e acervo biológico (M18)', () => {
+  /**
+   * O modulo existe para que a equipe responda na hora as perguntas da secao
+   * 115 - onde esta, ainda existe, esta reservado, foi emprestado, para quem,
+   * quando volta, quando pode ser descartado - sem depender de "memoria
+   * pessoal, planilhas paralelas, caixas sem registro ou anotacoes manuais".
+   *
+   * O teste percorre o ciclo inteiro e checa as regras da secao 113 que mais
+   * custam caro quando se perdem: retirada nao faz o material sumir, o
+   * diagnostico tem precedencia sobre usos secundarios, e material com
+   * bloqueio nao e descartado.
+   */
+  const marca = Date.now().toString().slice(-5);
+  let gavetaId: string;
+  let freezerId: string;
+  let casoId: string;
+  let blocoBioId: string;
+  let laminasId: string;
+  let congeladoId: string;
+  let emprestimoId: string;
+
+  test('a estrutura de armazenamento nasce no M01, não aqui', async () => {
+    await entrar('admin@lapato.local');
+    const unidades = await req('GET', '/administracao/unidades');
+
+    const gaveta = await req('POST', '/administracao/locais', {
+      unidadeId: unidades.body[0].id,
+      nome: 'Armário de blocos / Gaveta B',
+      codigo: `BIO-GAV-${marca}`,
+      categoria: 'gaveta',
+      condicaoAmbiental: 'ambiente',
+      capacidade: 200,
+    });
+    expect(gaveta.status, JSON.stringify(gaveta.body)).toBe(201);
+    gavetaId = gaveta.body.id;
+
+    const freezer = await req('POST', '/administracao/locais', {
+      unidadeId: unidades.body[0].id,
+      nome: 'Freezer -80 °C',
+      codigo: `BIO-FRZ-${marca}`,
+      categoria: 'freezer',
+      condicaoAmbiental: 'congelado',
+      capacidade: 50,
+    });
+    expect(freezer.status, JSON.stringify(freezer.body)).toBe(201);
+    freezerId = freezer.body.id;
+
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Malu ${marca}` },
+      amostras: [{ descricao: 'Baço' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    casoId = criado.body.id;
+  });
+
+  test('cada material ganha identidade de custódia própria (§§4 e 15)', async () => {
+    await entrar('tecnico@lapato.local');
+
+    const bloco = await req('POST', '/bioteca', {
+      tipo: 'bloco_parafina',
+      descricao: 'Bloco A1 — baço',
+      casoId,
+      orgao: 'Baço',
+      localId: gavetaId,
+    });
+    expect(bloco.status, JSON.stringify(bloco.body)).toBe(201);
+    /**
+     * Serie propria, e nao o numero do caso: um caso gera dezenas de objetos, e
+     * cada um precisa de uma identidade que caiba numa etiqueta (secao 16).
+     */
+    expect(bloco.body.identificador).toMatch(/^BIO-\d{4}-\d{6}$/);
+    blocoBioId = bloco.body.id;
+
+    const laminas = await req('POST', '/bioteca', {
+      tipo: 'lamina_histologica',
+      descricao: 'A1-HE',
+      casoId,
+      localId: gavetaId,
+      quantidade: 3,
+      objetoPaiId: blocoBioId,
+    });
+    expect(laminas.status, JSON.stringify(laminas.body)).toBe(201);
+    laminasId = laminas.body.id;
+
+    // Secao 5: a genealogia nao se perde - a lamina sabe de que bloco veio.
+    const ficha = await req('GET', `/bioteca/${laminasId}`);
+    expect(ficha.body.genealogia.map((g: { id: string }) => g.id)).toContain(blocoBioId);
+  });
+
+  test('material recém-produzido entra sem gaveta — recusar criaria a caixa sem registro (§115)', async () => {
+    const semLocal = await req('POST', '/bioteca', {
+      tipo: 'tecido_fixado',
+      descricao: 'Fragmento remanescente em formalina',
+      casoId,
+      recipiente: 'Pote 60 mL',
+      fixador: 'Formalina 10%',
+    });
+    expect(semLocal.status, JSON.stringify(semLocal.body)).toBe(201);
+
+    // Sem posicao, o Guardian aponta - mas o registro existe, que era o ponto.
+    const conferencia = await req('GET', '/bioteca/conferencia');
+    const codigos = conferencia.body.map((a: { codigo: string }) => a.codigo);
+    expect(codigos).toContain('BIOTECA_SEM_LOCALIZACAO');
+  });
+
+  test('congelado não entra em equipamento incompatível (§§62 e 86)', async () => {
+    const naGaveta = await req('POST', '/bioteca', {
+      tipo: 'tecido_congelado',
+      descricao: 'Fragmento de baço',
+      casoId,
+      localId: gavetaId,
+    });
+    expect(naGaveta.status, 'a gaveta é ambiente, não congelador').toBe(400);
+
+    const noFreezer = await req('POST', '/bioteca', {
+      tipo: 'tecido_congelado',
+      descricao: 'Fragmento de baço',
+      casoId,
+      localId: freezerId,
+      temperaturaPrevista: '-80 °C',
+    });
+    expect(noFreezer.status, JSON.stringify(noFreezer.body)).toBe(201);
+    congeladoId = noFreezer.body.id;
+  });
+
+  test('retirar não faz o material desaparecer do sistema (§33)', async () => {
+    const retirada = await req('POST', `/bioteca/${blocoBioId}/retirada`, {
+      finalidade: 'complementar',
+      destino: 'Histotécnica',
+    });
+    expect(retirada.status, JSON.stringify(retirada.body)).toBe(201);
+
+    const fora = await req('GET', `/bioteca/${blocoBioId}`);
+    expect(fora.body.status).toBe('em_uso');
+    // Fora da posicao...
+    expect(fora.body.local).toBeNull();
+    expect(fora.body.localizacaoDescritiva).toBe('Histotécnica');
+    // ...mas sabendo para onde volta. E isso que a secao 33 exige.
+    expect(fora.body.localOrigem.id).toBe(gavetaId);
+
+    const devolucao = await req('POST', `/bioteca/${blocoBioId}/devolucao`, {
+      condicao: 'integro',
+    });
+    expect(devolucao.status, JSON.stringify(devolucao.body)).toBe(201);
+    const voltou = await req('GET', `/bioteca/${blocoBioId}`);
+    expect(voltou.body.local.id).toBe(gavetaId);
+  });
+
+  test('diagnóstico tem precedência sobre ensino e pesquisa (§§29 e 71)', async () => {
+    await entrar('patologista@lapato.local');
+    const reserva = await req('POST', `/bioteca/${blocoBioId}/reserva`, {
+      finalidade: 'pericia',
+      justificativa: 'Caso com inquérito aberto.',
+    });
+    expect(reserva.status, JSON.stringify(reserva.body)).toBe(201);
+
+    await entrar('tecnico@lapato.local');
+    const paraEnsino = await req('POST', `/bioteca/${blocoBioId}/retirada`, {
+      finalidade: 'ensino',
+      destino: 'Aula de patologia',
+    });
+    expect(paraEnsino.status, 'ensino não passa por cima de perícia').toBe(400);
+
+    // O caminho inverso e legitimo: a necessidade diagnostica prevalece.
+    const paraDiagnostico = await req('POST', `/bioteca/${blocoBioId}/retirada`, {
+      finalidade: 'diagnostico',
+      destino: 'Microscopia',
+    });
+    expect(paraDiagnostico.status, JSON.stringify(paraDiagnostico.body)).toBe(201);
+    await req('POST', `/bioteca/${blocoBioId}/devolucao`, {});
+  });
+
+  test('consumo esgota e o esgotamento fica visível (§§24-25)', async () => {
+    const parcial = await req('POST', `/bioteca/${laminasId}/consumo`, {
+      quantidade: 2,
+      finalidade: 'ensino',
+    });
+    expect(parcial.status, JSON.stringify(parcial.body)).toBe(201);
+    expect(parcial.body.quantidadeDisponivel).toBe(1);
+
+    const ultima = await req('POST', `/bioteca/${laminasId}/consumo`, {
+      quantidade: 1,
+      finalidade: 'ensino',
+    });
+    expect(ultima.body.status).toBe('esgotado');
+
+    const alem = await req('POST', `/bioteca/${laminasId}/consumo`, {
+      quantidade: 1,
+      finalidade: 'ensino',
+    });
+    expect(alem.status, 'não se consome o que não existe').toBe(400);
+  });
+
+  test('empréstimo exige prazo e não encerra com material fora (§§38-39)', async () => {
+    await entrar('admin@lapato.local');
+    const remanescente = await req('GET', `/bioteca/casos/${casoId}`);
+    const tecido = remanescente.body.objetos.find(
+      (o: { tipo: string }) => o.tipo === 'tecido_fixado',
+    );
+
+    const semPrazo = await req('POST', '/bioteca/emprestimos', {
+      tipo: 'externo',
+      finalidade: 'segunda_opiniao',
+      destinatario: 'Universidade parceira',
+      objetoIds: [tecido.id],
+    });
+    expect(semPrazo.status, 'empréstimo sem prazo vira material perdido').toBe(400);
+
+    const daquiATresDias = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+    const emprestimo = await req('POST', '/bioteca/emprestimos', {
+      tipo: 'externo',
+      finalidade: 'segunda_opiniao',
+      destinatario: 'Universidade parceira — Prof. Silva',
+      prazoDevolucao: daquiATresDias,
+      objetoIds: [tecido.id, congeladoId],
+    });
+    expect(emprestimo.status, JSON.stringify(emprestimo.body)).toBe(201);
+    expect(emprestimo.body.identificador).toMatch(/^EMP-\d{4}-\d{5}$/);
+    emprestimoId = emprestimo.body.id;
+
+    const primeira = await req('POST', `/bioteca/emprestimos/${emprestimoId}/devolucao`, {
+      objetoId: tecido.id,
+      condicao: 'adequado',
+      localId: gavetaId,
+    });
+    expect(primeira.status, JSON.stringify(primeira.body)).toBe(201);
+    // Ainda falta um material: encerrar aqui apagaria a pista de onde ele esta.
+    expect(primeira.body.status).toBe('devolvido_parcial');
+  });
+
+  /**
+   * Regressao de um defeito real: numa consulta de tabela unica, o drizzle
+   * emite a coluna do FROM externo SEM qualificar (`"id"`), e dentro da
+   * subconsulta o Postgres resolve isso no escopo interno. A correlacao vira
+   * `i.emprestimo_id = i.id`, nao levanta erro e devolve contagem zero.
+   *
+   * O teste existe porque o sintoma e silencioso: a tela mostra "0 itens" e um
+   * mapa vazio, e nada na pilha reclama.
+   */
+  test('as contagens correlacionadas contam de verdade', async () => {
+    const emprestimos = await req('GET', '/bioteca/emprestimos');
+    const nosso = emprestimos.body.find((e: { id: string }) => e.id === emprestimoId);
+    expect(nosso.itens, 'contagem de itens do empréstimo zerada').toBe(2);
+    expect(nosso.pendentes, 'contagem de pendentes zerada').toBe(1);
+
+    const mapa = await req('GET', '/bioteca/mapa');
+    const gaveta = mapa.body.posicoes.find((p: { id: string }) => p.id === gavetaId);
+    expect(gaveta.ocupacao, 'ocupação do mapa zerada com material na gaveta').toBeGreaterThan(0);
+    expect(gaveta.livres).toBe(gaveta.capacidade - gaveta.ocupacao);
+
+    // O que saiu continua rastreavel, fora do mapa de posicoes.
+    const fora = mapa.body.foraDoAcervo.map((o: { id: string }) => o.id);
+    expect(fora).toContain(congeladoId);
+  });
+
+  test('material com bloqueio não é descartado (§49)', async () => {
+    const descarte = await req('POST', '/bioteca/descarte', {
+      metodo: 'incineracao',
+      objetoIds: [congeladoId],
+    });
+    expect(descarte.status, 'material emprestado não pode ser destinado').toBe(400);
+
+    const elegiveis = await req('GET', '/bioteca/descarte/elegiveis');
+    // A lista diz POR QUE cada material ficou de fora (secao 50).
+    const bloqueado = elegiveis.body.bloqueados.find(
+      (o: { id: string }) => o.id === congeladoId,
+    );
+    expect(bloqueado?.motivo).toMatch(/empréstimo em aberto/i);
+  });
+
+  test('corrigir localização não apaga o evento anterior (§83)', async () => {
+    const antes = await req('GET', `/bioteca/${laminasId}`);
+    const semMotivo = await req('POST', `/bioteca/${laminasId}/correcao-localizacao`, {
+      localId: gavetaId,
+      motivo: '',
+    });
+    expect(semMotivo.status).toBe(400);
+
+    const correcao = await req('POST', `/bioteca/${laminasId}/correcao-localizacao`, {
+      localId: gavetaId,
+      motivo: 'Registro apontava gaveta errada na conferência de agosto.',
+    });
+    expect(correcao.status, JSON.stringify(correcao.body)).toBe(201);
+
+    const depois = await req('GET', `/bioteca/${laminasId}`);
+    expect(depois.body.movimentacoes.length).toBeGreaterThan(antes.body.movimentacoes.length);
+    expect(depois.body.movimentacoes[0].tipo).toBe('correcao_localizacao');
+  });
+
+  test('inventário separa "não localizado" de "posição incorreta" (§§54-57)', async () => {
+    const inventario = await req('POST', '/bioteca/inventarios', {
+      descricao: `Inventário da gaveta ${marca}`,
+      localId: gavetaId,
+    });
+    expect(inventario.status, JSON.stringify(inventario.body)).toBe(201);
+    expect(inventario.body.esperados).toBeGreaterThan(0);
+    const inventarioId = inventario.body.id;
+
+    const certa = await req('POST', `/bioteca/inventarios/${inventarioId}/leitura`, {
+      objetoId: laminasId,
+      localEncontradoId: gavetaId,
+    });
+    expect(certa.body.divergencia).toBeNull();
+
+    const errada = await req('POST', `/bioteca/inventarios/${inventarioId}/leitura`, {
+      objetoId: blocoBioId,
+      localEncontradoId: freezerId,
+    });
+    expect(errada.body.divergencia).toBe('posicao_incorreta');
+
+    const desconhecido = await req('POST', `/bioteca/inventarios/${inventarioId}/leitura`, {
+      codigoLido: 'BIO-2019-000777',
+      localEncontradoId: gavetaId,
+    });
+    expect(desconhecido.body.divergencia).toBe('nao_cadastrado');
+
+    const fim = await req('POST', `/bioteca/inventarios/${inventarioId}/conclusao`);
+    expect(fim.status, JSON.stringify(fim.body)).toBe(201);
+    expect(fim.body.posicaoIncorreta).toBe(1);
+    expect(fim.body.naoCadastrados).toBe(1);
+  });
+
+  test('"ainda existe bloco deste caso?" tem resposta com estado, não sim ou não (§76)', async () => {
+    const porCaso = await req('GET', `/bioteca/casos/${casoId}`);
+    expect(porCaso.status).toBe(200);
+    expect(porCaso.body.resumo.total).toBeGreaterThanOrEqual(4);
+    expect(porCaso.body.resumo.esgotados).toBeGreaterThanOrEqual(1);
+    expect(porCaso.body.resumo.fora).toBeGreaterThanOrEqual(1);
+  });
+
+  test('o residente consulta o acervo, mas não reserva nem retira (§84)', async () => {
+    await entrar('residente@lapato.local');
+    const consulta = await req('GET', `/bioteca/casos/${casoId}`);
+    expect(consulta.status).toBe(200);
+
+    const reserva = await req('POST', `/bioteca/${blocoBioId}/reserva`, {
+      finalidade: 'pesquisa',
+    });
+    expect(reserva.status, 'reservar é decisão de política, não de bancada').toBe(403);
+
+    const retirada = await req('POST', `/bioteca/${blocoBioId}/retirada`, {
+      finalidade: 'pesquisa',
+      destino: 'Laboratório',
+    });
+    expect(retirada.status).toBe(403);
+  });
+});

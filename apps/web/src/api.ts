@@ -789,6 +789,227 @@ export interface LocalFisicoAdmin {
   inativadoEm: string | null;
 }
 
+/**
+ * M18 - Bioteca.
+ *
+ * `localCodigo` e `localizacaoDescritiva` sao mutuamente exclusivos de
+ * proposito: o primeiro e a posicao no acervo, o segundo e onde o material
+ * esta quando saiu dela (secao 33). Nunca os dois, nunca nenhum - o Guardian
+ * aponta o objeto sem localizacao justamente porque isso e um buraco.
+ */
+export interface ObjetoBiologicoLista {
+  id: string;
+  identificador: string;
+  tipo: string;
+  descricao: string | null;
+  orgao: string | null;
+  status: string;
+  condicao: string;
+  quantidadeDisponivel: number;
+  quantidadeInicial: number;
+  restricoes: string[];
+  retencaoAte: string | null;
+  preservacaoEspecial: boolean;
+  localizacaoDescritiva: string | null;
+  localCodigo: string | null;
+  localNome: string | null;
+  casoIdentificador: string | null;
+}
+
+export interface FichaObjetoBiologico {
+  id: string;
+  identificador: string;
+  tipo: string;
+  descricao: string | null;
+  orgao: string | null;
+  status: string;
+  condicao: string;
+  casoId: string | null;
+  quantidadeInicial: number;
+  quantidadeDisponivel: number;
+  recipiente: string | null;
+  fixador: string | null;
+  temperaturaPrevista: string | null;
+  restricoes: string[];
+  retencaoAte: string | null;
+  preservacaoEspecial: boolean;
+  justificativaRetencao: string | null;
+  localizacaoDescritiva: string | null;
+  local: { id: string; codigo: string; nome: string } | null;
+  localOrigem: { id: string; codigo: string; nome: string } | null;
+  /** M18 secao 81: "essa timeline sera essencial". */
+  movimentacoes: Array<{
+    id: string;
+    tipo: string;
+    finalidade: string | null;
+    destinoDescritivo: string | null;
+    quantidade: number | null;
+    statusNovo: string | null;
+    motivo: string | null;
+    observacao: string | null;
+    registradaEm: string;
+    usuarioNome: string | null;
+    origemCodigo: string | null;
+    destinoCodigo: string | null;
+  }>;
+  reservas: Array<{
+    id: string;
+    finalidade: string;
+    projeto: string | null;
+    justificativa: string | null;
+    ativa: boolean;
+    vigenciaAte: string | null;
+    criadaEm: string;
+  }>;
+  emprestimos: Array<{
+    id: string;
+    identificador: string;
+    tipo: string;
+    finalidade: string;
+    destinatario: string;
+    status: string;
+    prazoDevolucao: string;
+    devolvidoEm: string | null;
+  }>;
+  /** M18 secao 5: de onde este objeto veio, dentro do proprio acervo. */
+  genealogia: Array<{ id: string; identificador: string; tipo: string }>;
+}
+
+export interface PosicaoAcervo {
+  id: string;
+  codigo: string;
+  nome: string;
+  paiId: string | null;
+  categoria: string;
+  capacidade: number | null;
+  condicaoAmbiental: string | null;
+  status: string;
+  ocupacao: number;
+  livres: number | null;
+  percentual: number | null;
+}
+
+export interface MapaAcervo {
+  posicoes: PosicaoAcervo[];
+  foraDoAcervo: Array<{
+    id: string;
+    identificador: string;
+    tipo: string;
+    status: string;
+    localizacaoDescritiva: string | null;
+    origemCodigo: string | null;
+  }>;
+}
+
+export interface EmprestimoLista {
+  id: string;
+  identificador: string;
+  tipo: string;
+  finalidade: string;
+  destinatario: string;
+  status: string;
+  prazoDevolucao: string;
+  emprestadoEm: string;
+  itens: number;
+  pendentes: number;
+  diasAtraso: number;
+}
+
+export interface EmprestimoDetalhe {
+  id: string;
+  identificador: string;
+  tipo: string;
+  finalidade: string;
+  destinatario: string;
+  contatoDestinatario: string | null;
+  condicoes: string | null;
+  status: string;
+  prazoDevolucao: string;
+  itens: Array<{
+    objetoId: string;
+    identificador: string;
+    tipo: string;
+    descricao: string | null;
+    devolvidoEm: string | null;
+    condicaoDevolucao: string | null;
+  }>;
+}
+
+/**
+ * M18 secao 50: a lista de elegiveis vem acompanhada dos bloqueados **com o
+ * motivo**. Mostrar so os elegiveis esconderia a informacao que a operacao
+ * precisa - por que aquele bloco vencido continua no armario.
+ */
+export interface ElegiveisDescarte {
+  elegiveis: Array<{
+    id: string;
+    identificador: string;
+    tipo: string;
+    descricao: string | null;
+    retencaoAte: string | null;
+    preservacaoEspecial: boolean;
+  }>;
+  bloqueados: Array<{
+    id: string;
+    identificador: string;
+    tipo: string;
+    descricao: string | null;
+    retencaoAte: string | null;
+    motivo: string;
+  }>;
+}
+
+export interface InventarioLista {
+  id: string;
+  identificador: string;
+  descricao: string | null;
+  iniciadoEm: string;
+  concluidoEm: string | null;
+  /** Contagem congelada no fechamento (M18 secao 54): o relatorio nao muda depois. */
+  resumo: {
+    total: number;
+    encontrados: number;
+    naoLocalizados: number;
+    posicaoIncorreta: number;
+    naoCadastrados: number;
+    condicaoDivergente: number;
+  } | null;
+  localCodigo: string | null;
+}
+
+export interface InventarioDetalhe extends InventarioLista {
+  itens: Array<{
+    id: string;
+    objetoId: string | null;
+    identificador: string | null;
+    codigoLido: string | null;
+    encontrado: boolean;
+    divergencia: string | null;
+    reconciliadoEm: string | null;
+    esperadoCodigo: string | null;
+    encontradoCodigo: string | null;
+  }>;
+}
+
+export interface MaterialDoCaso {
+  objetos: Array<{
+    id: string;
+    identificador: string;
+    tipo: string;
+    descricao: string | null;
+    orgao: string | null;
+    status: string;
+    condicao: string;
+    quantidadeDisponivel: number;
+    restricoes: string[];
+    localCodigo: string | null;
+    localizacaoDescritiva: string | null;
+    blocoIdentificador: string | null;
+    laminaIdentificador: string | null;
+  }>;
+  resumo: { total: number; disponiveis: number; esgotados: number; fora: number };
+}
+
 /** M02 secao 45. `validoAte` nulo = sem prazo. */
 export interface AssinaturaProfissional {
   id: string;

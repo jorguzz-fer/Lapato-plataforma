@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   amostra,
   assinaturaProfissional,
   avaliacaoCitologica,
+  bloqueioCadaver,
+  cadaver,
   caso,
   cassete,
   diagnostico,
@@ -537,6 +539,96 @@ export class GuardianService {
    * amostra e caso". Cassete sem origem quebra a rastreabilidade que o M09
    * exige ate a lamina, e por isso bloqueia a conclusao da macroscopia.
    */
+/**
+   * M15 secao 70: conferencias do Controle de Cadaveres.
+   *
+   * Rodam por varredura, e nao antes de uma acao, porque o que elas procuram
+   * sao **incoerencias que ja aconteceram** - um corpo que saiu mas continua
+   * ocupando posicao, um caso liberado sem destinacao registrada. Nenhuma delas
+   * bloqueia: sao trabalho pendente, e quem decide o que fazer e a operacao.
+   */
+  async verificarCadaveres(tx: Transacao): Promise<AchadoGuardian[]> {
+    const ctx = exigirContexto();
+    const achados: AchadoGuardian[] = [];
+
+    const registros = await tx
+      .select({
+        id: cadaver.id,
+        identificador: cadaver.identificador,
+        status: cadaver.status,
+        localAtualId: cadaver.localAtualId,
+        destinacao: cadaver.destinacao,
+        foraDesde: cadaver.foraDesde,
+        bloqueios: sql<number>`(
+          select count(*) from ${bloqueioCadaver} b
+          where b.cadaver_id = ${cadaver.id} and b.resolvido_em is null
+        )`,
+      })
+      .from(cadaver)
+      .where(eq(cadaver.tenantId, ctx.tenantId));
+
+    for (const c of registros) {
+      // "Cadaver marcado como retirado, mas ainda ocupa posicao fisica."
+      if ((c.status === 'retirado' || c.status === 'destinado') && c.localAtualId) {
+        achados.push({
+          codigo: 'CADAVER_RETIRADO_OCUPANDO_POSICAO',
+          nivel: 'critico',
+          mensagem: `${c.identificador} consta como ${c.status}, mas ainda ocupa uma posição.`,
+          modulo: MODULOS.M15_CADAVERES,
+          comoResolver:
+            'A posição está bloqueada para quem chegar depois. Corrija o registro de saída ou o de localização na ficha do cadáver.',
+          evidencias: { identificador: c.identificador, status: c.status },
+        });
+      }
+
+      // "Cadaver sem localizacao atual."
+      if (
+        !c.localAtualId &&
+        c.status !== 'retirado' &&
+        c.status !== 'destinado' &&
+        c.status !== 'em_necropsia' &&
+        c.status !== 'recebido'
+      ) {
+        achados.push({
+          codigo: 'CADAVER_SEM_LOCALIZACAO',
+          nivel: 'critico',
+          mensagem: `${c.identificador} está sob responsabilidade do laboratório sem posição registrada.`,
+          modulo: MODULOS.M15_CADAVERES,
+          comoResolver: 'Registre onde ele está, pela ação “Armazenar” na ficha do cadáver.',
+          evidencias: { identificador: c.identificador, status: c.status },
+        });
+      }
+
+      // "Caso liberado sem registro de destinacao."
+      if (c.status === 'liberado' && !c.destinacao) {
+        achados.push({
+          codigo: 'CADAVER_LIBERADO_SEM_DESTINACAO',
+          nivel: 'atencao',
+          mensagem: `${c.identificador} está liberado e ainda não tem destinação autorizada.`,
+          modulo: MODULOS.M15_CADAVERES,
+          comoResolver:
+            'Defina a destinação na ficha antes da entrega — é ela que diz para onde o corpo vai.',
+          evidencias: { identificador: c.identificador },
+        });
+      }
+
+      // "Cadaver liberado apesar de bloqueio."
+      if (c.status === 'liberado' && Number(c.bloqueios) > 0) {
+        achados.push({
+          codigo: 'CADAVER_LIBERADO_COM_BLOQUEIO',
+          nivel: 'critico',
+          mensagem: `${c.identificador} está liberado com ${c.bloqueios} bloqueio(s) ativo(s).`,
+          modulo: MODULOS.M15_CADAVERES,
+          comoResolver:
+            'Resolva o bloqueio ou revogue a liberação. Bloqueio ativo e liberação são estados que não convivem.',
+          evidencias: { identificador: c.identificador, bloqueios: c.bloqueios },
+        });
+      }
+    }
+
+    return ordenarPorGravidade(achados);
+  }
+
   async verificarConclusaoMacroscopia(
     tx: Transacao,
     macroscopiaId: string,

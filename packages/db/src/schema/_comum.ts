@@ -1,6 +1,14 @@
 import { pgEnum, timestamp, uuid } from 'drizzle-orm/pg-core';
 import {
   ADEQUACAO_CITOLOGICA,
+  CONSERVACAO_CADAVER,
+  DESTINACAO_CADAVER,
+  EMBALAGEM_CADAVER,
+  IDENTIFICACAO_EXTERNA,
+  INTEGRIDADE_CADAVER,
+  STATUS_CADAVER,
+  TIPO_BLOQUEIO_CADAVER,
+  TIPO_MOVIMENTACAO_CADAVER,
   ALERTA_PRAZO,
   CELULARIDADE,
   CATEGORIA_USUARIO,
@@ -95,3 +103,16 @@ export const colunasInativacao = {
   inativadoEm: timestamp('inativado_em', { withTimezone: true }),
   inativadoPor: uuid('inativado_por'),
 };
+
+// --- M15 Controle de Cadaveres ---------------------------------------------
+export const statusCadaverEnum = pgEnum('status_cadaver', STATUS_CADAVER);
+export const conservacaoCadaverEnum = pgEnum('conservacao_cadaver', CONSERVACAO_CADAVER);
+export const embalagemCadaverEnum = pgEnum('embalagem_cadaver', EMBALAGEM_CADAVER);
+export const integridadeCadaverEnum = pgEnum('integridade_cadaver', INTEGRIDADE_CADAVER);
+export const identificacaoExternaEnum = pgEnum('identificacao_externa', IDENTIFICACAO_EXTERNA);
+export const tipoMovimentacaoCadaverEnum = pgEnum(
+  'tipo_movimentacao_cadaver',
+  TIPO_MOVIMENTACAO_CADAVER,
+);
+export const tipoBloqueioCadaverEnum = pgEnum('tipo_bloqueio_cadaver', TIPO_BLOQUEIO_CADAVER);
+export const destinacaoCadaverEnum = pgEnum('destinacao_cadaver', DESTINACAO_CADAVER);

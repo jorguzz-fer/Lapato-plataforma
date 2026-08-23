@@ -125,6 +125,17 @@ export function identificadorImagem(ano: number, sequencial: number): string {
   return `IMG-${ano}-${String(sequencial).padStart(7, '0')}`;
 }
 
+/**
+ * Identificador do cadaver: `CAD-2026-00259` (M15 secao 4).
+ *
+ * Serie propria, e nao o numero do caso, porque o corpo e rastreado mesmo antes
+ * de existir caso - a entrada provisoria da secao 5 depende disso. Ele e o que
+ * vai na etiqueta e no QR Code.
+ */
+export function identificadorCadaver(ano: number, sequencial: number): string {
+  return `CAD-${ano}-${String(sequencial).padStart(5, '0')}`;
+}
+
 /** Identificador da remessa, que agrupa varios casos: `REM-2026-00481` (M05). */
 export function identificadorRemessa(ano: number, sequencial: number): string {
   return `REM-${ano}-${String(sequencial).padStart(5, '0')}`;

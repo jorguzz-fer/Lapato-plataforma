@@ -96,6 +96,21 @@ export const PERMISSOES = {
   IMAGEM_EDITAR: 'imagem:editar',
   IMAGEM_EXPORTAR: 'imagem:exportar',
 
+  // M15 Controle de Cadaveres
+  CADAVER_VISUALIZAR: 'cadaver:visualizar',
+  CADAVER_RECEBER: 'cadaver:receber',
+  /** Armazenar, transferir, retirar para necropsia e retornar (secao 68). */
+  CADAVER_MOVIMENTAR: 'cadaver:movimentar',
+  CADAVER_BLOQUEAR: 'cadaver:bloquear',
+  /**
+   * Liberar e resolver bloqueio sao acoes criticas (secao 69): quem libera
+   * decide que o corpo pode sair. Fica separada de `movimentar` de proposito -
+   * o tecnico move dentro da camara, o supervisor autoriza a saida.
+   */
+  CADAVER_LIBERAR: 'cadaver:liberar',
+  /** Registrar a entrega fisica e a destinacao (secoes 44 e 49). */
+  CADAVER_ENTREGAR: 'cadaver:entregar',
+
   // M04 Portal do Cliente
   /** Sem ela, nenhuma rota do Portal responde - e a porta do ambiente externo. */
   PORTAL_ACESSAR: 'portal:acessar',

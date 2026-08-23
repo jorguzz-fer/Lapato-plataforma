@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { and, asc, eq, sql } from 'drizzle-orm';
 import {
   diaNaoUtil,
+  localFisico,
   servico,
   setor,
   tabelaMestre,
@@ -463,6 +464,98 @@ export class AdministracaoService {
     await this.alternarAtivacao(setor, 'setor', id, ativar, 'Setor');
   }
 
+  // --- locais fisicos (secao 7.3; usado por M15 e M18) -----------------------
+
+  /**
+   * Locais fisicos, em arvore.
+   *
+   * A hierarquia e a mesma que o M15 secao 18 descreve - unidade, sala,
+   * equipamento, compartimento, posicao - e vive aqui porque quem define o que
+   * existe e o M01. O Controle de Cadaveres e a Bioteca so registram o que esta
+   * em cada local.
+   *
+   * Ate esta versao a tabela existia sem nenhuma tela: ninguem conseguia
+   * cadastrar uma camara, e um modulo que depende dela nasceria inutilizavel.
+   */
+  async listarLocais(): Promise<unknown[]> {
+    const ctx = exigirContexto();
+    return this.db.executar((tx) =>
+      tx
+        .select({
+          id: localFisico.id,
+          nome: localFisico.nome,
+          codigo: localFisico.codigo,
+          categoria: localFisico.categoria,
+          paiId: localFisico.paiId,
+          unidadeId: localFisico.unidadeId,
+          unidadeNome: unidade.nome,
+          capacidade: localFisico.capacidade,
+          condicaoAmbiental: localFisico.condicaoAmbiental,
+          status: localFisico.status,
+          inativadoEm: localFisico.inativadoEm,
+        })
+        .from(localFisico)
+        .leftJoin(unidade, eq(unidade.id, localFisico.unidadeId))
+        .where(eq(localFisico.tenantId, ctx.tenantId))
+        .orderBy(asc(localFisico.codigo)),
+    );
+  }
+
+  async criarLocal(dados: {
+    unidadeId: string;
+    paiId?: string | null;
+    nome: string;
+    codigo: string;
+    categoria: string;
+    capacidade?: number | null;
+    condicaoAmbiental?: string | null;
+  }): Promise<{ id: string }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      await this.buscar(tx, unidade, dados.unidadeId, 'Unidade');
+      if (dados.paiId) await this.buscar(tx, localFisico, dados.paiId, 'Local');
+
+      const codigo = dados.codigo.trim().toUpperCase();
+      const [existente] = await tx
+        .select({ id: localFisico.id })
+        .from(localFisico)
+        .where(and(eq(localFisico.tenantId, ctx.tenantId), eq(localFisico.codigo, codigo)))
+        .limit(1);
+      if (existente) {
+        throw new BadRequestException(`O código "${codigo}" já existe.`);
+      }
+
+      const [novo] = await tx
+        .insert(localFisico)
+        .values({
+          tenantId: ctx.tenantId,
+          unidadeId: dados.unidadeId,
+          paiId: dados.paiId ?? null,
+          nome: dados.nome.trim(),
+          codigo,
+          categoria: dados.categoria.trim(),
+          capacidade: dados.capacidade ?? null,
+          condicaoAmbiental: dados.condicaoAmbiental ?? null,
+        })
+        .returning({ id: localFisico.id });
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'local_fisico',
+        entidadeId: novo!.id,
+        acao: 'criar',
+        valorNovo: { nome: dados.nome, codigo, categoria: dados.categoria },
+      });
+
+      return { id: novo!.id };
+    });
+  }
+
+  /** M01: inativacao, nunca exclusao - a posicao guarda historico de quem esteve nela. */
+  async alternarLocal(id: string, ativar: boolean): Promise<void> {
+    await this.alternarAtivacao(localFisico, 'local_fisico', id, ativar, 'Local');
+  }
+
   // --- calendario (secao 14) -------------------------------------------------
 
   async listarDiasNaoUteis(): Promise<unknown[]> {
@@ -551,7 +644,13 @@ export class AdministracaoService {
 
   private async buscar(
     tx: Transacao,
-    tabela: typeof servico | typeof termo | typeof unidade | typeof setor | typeof tabelaMestre,
+    tabela:
+      | typeof servico
+      | typeof termo
+      | typeof unidade
+      | typeof setor
+      | typeof tabelaMestre
+      | typeof localFisico,
     id: string,
     rotulo: string,
   ) {
@@ -567,7 +666,7 @@ export class AdministracaoService {
 
   /** Inativacao/reativacao comum (secao 21) - com auditoria. */
   private async alternarAtivacao(
-    tabela: typeof servico | typeof termo | typeof unidade | typeof setor,
+    tabela: typeof servico | typeof termo | typeof unidade | typeof setor | typeof localFisico,
     entidade: string,
     id: string,
     ativar: boolean,

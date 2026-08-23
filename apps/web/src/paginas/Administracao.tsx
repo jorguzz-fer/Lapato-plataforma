@@ -27,6 +27,7 @@ import {
   type ServicoAdmin,
   type TabelaAdmin,
   type TermoAdmin,
+  type LocalFisicoAdmin,
   type UnidadeAdmin,
 } from '../api';
 
@@ -71,7 +72,7 @@ const FLAGS_SERVICO = [
 
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
 
-type Aba = 'servicos' | 'tabelas' | 'unidades' | 'calendario';
+type Aba = 'servicos' | 'tabelas' | 'unidades' | 'locais' | 'calendario';
 
 export function Administracao({ permissoes }: { permissoes: string[] }) {
   const [aba, setAba] = useState<Aba>('servicos');
@@ -98,12 +99,14 @@ export function Administracao({ permissoes }: { permissoes: string[] }) {
         <Tab value="servicos" label="Serviços" />
         <Tab value="tabelas" label="Tabelas mestres" />
         <Tab value="unidades" label="Unidades e setores" />
+        <Tab value="locais" label="Locais físicos" />
         <Tab value="calendario" label="Calendário" />
       </Tabs>
 
       {aba === 'servicos' && <AbaServicos podeEditar={podeConfig} />}
       {aba === 'tabelas' && <AbaTabelas podeEditar={podeTabelas} />}
       {aba === 'unidades' && <AbaUnidades podeEditar={podeUnidades} />}
+      {aba === 'locais' && <AbaLocais podeEditar={podeUnidades} />}
       {aba === 'calendario' && <AbaCalendario podeEditar={podeConfig} />}
     </Box>
   );
@@ -923,5 +926,236 @@ function BotaoAtivacao({
     <Button size="small" color={inativo ? 'primary' : 'inherit'} onClick={() => void alternar()} disabled={ocupado}>
       {inativo ? 'Reativar' : 'Inativar'}
     </Button>
+  );
+}
+
+// --- locais físicos ----------------------------------------------------------
+
+/**
+ * M01 secao 7.3: a arvore de locais - unidade, sala, equipamento, compartimento,
+ * posicao. O M15 secao 18 usa exatamente essa hierarquia para dizer onde cada
+ * cadaver esta, e o M18 usara para a bioteca.
+ *
+ * A tabela existia desde o inicio sem nenhuma tela. Um modulo que depende dela
+ * nasceria inutilizavel - foi o que quase aconteceu com o Controle de Cadaveres.
+ */
+function AbaLocais({ podeEditar }: { podeEditar: boolean }) {
+  const [locais, setLocais] = useState<LocalFisicoAdmin[] | null>(null);
+  const [unidades, setUnidades] = useState<UnidadeAdmin[]>([]);
+  const [criando, setCriando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const [unidadeId, setUnidadeId] = useState('');
+  const [paiId, setPaiId] = useState('');
+  const [nome, setNome] = useState('');
+  const [codigo, setCodigo] = useState('');
+  const [categoria, setCategoria] = useState('posicao');
+  const [condicao, setCondicao] = useState('');
+  const [ocupado, setOcupado] = useState(false);
+
+  const recarregar = useCallback(() => {
+    api
+      .get<LocalFisicoAdmin[]>('/administracao/locais')
+      .then(setLocais)
+      .catch(() => setErro('Não foi possível carregar os locais.'));
+    api
+      .get<UnidadeAdmin[]>('/administracao/unidades')
+      .then(setUnidades)
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(recarregar, [recarregar]);
+
+  async function salvar() {
+    setOcupado(true);
+    setErro(null);
+    try {
+      await api.post('/administracao/locais', {
+        unidadeId,
+        paiId: paiId || null,
+        nome: nome.trim(),
+        codigo: codigo.trim(),
+        categoria,
+        condicaoAmbiental: condicao || null,
+      });
+      setCriando(false);
+      setNome('');
+      setCodigo('');
+      setPaiId('');
+      recarregar();
+    } catch (e) {
+      setErro(e instanceof ErroApi ? e.detalhe : 'Não foi possível criar o local.');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  const nomePorId = new Map((locais ?? []).map((l) => [l.id, `${l.codigo} — ${l.nome}`]));
+
+  return (
+    <Box>
+      <Stack direction="row" sx={{ justifyContent: 'space-between', mb: 2 }}>
+        <Typography sx={{ fontSize: 13, color: 'text.secondary', maxWidth: 640 }}>
+          Câmaras, freezers, prateleiras e posições. É onde o Controle de Cadáveres registra a
+          localização de cada corpo — sem local cadastrado, não há onde armazenar.
+        </Typography>
+        {podeEditar && (
+          <Button
+            variant="contained"
+            size="small"
+            onClick={() => {
+              setUnidadeId(unidades[0]?.id ?? '');
+              setCriando(true);
+            }}
+          >
+            Novo local
+          </Button>
+        )}
+      </Stack>
+
+      {erro && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {erro}
+        </Alert>
+      )}
+
+      {locais === null ? (
+        <Skeleton variant="rounded" height={140} />
+      ) : locais.length === 0 ? (
+        <Alert severity="info">
+          Nenhum local cadastrado. Comece pelo equipamento (a câmara) e depois crie as posições
+          dentro dele.
+        </Alert>
+      ) : (
+        <Stack spacing={1}>
+          {locais.map((l) => (
+            <Card key={l.id} sx={{ p: 1.5 }}>
+              <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 1 }}>
+                <Box sx={{ minWidth: 0 }}>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                    <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
+                      {l.codigo} — {l.nome}
+                    </Typography>
+                    <Chip size="small" variant="outlined" label={l.categoria} />
+                    {l.condicaoAmbiental && (
+                      <Chip size="small" variant="outlined" label={l.condicaoAmbiental} />
+                    )}
+                    {l.inativadoEm && <Chip size="small" label="Inativo" />}
+                  </Stack>
+                  <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                    {l.unidadeNome}
+                    {l.paiId ? ` · dentro de ${nomePorId.get(l.paiId) ?? '—'}` : ''}
+                  </Typography>
+                </Box>
+                {podeEditar && (
+                  <Button
+                    size="small"
+                    color="inherit"
+                    onClick={() =>
+                      void api
+                        .post(
+                          `/administracao/locais/${l.id}/${l.inativadoEm ? 'reativacao' : 'inativacao'}`,
+                        )
+                        .then(recarregar)
+                    }
+                  >
+                    {l.inativadoEm ? 'Reativar' : 'Inativar'}
+                  </Button>
+                )}
+              </Stack>
+            </Card>
+          ))}
+        </Stack>
+      )}
+
+      <Dialog open={criando} onClose={() => setCriando(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Novo local físico</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              select
+              label="Unidade"
+              value={unidadeId}
+              onChange={(e) => setUnidadeId(e.target.value)}
+            >
+              {unidades.map((u) => (
+                <MenuItem key={u.id} value={u.id}>
+                  {u.nome}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="Dentro de"
+              value={paiId}
+              onChange={(e) => setPaiId(e.target.value)}
+              helperText="Vazio cria o equipamento; escolher um pai cria a posição dentro dele."
+            >
+              <MenuItem value="">Nenhum (é o equipamento)</MenuItem>
+              {(locais ?? [])
+                .filter((l) => !l.inativadoEm)
+                .map((l) => (
+                  <MenuItem key={l.id} value={l.id}>
+                    {l.codigo} — {l.nome}
+                  </MenuItem>
+                ))}
+            </TextField>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField
+                label="Nome"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                sx={{ flex: 1 }}
+              />
+              <TextField
+                label="Código"
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value)}
+                helperText="Único na instituição."
+                sx={{ flex: 1 }}
+              />
+            </Stack>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField
+                select
+                label="Categoria"
+                value={categoria}
+                onChange={(e) => setCategoria(e.target.value)}
+                sx={{ flex: 1 }}
+              >
+                <MenuItem value="camara_refrigerada">Câmara refrigerada</MenuItem>
+                <MenuItem value="freezer">Freezer</MenuItem>
+                <MenuItem value="sala">Sala</MenuItem>
+                <MenuItem value="prateleira">Prateleira</MenuItem>
+                <MenuItem value="posicao">Posição</MenuItem>
+                <MenuItem value="area_temporaria">Área temporária</MenuItem>
+              </TextField>
+              <TextField
+                select
+                label="Condição ambiental"
+                value={condicao}
+                onChange={(e) => setCondicao(e.target.value)}
+                sx={{ flex: 1 }}
+              >
+                <MenuItem value="">Não se aplica</MenuItem>
+                <MenuItem value="refrigerado">Refrigerado</MenuItem>
+                <MenuItem value="congelado">Congelado</MenuItem>
+                <MenuItem value="ambiente">Ambiente</MenuItem>
+              </TextField>
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCriando(false)}>Cancelar</Button>
+          <Button
+            variant="contained"
+            disabled={ocupado || !unidadeId || !nome.trim() || !codigo.trim()}
+            onClick={() => void salvar()}
+          >
+            Criar
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }

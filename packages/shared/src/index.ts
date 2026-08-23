@@ -8,4 +8,5 @@ export * from './guardian.js';
 export * from './copiloto.js';
 export * from './prazos.js';
 export * from './citologia.js';
+export * from './precondicoes.js';
 export * from './portal.js';

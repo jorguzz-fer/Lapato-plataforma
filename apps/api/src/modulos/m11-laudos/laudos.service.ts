@@ -33,6 +33,7 @@ import {
   MODULOS,
   PERMISSOES,
   TIPO_COLETA_CITOLOGICA,
+  motivoBancadaBloqueada,
   type Lateralidade,
   type ResultadoMargem,
   type TipoVersaoLaudo,
@@ -232,6 +233,21 @@ export class LaudosService {
         const versao = await this.versaoCorrente(tx, existente.id);
         return { laudoId: existente.id, versaoId: versao.id, versao: versao.versao };
       }
+
+      /**
+       * M05 -> M06 -> M11: nao se abre laudo de material que o laboratorio
+       * nunca registrou ter recebido.
+       *
+       * A checagem so vale para o laudo que **nasce** aqui. Um laudo ja aberto
+       * volta pelo caminho de cima sem passar por ela: a precondicao e para
+       * comecar, e reaplica-la depois travaria o patologista se alguem mexesse
+       * na triagem com o laudo em andamento.
+       */
+      const impedimento = motivoBancadaBloqueada(
+        await this.estadoPreAnalitico(tx, casoId),
+        'microscopia',
+      );
+      if (impedimento) throw new BadRequestException(impedimento);
 
       const [novo] = await tx
         .insert(laudo)
@@ -1023,6 +1039,25 @@ export class LaudosService {
     const meses = (Date.now() - nascimento.getTime()) / (1000 * 60 * 60 * 24 * 30.4375);
     if (meses < 12) return `${Math.floor(meses)} meses`;
     return `${Math.floor(meses / 12)} anos`;
+  }
+
+  /** Estado pre-analitico do caso, do jeito que `motivoBancadaBloqueada` espera. */
+  private async estadoPreAnalitico(tx: Transacao, casoId: string) {
+    const ctx = exigirContexto();
+    const [registro] = await tx
+      .select({
+        recebidoEm: caso.recebidoEm,
+        triadoEm: caso.triadoEm,
+        resultadoTriagem: caso.resultadoTriagem,
+        exigeTriagem: servico.exigeTriagem,
+      })
+      .from(caso)
+      .innerJoin(servico, eq(servico.id, caso.servicoId))
+      .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.id, casoId)))
+      .limit(1);
+
+    if (!registro) throw new NotFoundException('Caso não encontrado.');
+    return registro;
   }
 
   private async versaoCorrente(tx: Transacao, laudoId: string) {

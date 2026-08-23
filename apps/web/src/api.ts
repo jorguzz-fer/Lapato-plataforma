@@ -195,8 +195,12 @@ export interface Dossie {
   };
   cliente: { nomeFantasia: string };
   paciente: { nome: string; microchip: string | null };
-  /** A modalidade decide a forma da bancada de laudo (M12: interface adaptativa). */
-  servico: { nome: string; modalidade: string };
+  /**
+   * A modalidade decide a forma da bancada de laudo (M12: interface adaptativa).
+   * `exigeTriagem` (M01) entra na precondicao pre-analitica: servico que
+   * dispensa triagem nao a exige antes da bancada.
+   */
+  servico: { nome: string; modalidade: string; exigeTriagem: boolean };
   estado: { etapa: string; previsaoLiberacao: string | null; bloqueado: boolean } | null;
   amostras: Array<{
     id: string;

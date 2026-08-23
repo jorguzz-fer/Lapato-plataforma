@@ -7,11 +7,13 @@ import {
   lesaoMacroscopica,
   macroscopia,
   margemMacroscopica,
+  servico,
   type Transacao,
 } from '@lapato/db';
 import {
   MODULOS,
   identificadorCassete,
+  motivoBancadaBloqueada,
   type Lateralidade,
   type MetodoAmostragem,
 } from '@lapato/shared';
@@ -77,12 +79,21 @@ export class MacroscopiaService {
     return this.db.executar(async (tx) => {
       const alvo = await this.buscarAmostra(tx, amostraId);
 
-      // M06 -> M08: material bloqueado na triagem nao chega a bancada.
-      if (alvo.resultadoTriagem === 'bloqueado' || alvo.resultadoTriagem === 'recusado') {
-        throw new BadRequestException(
-          `Amostra com triagem "${alvo.resultadoTriagem}" não pode iniciar macroscopia.`,
-        );
-      }
+      /**
+       * M05 -> M06 -> M08: a bancada so recebe material que o laboratorio
+       * registrou ter recebido e que passou pela triagem.
+       *
+       * Antes daqui a checagem olhava so o resultado da triagem, e por isso
+       * deixava passar o caso em que ela **nunca aconteceu** - resultado nulo
+       * nao e "bloqueado". Dava para descrever e encassetar material recem
+       * cadastrado, sem recebimento nem conferencia, quebrando a cadeia de
+       * custodia logo no primeiro elo.
+       */
+      const impedimento = motivoBancadaBloqueada(
+        await this.estadoPreAnalitico(tx, alvo.casoId, alvo.resultadoTriagem),
+        'macroscopia',
+      );
+      if (impedimento) throw new BadRequestException(impedimento);
 
       const [existente] = await tx
         .select({ id: macroscopia.id })
@@ -433,6 +444,41 @@ export class MacroscopiaService {
         exigeDescalcificacao: c.exigeDescalcificacao ?? false,
       });
     }
+  }
+
+  /**
+   * Estado pre-analitico do caso, do jeito que `motivoBancadaBloqueada` espera.
+   *
+   * O resultado da triagem vem da amostra quando existe: a bancada trabalha uma
+   * amostra por vez, e uma amostra bloqueada nao entra mesmo que o caso tenha
+   * sido liberado no agregado (M06 secao 41).
+   */
+  private async estadoPreAnalitico(
+    tx: Transacao,
+    casoId: string,
+    resultadoDaAmostra: string | null,
+  ) {
+    const ctx = exigirContexto();
+    const [registro] = await tx
+      .select({
+        recebidoEm: caso.recebidoEm,
+        triadoEm: caso.triadoEm,
+        resultadoTriagem: caso.resultadoTriagem,
+        exigeTriagem: servico.exigeTriagem,
+      })
+      .from(caso)
+      .innerJoin(servico, eq(servico.id, caso.servicoId))
+      .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.id, casoId)))
+      .limit(1);
+
+    if (!registro) throw new NotFoundException('Caso não encontrado.');
+
+    return {
+      recebidoEm: registro.recebidoEm,
+      triadoEm: registro.triadoEm,
+      resultadoTriagem: resultadoDaAmostra ?? registro.resultadoTriagem,
+      exigeTriagem: registro.exigeTriagem,
+    };
   }
 
   private async buscarAmostra(tx: Transacao, amostraId: string) {

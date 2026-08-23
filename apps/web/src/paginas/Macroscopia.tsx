@@ -33,6 +33,7 @@ import {
   type Dossie as DadosDossie,
   type FichaMacroscopia,
 } from '../api';
+import { AvisoBancadaBloqueada, impedimentoDeBancada } from './AvisoBancadaBloqueada';
 
 /**
  * M08 - Macroscopia.
@@ -308,6 +309,14 @@ export function Macroscopia({ exigeSupervisao }: Props) {
         <Skeleton variant="rounded" height={320} />
       </Stack>
     );
+  }
+
+  /**
+   * M05 secao 12: cadastrado nao e recebido. Mostrar a ficha de um caso que a
+   * API vai recusar convida a preencher a toa - a triagem ja se comporta assim.
+   */
+  if (impedimentoDeBancada(dossie, 'macroscopia')) {
+    return <AvisoBancadaBloqueada dossie={dossie} etapa="macroscopia" />;
   }
 
   return (

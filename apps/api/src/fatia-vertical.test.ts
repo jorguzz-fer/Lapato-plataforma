@@ -125,6 +125,42 @@ async function entrar(email: string): Promise<void> {
   expect(r.body.estagio, `estagio inesperado para ${email}`).toBe('ativa');
 }
 
+/**
+ * Leva um caso recem-cadastrado ate a bancada por dentro do fluxo.
+ *
+ * Existe porque as precondicoes pre-analiticas passaram a ser exigidas: macro e
+ * laudo recusam material sem recebimento e sem triagem (M05 secao 12). Blocos
+ * que so querem chegar a bancada usam isto em vez de pular as etapas - pular
+ * era possivel, e era o defeito.
+ */
+async function levarAteBancada(casoId: string): Promise<void> {
+  const anterior = cookie;
+  // O tecnico de laboratorio tem `material:receber` e `triagem:executar`; a
+  // recepcao so o primeiro. Quem confere o material e quem o tria e o mesmo
+  // papel na bancada de entrada.
+  await entrar('tecnico@lapato.local');
+
+  const dossie = await req('GET', `/casos/${casoId}`);
+  const recebimento = await req('POST', `/casos/${casoId}/recebimento`, {
+    conferencia: dossie.body.recipientes.map((r: { id: string; quantidadeDeclarada: number }) => ({
+      recipienteId: r.id,
+      quantidadeRecebida: r.quantidadeDeclarada,
+    })),
+  });
+  expect(recebimento.status, JSON.stringify(recebimento.body)).toBe(201);
+
+  const comAmostras = await req('GET', `/casos/${casoId}`);
+  const triagem = await req('POST', `/casos/${casoId}/triagem`, {
+    amostras: comAmostras.body.amostras.map((a: { id: string }) => ({
+      amostraId: a.id,
+      resultado: 'apto',
+    })),
+  });
+  expect(triagem.status, JSON.stringify(triagem.body)).toBe(201);
+
+  cookie = anterior;
+}
+
 beforeAll(async () => {
   process.env.DATABASE_URL ??= 'postgres://lapato_app:lapato@127.0.0.1:5432/lapato';
   process.env.SESSION_SECRET ??= 'x'.repeat(48);
@@ -1677,6 +1713,8 @@ describe('acervo de imagens (M16)', () => {
   });
 
   test('o patologista inclui a imagem no laudo e ela sai no PDF', async () => {
+    // Este bloco chegava ao PDF sem passar por recebimento e triagem.
+    await levarAteBancada(casoId);
     await entrar('patologista@lapato.local');
 
     const abrir = await req('POST', `/laudos/casos/${casoId}`);
@@ -1841,6 +1879,10 @@ describe('Portal do Cliente (M04)', () => {
   });
 
   test('laudo só aparece depois de liberado, e o PDF é o assinado', async () => {
+    // Ate aqui o caso ficou parado de proposito, para o teste do status
+    // externo. Agora ele precisa percorrer o fluxo de verdade.
+    await levarAteBancada(casoDaCentral);
+
     // O patologista elabora e assina - mas ainda NAO libera.
     await entrar('patologista@lapato.local');
     const abrir = await req('POST', `/laudos/casos/${casoDaCentral}`);
@@ -1962,6 +2004,86 @@ describe('Portal do Cliente (M04)', () => {
     expect(painel.status).toBe(200);
     expect(painel.body.cliente).toBe('Clínica Veterinária Central');
     expect(painel.body.laudosLiberados).toBeGreaterThan(0);
+  });
+});
+
+describe('material sem recebimento não chega à bancada', () => {
+  /**
+   * M05 secao 12: solicitado, cadastrado, recebido e triado sao quatro momentos
+   * distintos. Cadastrar e registrar que alguem pediu o exame - nao e o
+   * material na mao.
+   *
+   * O defeito que originou este bloco: a macroscopia so recusava triagem
+   * `bloqueado`/`recusado`, e resultado nulo - triagem que **nunca aconteceu** -
+   * passava; o laudo nao checava nada. Dava para encassetar e laudar material
+   * recem cadastrado, sem recebimento nem conferencia, quebrando a cadeia de
+   * custodia no primeiro elo.
+   */
+  let casoId: string;
+  let amostraId: string;
+
+  test('cadastro sozinho não autoriza macroscopia nem laudo', async () => {
+    await entrar('recepcao@lapato.local');
+
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Sem recebimento ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Fragmento' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    casoId = criado.body.id;
+    amostraId = criado.body.amostras?.[0]?.id ?? (await req('GET', `/casos/${casoId}`)).body.amostras[0].id;
+
+    await entrar('patologista@lapato.local');
+
+    const macro = await req('POST', `/macroscopia/amostras/${amostraId}`);
+    expect(macro.status, JSON.stringify(macro.body)).toBe(400);
+    expect(macro.body.detail).toContain('ainda não foi recebido');
+
+    const laudo = await req('POST', `/laudos/casos/${casoId}`);
+    expect(laudo.status, JSON.stringify(laudo.body)).toBe(400);
+    expect(laudo.body.detail).toContain('ainda não foi recebido');
+  });
+
+  test('recebido mas não triado continua barrado', async () => {
+    await entrar('tecnico@lapato.local');
+    const dossie = await req('GET', `/casos/${casoId}`);
+    const recebimento = await req('POST', `/casos/${casoId}/recebimento`, {
+      conferencia: [
+        { recipienteId: dossie.body.recipientes[0].id, quantidadeRecebida: 1 },
+      ],
+    });
+    expect(recebimento.status, JSON.stringify(recebimento.body)).toBe(201);
+
+    await entrar('patologista@lapato.local');
+
+    // O servico HISTO exige triagem (M01). Recebido nao basta.
+    const macro = await req('POST', `/macroscopia/amostras/${amostraId}`);
+    expect(macro.status, JSON.stringify(macro.body)).toBe(400);
+    expect(macro.body.detail).toContain('triagem ainda não foi concluída');
+
+    const laudo = await req('POST', `/laudos/casos/${casoId}`);
+    expect(laudo.status).toBe(400);
+  });
+
+  test('depois da triagem apta a bancada abre normalmente', async () => {
+    await entrar('tecnico@lapato.local');
+    const triagem = await req('POST', `/casos/${casoId}/triagem`, {
+      amostras: [{ amostraId, resultado: 'apto' }],
+    });
+    expect(triagem.status, JSON.stringify(triagem.body)).toBe(201);
+
+    await entrar('patologista@lapato.local');
+
+    const macro = await req('POST', `/macroscopia/amostras/${amostraId}`);
+    expect(macro.status, JSON.stringify(macro.body)).toBe(201);
+
+    const laudo = await req('POST', `/laudos/casos/${casoId}`);
+    expect(laudo.status, JSON.stringify(laudo.body)).toBe(201);
   });
 });
 

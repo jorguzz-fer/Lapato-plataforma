@@ -37,11 +37,41 @@ export interface DadosLaudoPdf {
   };
   diagnosticos: Array<{ amostraIdentificador: string | null; textoExibido: string }>;
   margens: Array<{ nome: string; resultado: string; distanciaMm: string | null }>;
+  /**
+   * M12 secao 96: no laudo citologico, material, metodo, adequacao, descricao,
+   * interpretacao e recomendacoes sao secoes do documento - vazio na
+   * histopatologia, que nao tem avaliacao citologica.
+   */
+  citologia: Array<{
+    amostraIdentificador: string;
+    material: string | null;
+    adequacao: string | null;
+    motivosLimitacao: string[];
+    descricao: string | null;
+    interpretacao: string | null;
+    limitacoes: string[];
+    recomendacoes: string | null;
+  }>;
   /** `null` fora do fluxo de assinatura: e o que marca RASCUNHO. */
   assinatura: { identificacao: string; assinadaEm: Date } | null;
   /** URL completa que o QR aponta; `null` quando ainda nao ha o que validar. */
   urlValidacao: string | null;
 }
+
+/**
+ * M12 secoes 9-12: os rotulos da adequacao aparecem no documento entregue.
+ *
+ * "Adequada com limitacoes" nao vira "insatisfatoria" na impressao: a secao 11
+ * existe justamente para preservar a nuance, e o veterinario que recebe o laudo
+ * decide o proximo passo a partir dela.
+ */
+const ADEQUACAO_LABEL: Record<string, string> = {
+  adequada: 'Adequada',
+  adequada_com_limitacoes: 'Adequada com limitações',
+  pouco_representativa: 'Pouco representativa',
+  insatisfatoria: 'Insatisfatória',
+  nao_diagnostica: 'Não diagnóstica',
+};
 
 const MARGEM_LABEL: Record<string, string> = {
   livre: 'Livre',
@@ -71,6 +101,7 @@ export class LaudoPdfService {
 
     this.cabecalho(doc, dados);
     this.dadosDoCaso(doc, dados);
+    this.citologia(doc, dados.citologia);
     this.secaoTexto(doc, 'Descrição microscópica', dados.versao.descricaoMicroscopica);
     this.diagnosticos(doc, dados.diagnosticos);
     this.margens(doc, dados.margens);
@@ -165,6 +196,54 @@ export class LaudoPdfService {
       doc.moveDown(0.15);
     }
     doc.moveDown(0.5);
+  }
+
+  /**
+   * M12 secao 96. Uma amostra por bloco porque cada uma tem interpretacao
+   * propria (secao 115): tres massas aspiradas num caso podem ter tres
+   * adequacoes e tres conclusoes diferentes, e junta-las seria mentir sobre o
+   * que foi avaliado.
+   */
+  private citologia(doc: PDFKit.PDFDocument, itens: DadosLaudoPdf['citologia']): void {
+    if (itens.length === 0) return;
+    doc.fontSize(11).font('Helvetica-Bold').text('Avaliação citológica');
+    doc.font('Helvetica').fontSize(10.5).moveDown(0.25);
+
+    for (const c of itens) {
+      doc.font('Helvetica-Bold').fontSize(10.5).text(c.amostraIdentificador);
+      doc.font('Helvetica').fontSize(10.5);
+
+      if (c.material) doc.text(`Material: ${c.material}`);
+
+      if (c.adequacao) {
+        const motivos =
+          c.motivosLimitacao.length > 0 ? ` (${c.motivosLimitacao.join('; ')})` : '';
+        doc.text(`Adequação: ${ADEQUACAO_LABEL[c.adequacao] ?? c.adequacao}${motivos}`);
+      }
+
+      if (c.descricao?.trim()) {
+        doc.moveDown(0.2).text(c.descricao, { align: 'justify' });
+      }
+
+      if (c.interpretacao?.trim()) {
+        doc.moveDown(0.2).font('Helvetica-Bold').text('Interpretação: ', { continued: true });
+        doc.font('Helvetica').text(c.interpretacao, { align: 'justify' });
+      }
+
+      if (c.limitacoes.length > 0) {
+        doc.moveDown(0.2).text(`Limitações: ${c.limitacoes.join('; ')}.`);
+      }
+
+      /**
+       * M12 secao 69: a recomendacao NAO e frase automatica - so aparece
+       * porque o patologista a escreveu para este caso.
+       */
+      if (c.recomendacoes?.trim()) {
+        doc.moveDown(0.2).text(`Recomendações: ${c.recomendacoes}`, { align: 'justify' });
+      }
+
+      doc.moveDown(0.5);
+    }
   }
 
   private margens(doc: PDFKit.PDFDocument, itens: DadosLaudoPdf['margens']): void {

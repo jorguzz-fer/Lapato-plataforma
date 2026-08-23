@@ -9,6 +9,7 @@ import {
 import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import {
   amostra,
+  avaliacaoCitologica,
   assinaturaProfissional,
   caso,
   cliente,
@@ -28,6 +29,7 @@ import {
 import {
   MODULOS,
   PERMISSOES,
+  TIPO_COLETA_CITOLOGICA,
   type Lateralidade,
   type ResultadoMargem,
   type TipoVersaoLaudo,
@@ -42,6 +44,12 @@ import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
 import { ENV, type Env } from '../../core/config/env.js';
 import { StorageFactory } from '../../core/storage/storage.provider.js';
 import { LaudoPdfService, type DadosLaudoPdf } from './laudo-pdf.service.js';
+import { CitopatologiaService } from '../m12-citopatologia/citopatologia.service.js';
+
+/** Rotulo legivel do metodo de coleta, para o documento entregue (M12 secao 5). */
+const ROTULO_COLETA: Record<string, string> = Object.fromEntries(
+  TIPO_COLETA_CITOLOGICA.map((t) => [t.chave, t.rotulo]),
+);
 
 export interface DadosLaudo {
   descricaoMicroscopica?: string;
@@ -93,6 +101,7 @@ export class LaudosService {
     private readonly fluxo: FluxoService,
     private readonly storage: StorageFactory,
     private readonly pdf: LaudoPdfService,
+    private readonly citopatologia: CitopatologiaService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -287,43 +296,52 @@ export class LaudosService {
         // anteriores continuam intactas (ADR 0005).
         await tx.delete(diagnostico).where(eq(diagnostico.laudoVersaoId, versaoId));
 
-        await tx.insert(diagnostico).values(
-          dados.diagnosticos.map((d, i) => ({
-            tenantId: ctx.tenantId,
-            laudoVersaoId: versaoId,
-            amostraId: d.amostraId ?? null,
-            ordem: i,
-            hierarquia: d.hierarquia ?? 'principal',
-            processo: d.processo ?? null,
-            entidade: d.entidade ?? null,
-            comportamento: d.comportamento ?? null,
-            distribuicao: d.distribuicao ?? null,
-            severidade: d.severidade ?? null,
-            lateralidade: d.lateralidade ?? 'nao_aplicavel',
-            textoExibido: d.textoExibido,
-            classificacaoNome: d.classificacaoNome ?? null,
-            // M11 secao 42: a versao da classificacao fica congelada no caso.
-            classificacaoVersao: d.classificacaoVersao ?? null,
-            grau: d.grau ?? null,
-            // M13 secao 120: guardar apenas o escore final e proibido.
-            criteriosGraduacao: d.criteriosGraduacao ?? null,
-            provisorio: d.provisorio ?? false,
-          })),
-        );
+        /**
+         * Lista vazia e estado legitimo, nao erro: o rascunho comeca sem
+         * diagnostico, e no laudo citologico a morfologia e escrita antes de
+         * existir conclusao. Sem esta guarda, o `insert` sem valores estourava
+         * 500 - o que acontecia em toda gravacao de rascunho ainda sem
+         * diagnostico, inclusive na histopatologia.
+         */
+        if (dados.diagnosticos.length > 0)
+          await tx.insert(diagnostico).values(
+            dados.diagnosticos.map((d, i) => ({
+              tenantId: ctx.tenantId,
+              laudoVersaoId: versaoId,
+              amostraId: d.amostraId ?? null,
+              ordem: i,
+              hierarquia: d.hierarquia ?? 'principal',
+              processo: d.processo ?? null,
+              entidade: d.entidade ?? null,
+              comportamento: d.comportamento ?? null,
+              distribuicao: d.distribuicao ?? null,
+              severidade: d.severidade ?? null,
+              lateralidade: d.lateralidade ?? 'nao_aplicavel',
+              textoExibido: d.textoExibido,
+              classificacaoNome: d.classificacaoNome ?? null,
+              // M11 secao 42: a versao da classificacao fica congelada no caso.
+              classificacaoVersao: d.classificacaoVersao ?? null,
+              grau: d.grau ?? null,
+              // M13 secao 120: guardar apenas o escore final e proibido.
+              criteriosGraduacao: d.criteriosGraduacao ?? null,
+              provisorio: d.provisorio ?? false,
+            })),
+          );
       }
 
       if (dados.margens) {
         await tx.delete(margemMicroscopica).where(eq(margemMicroscopica.laudoVersaoId, versaoId));
-        await tx.insert(margemMicroscopica).values(
-          dados.margens.map((m) => ({
-            tenantId: ctx.tenantId,
-            laudoVersaoId: versaoId,
-            nome: m.nome,
-            resultado: m.resultado,
-            distanciaMm: m.distanciaMm?.toString() ?? null,
-            observacoes: m.observacoes ?? null,
-          })),
-        );
+        if (dados.margens.length > 0)
+          await tx.insert(margemMicroscopica).values(
+            dados.margens.map((m) => ({
+              tenantId: ctx.tenantId,
+              laudoVersaoId: versaoId,
+              nome: m.nome,
+              resultado: m.resultado,
+              distanciaMm: m.distanciaMm?.toString() ?? null,
+              observacoes: m.observacoes ?? null,
+            })),
+          );
       }
 
       await this.eventos.publicar(tx, {
@@ -439,12 +457,7 @@ export class LaudosService {
         versao.casoId,
         ctx.usuarioId,
       );
-      await this.sugestoes.registrarAchadosGuardian(
-        tx,
-        achados,
-        versao.casoId,
-        'assinatura_laudo',
-      );
+      await this.sugestoes.registrarAchadosGuardian(tx, achados, versao.casoId, 'assinatura_laudo');
       this.guardian.garantirSemBloqueio(achados, 'assinar laudo');
 
       const [assinatura] = await tx
@@ -498,10 +511,7 @@ export class LaudosService {
         })
         .where(eq(laudoVersao.id, versaoId));
 
-      await tx
-        .update(laudo)
-        .set({ status: 'assinado' })
-        .where(eq(laudo.id, versao.laudoId));
+      await tx.update(laudo).set({ status: 'assinado' }).where(eq(laudo.id, versao.laudoId));
 
       await this.eventos.publicar(tx, {
         tipo: 'laudo.assinado',
@@ -546,11 +556,7 @@ export class LaudosService {
       }
 
       const agora = new Date();
-      const [registro] = await tx
-        .select()
-        .from(laudo)
-        .where(eq(laudo.id, versao.laudoId))
-        .limit(1);
+      const [registro] = await tx.select().from(laudo).where(eq(laudo.id, versao.laudoId)).limit(1);
 
       await tx
         .update(laudo)
@@ -616,8 +622,7 @@ export class LaudosService {
       throw new BadRequestException('Adendo e correção exigem motivo.');
     }
 
-    const permissao =
-      tipo === 'adendo' ? PERMISSOES.LAUDO_ADENDO : PERMISSOES.LAUDO_CORRIGIR;
+    const permissao = tipo === 'adendo' ? PERMISSOES.LAUDO_ADENDO : PERMISSOES.LAUDO_CORRIGIR;
     if (!ctx.permissoes.has(permissao)) {
       throw new ForbiddenException(`Este perfil não pode criar ${tipo} de laudo.`);
     }
@@ -649,6 +654,48 @@ export class LaudosService {
           criadaPorId: ctx.usuarioId,
         })
         .returning();
+
+      /**
+       * A versao nova herda tambem o que e ESTRUTURADO. So o texto vinha junto,
+       * e o resultado era um adendo que nascia sem diagnostico nenhum - o
+       * Guardian barrava a assinatura ("o laudo nao possui diagnostico"), e a
+       * saida era redigitar o que ja estava assinado na versao anterior. M11 e
+       * claro: adendo acrescenta e correcao retifica; nenhum dos dois recomeca.
+       *
+       * As versoes anteriores continuam intactas: isto e copia, nao mudanca de
+       * dono (ADR 0005).
+       */
+      const diagnosticosAnteriores = await tx
+        .select()
+        .from(diagnostico)
+        .where(eq(diagnostico.laudoVersaoId, anterior.id))
+        .orderBy(asc(diagnostico.ordem));
+
+      if (diagnosticosAnteriores.length > 0) {
+        await tx.insert(diagnostico).values(
+          diagnosticosAnteriores.map(({ id: _id, criadoEm: _c, atualizadoEm: _a, ...resto }) => ({
+            ...resto,
+            laudoVersaoId: nova!.id,
+          })),
+        );
+      }
+
+      const margensAnteriores = await tx
+        .select()
+        .from(margemMicroscopica)
+        .where(eq(margemMicroscopica.laudoVersaoId, anterior.id));
+
+      if (margensAnteriores.length > 0) {
+        await tx.insert(margemMicroscopica).values(
+          margensAnteriores.map(({ id: _id, criadoEm: _c, atualizadoEm: _a, ...resto }) => ({
+            ...resto,
+            laudoVersaoId: nova!.id,
+          })),
+        );
+      }
+
+      // M12 e dono da propria estrutura - o M11 pede a copia, nao escreve nela.
+      await this.citopatologia.copiarParaVersao(tx, anterior.id, nova!.id);
 
       await tx
         .update(laudo)
@@ -698,9 +745,7 @@ export class LaudosService {
       const versao = await this.buscarVersao(tx, versaoId);
 
       if (!versao.pdfChave) {
-        throw new BadRequestException(
-          'Este laudo ainda não foi assinado. Use a pré-visualização.',
-        );
+        throw new BadRequestException('Este laudo ainda não foi assinado. Use a pré-visualização.');
       }
 
       const bytes = await this.storage.criar().baixar(versao.pdfChave);
@@ -738,7 +783,9 @@ export class LaudosService {
         .from(laudoVersao)
         .innerJoin(laudo, eq(laudo.id, laudoVersao.laudoId))
         .innerJoin(caso, eq(caso.id, laudo.casoId))
-        .where(and(eq(laudoVersao.tenantId, instituicao.id), eq(laudoVersao.codigoValidacao, codigo)))
+        .where(
+          and(eq(laudoVersao.tenantId, instituicao.id), eq(laudoVersao.codigoValidacao, codigo)),
+        )
         .limit(1);
 
       if (!linha || !linha.assinadaEm) throw new NotFoundException('Documento não encontrado.');
@@ -819,6 +866,32 @@ export class LaudosService {
         .orderBy(asc(margemMicroscopica.nome)),
     ]);
 
+    /**
+     * M12 secao 96: no laudo citologico, a avaliacao por amostra E o corpo do
+     * documento. Sai vazia na histopatologia - a consulta e a mesma, o que muda
+     * e haver ou nao o que buscar.
+     *
+     * O grau de certeza NAO entra: a secao 66 e explicita ao classifica-lo como
+     * componente interno, que ajuda auditoria e IA e nao precisa aparecer no
+     * laudo entregue.
+     */
+    const citologia = await tx
+      .select({
+        amostraIdentificador: amostra.identificador,
+        tipoColeta: avaliacaoCitologica.tipoColeta,
+        sitio: avaliacaoCitologica.sitio,
+        adequacao: avaliacaoCitologica.adequacao,
+        motivosLimitacao: avaliacaoCitologica.motivosLimitacao,
+        descricao: avaliacaoCitologica.descricaoCitologica,
+        interpretacao: avaliacaoCitologica.interpretacao,
+        limitacoes: avaliacaoCitologica.limitacoes,
+        recomendacoes: avaliacaoCitologica.recomendacoes,
+      })
+      .from(avaliacaoCitologica)
+      .innerJoin(amostra, eq(amostra.id, avaliacaoCitologica.amostraId))
+      .where(eq(avaliacaoCitologica.laudoVersaoId, versaoId))
+      .orderBy(asc(amostra.ordem));
+
     return {
       instituicao: { nome: linha.instituicaoNome },
       caso: { identificador: linha.casoIdentificador },
@@ -826,7 +899,9 @@ export class LaudosService {
         nome: linha.pacienteNome,
         especie: linha.pacienteEspecie,
         sexo: linha.pacienteSexo,
-        idade: linha.pacienteIdadeInformada ?? this.idadeAPartirDoNascimento(linha.pacienteDataNascimento),
+        idade:
+          linha.pacienteIdadeInformada ??
+          this.idadeAPartirDoNascimento(linha.pacienteDataNascimento),
       },
       cliente: { nome: linha.clienteNome },
       veterinario: linha.veterinarioNome
@@ -843,6 +918,19 @@ export class LaudosService {
       },
       diagnosticos,
       margens,
+      citologia: citologia.map((c) => ({
+        amostraIdentificador: c.amostraIdentificador,
+        material:
+          [ROTULO_COLETA[c.tipoColeta ?? ''] ?? c.tipoColeta, c.sitio]
+            .filter(Boolean)
+            .join(' — ') || null,
+        adequacao: c.adequacao,
+        motivosLimitacao: c.motivosLimitacao,
+        descricao: c.descricao,
+        interpretacao: c.interpretacao,
+        limitacoes: c.limitacoes,
+        recomendacoes: c.recomendacoes,
+      })),
       assinatura: assinaturaInfo
         ? { identificacao: assinaturaInfo.identificacao, assinadaEm: assinaturaInfo.assinadaEm }
         : null,
@@ -856,8 +944,7 @@ export class LaudosService {
   private idadeAPartirDoNascimento(dataNascimento: string | null): string | null {
     if (!dataNascimento) return null;
     const nascimento = new Date(dataNascimento);
-    const meses =
-      (Date.now() - nascimento.getTime()) / (1000 * 60 * 60 * 24 * 30.4375);
+    const meses = (Date.now() - nascimento.getTime()) / (1000 * 60 * 60 * 24 * 30.4375);
     if (meses < 12) return `${Math.floor(meses)} meses`;
     return `${Math.floor(meses / 12)} anos`;
   }

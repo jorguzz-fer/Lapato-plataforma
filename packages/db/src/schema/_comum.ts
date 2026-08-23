@@ -1,16 +1,20 @@
 import { pgEnum, timestamp, uuid } from 'drizzle-orm/pg-core';
 import {
+  ADEQUACAO_CITOLOGICA,
   ALERTA_PRAZO,
+  CELULARIDADE,
   CATEGORIA_USUARIO,
   ETAPA,
   FORMA_ENTREGA,
   GRAVIDADE_NC,
+  INTENSIDADE,
   LATERALIDADE,
   METODO_AMOSTRAGEM,
   NIVEL_BLOQUEIO,
   NIVEL_IA,
   NIVEL_IMAGEM,
   ORIGEM_IMAGEM,
+  PRESERVACAO_CELULAR,
   PRIORIDADE,
   RESULTADO_MARGEM,
   RESULTADO_TRIAGEM,
@@ -51,6 +55,10 @@ export const lateralidadeEnum = pgEnum('lateralidade', LATERALIDADE);
 export const resultadoMargemEnum = pgEnum('resultado_margem', RESULTADO_MARGEM);
 export const statusLaudoEnum = pgEnum('status_laudo', STATUS_LAUDO);
 export const tipoVersaoLaudoEnum = pgEnum('tipo_versao_laudo', TIPO_VERSAO_LAUDO);
+export const adequacaoCitologicaEnum = pgEnum('adequacao_citologica', ADEQUACAO_CITOLOGICA);
+export const celularidadeEnum = pgEnum('celularidade', CELULARIDADE);
+export const preservacaoCelularEnum = pgEnum('preservacao_celular', PRESERVACAO_CELULAR);
+export const intensidadeEnum = pgEnum('intensidade', INTENSIDADE);
 export const tipoImagemEnum = pgEnum('tipo_imagem', TIPO_IMAGEM);
 export const origemImagemEnum = pgEnum('origem_imagem', ORIGEM_IMAGEM);
 export const nivelImagemEnum = pgEnum('nivel_imagem', NIVEL_IMAGEM);

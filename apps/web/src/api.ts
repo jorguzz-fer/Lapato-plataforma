@@ -169,7 +169,8 @@ export interface Dossie {
   };
   cliente: { nomeFantasia: string };
   paciente: { nome: string; microchip: string | null };
-  servico: { nome: string };
+  /** A modalidade decide a forma da bancada de laudo (M12: interface adaptativa). */
+  servico: { nome: string; modalidade: string };
   estado: { etapa: string; previsaoLiberacao: string | null; bloqueado: boolean } | null;
   amostras: Array<{
     id: string;
@@ -360,6 +361,75 @@ export interface LaudoDoCaso {
     assinadaEm: string | null;
     substituida: boolean;
   }>;
+}
+
+// --- M12: avaliação citológica ----------------------------------------------
+
+/**
+ * M12: a avaliação é por AMOSTRA, não por laudo — três massas aspiradas no
+ * mesmo caso podem ter três adequações e três conclusões diferentes (§115).
+ */
+export interface AvaliacaoCitologica {
+  amostraId: string;
+  tipoColeta: string | null;
+  sitio: string | null;
+  numeroLaminas: number | null;
+  coloracoes: string[];
+  adequacao: string | null;
+  motivosLimitacao: string[];
+  celularidade: string | null;
+  preservacao: string | null;
+  fundo: string[];
+  hemorragia: string | null;
+  achadosHemorragia: string[];
+  necrose: string | null;
+  materialExtracelular: string[];
+  populacoes: Array<Record<string, unknown>>;
+  criteriosMalignidade: Record<string, string>;
+  mitoses: string | null;
+  inflamacao: Record<string, unknown> | null;
+  agentes: Array<Record<string, unknown>>;
+  descricaoCitologica: string | null;
+  interpretacao: string | null;
+  grauCerteza: string | null;
+  limitacoes: string[];
+  recomendacoes: string | null;
+}
+
+export interface CitologiaDaVersao {
+  versaoId: string;
+  assinada: boolean;
+  amostras: Array<{
+    id: string;
+    identificador: string;
+    letra: string;
+    descricao: string | null;
+    regiaoAnatomica: string | null;
+    lateralidade: string;
+    metodoColeta: string | null;
+  }>;
+  avaliacoes: AvaliacaoCitologica[];
+}
+
+/** Vocabulário estruturado do M12, servido pela API (§3). */
+export interface VocabularioCitologia {
+  tiposColeta: ReadonlyArray<{ chave: string; rotulo: string; grupo: string }>;
+  adequacao: readonly string[];
+  motivosLimitacao: readonly string[];
+  celularidade: readonly string[];
+  preservacao: readonly string[];
+  fundo: readonly string[];
+  intensidade: readonly string[];
+  materialExtracelular: readonly string[];
+  populacoes: readonly string[];
+  criteriosMalignidade: readonly string[];
+  mitoses: readonly string[];
+  tiposInflamacao: readonly string[];
+  gruposAgente: readonly string[];
+  localizacoesAgente: readonly string[];
+  significanciasAgente: readonly string[];
+  grauCerteza: readonly string[];
+  limitacoes: readonly string[];
 }
 
 // --- M08: ficha de macroscopia ----------------------------------------------

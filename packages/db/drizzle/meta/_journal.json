@@ -15,6 +15,13 @@
       "when": 1787256601782,
       "tag": "0001_huge_lyja",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787443533616,
+      "tag": "0002_fancy_morlocks",
+      "breakpoints": true
     }
   ]
 }

@@ -27,6 +27,7 @@ import {
   ErroApi,
   type ClienteFicha,
   type ClienteLista,
+  type ClienteResumo,
   type DuplicidadeCadastral,
   type VeterinarioLista,
 } from '../api';
@@ -474,6 +475,18 @@ function DialogoVeterinario({
   const [duplicidades, setDuplicidades] = useState<DuplicidadeCadastral[] | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
+  /**
+   * M03 secoes 12-13: o veterinario e pessoa unica com N vinculos, e e o
+   * VINCULO que o habilita como solicitante de um cliente. Cadastrar sem
+   * vincular produz um veterinario que existe e nao serve para nada - foi
+   * exatamente o que aconteceu no primeiro uso real. O vinculo entra aqui
+   * porque e aqui que quem cadastra esta pensando "o fulano atende a clinica
+   * tal"; a ficha do cliente continua sendo o lugar de gerir os vinculos
+   * depois.
+   */
+  const [clientes, setClientes] = useState<ClienteResumo[]>([]);
+  const [clienteVinculo, setClienteVinculo] = useState('');
+
   useEffect(() => {
     setNome(veterinario?.nome ?? '');
     setCrmv(veterinario?.crmv ?? '');
@@ -481,9 +494,18 @@ function DialogoVeterinario({
     setEmail(veterinario?.email ?? '');
     setTelefone(veterinario?.telefone ?? '');
     setEspecialidade(veterinario?.especialidade ?? '');
+    setClienteVinculo('');
     setDuplicidades(null);
     setErro(null);
   }, [veterinario, aberto]);
+
+  useEffect(() => {
+    if (!aberto || veterinario) return;
+    api
+      .get<ClienteResumo[]>('/catalogo/clientes')
+      .then(setClientes)
+      .catch(() => setClientes([]));
+  }, [aberto, veterinario]);
 
   async function salvar(ignorarDuplicidade = false) {
     setOcupado(true);
@@ -500,10 +522,17 @@ function DialogoVeterinario({
       if (veterinario) {
         await api.post(`/veterinarios/${veterinario.id}`, corpo);
       } else {
-        await api.post('/veterinarios', {
+        const novo = await api.post<{ id: string }>('/veterinarios', {
           ...corpo,
           ...(ignorarDuplicidade ? { ignorarDuplicidade: true } : {}),
         });
+
+        if (clienteVinculo) {
+          await api.post(`/veterinarios/${novo.id}/vinculos`, {
+            clienteId: clienteVinculo,
+            principal: true,
+          });
+        }
       }
       aoSalvar();
     } catch (err) {
@@ -565,6 +594,25 @@ function DialogoVeterinario({
               sx={{ flex: 1 }}
             />
           </Stack>
+
+          {/* Só na criação: depois, os vínculos se gerem na ficha do cliente,
+              onde a história completa (vigentes e encerrados) fica visível. */}
+          {!veterinario && (
+            <TextField
+              select
+              label="Vincular ao cliente"
+              value={clienteVinculo}
+              onChange={(e) => setClienteVinculo(e.target.value)}
+              helperText="Sem vínculo, ele não aparece como solicitante de nenhum cliente ao abrir um caso. Dá para vincular depois, na ficha do cliente."
+            >
+              <MenuItem value="">— vincular depois —</MenuItem>
+              {clientes.map((c) => (
+                <MenuItem key={c.id} value={c.id}>
+                  {c.nomeFantasia}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
 
           {duplicidades && (
             <Alert severity="warning">

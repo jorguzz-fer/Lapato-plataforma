@@ -165,8 +165,23 @@ export function Recebimento() {
               Number(informado) !== r.quantidadeDeclarada;
 
             return (
-              <Box key={r.id}>
-                <Typography sx={{ ...MONO, fontSize: 13, mb: { xs: 1, sm: 0 } }}>
+              /**
+               * Identificador de um lado, contagem do outro - em colunas de
+               * verdade.
+               *
+               * Antes, a linha da contagem subia por margem negativa para se
+               * alinhar ao identificador. Funcionava com identificador curto e
+               * quebrava com um real: `01-000001/26-F01` empurrava o rótulo
+               * "Declarado" para cima do próprio código. Layout que depende do
+               * tamanho do conteúdo não é layout.
+               */
+              <Stack
+                key={r.id}
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={{ xs: 1.5, sm: 2 }}
+                sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+              >
+                <Typography sx={{ ...MONO, fontSize: 13, flex: 1, minWidth: 0 }}>
                   {r.identificador}
                 </Typography>
 
@@ -175,8 +190,12 @@ export function Recebimento() {
                   * comparacao que da sentido a tela, e empilha-los a
                   * transformaria em dois numeros soltos.
                   */}
-                <Stack direction="row" spacing={2} sx={{ alignItems: 'center', mt: { sm: -3 } }}>
-                  <Box sx={{ flex: { xs: 1, sm: 'none' }, width: { sm: 120 }, ml: { sm: 'auto' } }}>
+                <Stack
+                  direction="row"
+                  spacing={2}
+                  sx={{ alignItems: 'center', flexShrink: 0 }}
+                >
+                  <Box sx={{ width: { xs: 'auto', sm: 90 }, minWidth: 72 }}>
                     <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
                       Declarado
                     </Typography>
@@ -197,11 +216,11 @@ export function Recebimento() {
                     focused={diverge || undefined}
                   />
 
-                  <Box sx={{ width: { xs: 'auto', sm: 140 } }}>
+                  <Box sx={{ width: { xs: 'auto', sm: 130 } }}>
                     {diverge && <Chip size="small" color="warning" label="▲ divergência" />}
                   </Box>
                 </Stack>
-              </Box>
+              </Stack>
             );
           })}
         </Stack>

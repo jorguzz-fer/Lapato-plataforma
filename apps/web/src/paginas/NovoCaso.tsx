@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Alert from '@mui/material/Alert';
 import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
@@ -285,11 +285,38 @@ export function NovoCaso() {
                 o.crmv ? `${o.nome} — CRMV ${o.crmv}/${o.crmvUf ?? ''}` : o.nome
               }
               sx={{ flex: 1 }}
+              /**
+               * Lista vazia com cliente escolhido é o caso que mais confunde:
+               * o veterinário existe no cadastro, mas não atende ESTE cliente
+               * (M03 §§12-13). Sem dizer isso, a tela parece quebrada — e o
+               * caminho para resolver fica a três cliques de distância, numa
+               * seção de outra tela.
+               */
+              noOptionsText={
+                cliente
+                  ? 'Nenhum veterinário vinculado a este cliente.'
+                  : 'Selecione o cliente primeiro.'
+              }
               renderInput={(params) => (
                 <TextField
                   {...params}
                   label="Veterinário solicitante"
-                  helperText={cliente ? 'Vinculados a este cliente' : 'Selecione o cliente primeiro'}
+                  helperText={
+                    !cliente ? (
+                      'Selecione o cliente primeiro'
+                    ) : veterinarios.length === 0 ? (
+                      <>
+                        Nenhum veterinário vinculado a {cliente.nomeFantasia}. O vínculo se
+                        cria na{' '}
+                        <Link to="/clientes" style={{ color: 'inherit' }}>
+                          ficha do cliente
+                        </Link>
+                        , em “Veterinários vinculados”.
+                      </>
+                    ) : (
+                      'Vinculados a este cliente'
+                    )
+                  }
                 />
               )}
             />

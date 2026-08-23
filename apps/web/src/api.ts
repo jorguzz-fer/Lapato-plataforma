@@ -1,4 +1,4 @@
-import type { AchadoGuardian, EstagioSessao } from '@lapato/shared';
+import type { AchadoGuardian, EstagioSessao, StatusExterno } from '@lapato/shared';
 
 /**
  * Cliente HTTP do front.
@@ -144,6 +144,12 @@ export async function baixarArquivo(caminho: string): Promise<Blob> {
 export interface Sessao {
   usuarioId: string;
   tenantId: string;
+  /**
+   * M04: preenchido quando a conta é externa. É o que decide se o login cai no
+   * sistema interno ou no Portal — e o isolamento de verdade é do servidor,
+   * que filtra tudo por este mesmo vínculo.
+   */
+  clienteId?: string | null;
   unidadeId: string | null;
   exigeSupervisao: boolean;
   permissoes: string[];
@@ -381,6 +387,72 @@ export interface LaudoDoCaso {
     assinadaEm: string | null;
     substituida: boolean;
   }>;
+}
+
+// --- M04: Portal do Cliente -------------------------------------------------
+
+export interface PainelPortal {
+  cliente: string;
+  examesEmAndamento: number;
+  laudosLiberados: number;
+  pendenciasAguardandoVoce: number;
+  solicitacoesAbertas: number;
+}
+
+export interface ExamePortal {
+  id: string;
+  identificador: string;
+  paciente: string;
+  tutor: string | null;
+  servico: string;
+  veterinario: string | null;
+  recebidoEm: string | null;
+  criadoEm: string;
+  /** Já traduzido pelo servidor: o Portal não conhece etapa técnica (M04 §12). */
+  status: StatusExterno;
+  previsaoLiberacao: string | null;
+  laudoDisponivel: boolean;
+}
+
+export interface ExameDetalhePortal extends Omit<ExamePortal, 'laudoDisponivel'> {
+  prazoSuspenso: boolean;
+  historicos: Array<{
+    id: string;
+    texto: string;
+    origem: string;
+    complementar: boolean;
+    criadoEm: string;
+  }>;
+  pendencias: Array<{
+    id: string;
+    tipo: string;
+    descricao: string;
+    status: string;
+    criadoEm: string;
+  }>;
+  linhaDoTempo: Array<{ rotulo: string; ocorridoEm: string }>;
+  laudo: {
+    liberadoEm: string;
+    versoes: Array<{
+      id: string;
+      versao: number;
+      tipo: string;
+      assinadaEm: string | null;
+      vigente: boolean;
+      codigoValidacao: string | null;
+    }>;
+  } | null;
+}
+
+export interface SolicitacaoPortal {
+  id: string;
+  identificador: string;
+  tipo: string;
+  descricao: string;
+  status: string;
+  criadoEm: string;
+  casoIdentificador: string;
+  paciente: string;
 }
 
 // --- M16: imagens do caso ---------------------------------------------------

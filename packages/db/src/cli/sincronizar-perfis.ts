@@ -66,9 +66,10 @@ async function main(): Promise<void> {
 
     await comTenant(db, instituicao.id, async (tx) => {
       let inseridas = 0;
+      let criados = 0;
 
       for (const def of PERFIS) {
-        const [perfil] = await tx
+        let [perfil] = await tx
           .select({ id: s.perfil.id })
           .from(s.perfil)
           .where(
@@ -80,15 +81,47 @@ async function main(): Promise<void> {
           )
           .limit(1);
 
-        /**
-         * Perfil padrao que nao existe na instituicao NAO e criado aqui.
-         * Ausencia pode ser escolha (a instituicao o removeu); recria-lo por
-         * baixo seria desfazer uma decisao administrativa em silencio.
-         */
         if (!perfil) {
-          console.warn(`  perfil "${def.chave}" nao existe em "${slug}" - pulado.`);
-          continue;
+          /**
+           * Distinguir "a instituicao removeu" de "a versao trouxe depois".
+           *
+           * Perfil INATIVADO foi decisao administrativa, e recria-lo por baixo
+           * seria desfaze-la em silencio. Perfil que nunca existiu - nenhuma
+           * linha, nem inativada - e a base tendo evoluido depois do
+           * provisionamento: foi o caso dos perfis do Portal, que chegaram com
+           * o M04. Sem criar, a instituicao existente nunca teria como dar
+           * acesso externo a ninguem.
+           */
+          const [inativado] = await tx
+            .select({ id: s.perfil.id })
+            .from(s.perfil)
+            .where(
+              and(eq(s.perfil.tenantId, instituicao.id), eq(s.perfil.chave, def.chave)),
+            )
+            .limit(1);
+
+          if (inativado) {
+            console.warn(`  perfil "${def.chave}" esta inativado em "${slug}" - mantido.`);
+            continue;
+          }
+
+          console.warn(`  perfil "${def.chave}" nao existe em "${slug}" - criando.`);
+          criados += 1;
+
+          if (simular) continue;
+
+          [perfil] = await tx
+            .insert(s.perfil)
+            .values({
+              tenantId: instituicao.id,
+              chave: def.chave,
+              nome: def.nome,
+              exigeSupervisao: def.exigeSupervisao ?? false,
+            })
+            .returning({ id: s.perfil.id });
         }
+
+        if (!perfil) continue;
 
         const esperadas = def.permissoes === 'todas' ? TODAS_PERMISSOES : def.permissoes;
 
@@ -127,14 +160,19 @@ async function main(): Promise<void> {
       }
 
       console.warn('');
-      if (inseridas === 0) {
+      const resumo = [
+        criados > 0 ? `${criados} perfil(s) criado(s)` : '',
+        inseridas > 0 ? `${inseridas} permissao(oes) adicionada(s)` : '',
+      ]
+        .filter(Boolean)
+        .join(', ');
+
+      if (!resumo) {
         console.warn(`Perfis de "${slug}" ja estao em dia com a base. Nada a fazer.`);
       } else if (simular) {
-        console.warn(`${inseridas} permissao(oes) faltando. SINCRONIZAR_SIMULAR=sim: nada gravado.`);
+        console.warn(`${resumo}. SINCRONIZAR_SIMULAR=sim: nada gravado.`);
       } else {
-        console.warn(
-          `${inseridas} permissao(oes) adicionada(s). Vale na proxima sessao de cada usuario.`,
-        );
+        console.warn(`${resumo}. Vale na proxima sessao de cada usuario.`);
       }
     });
   } finally {

@@ -96,6 +96,13 @@ export const PERMISSOES = {
   IMAGEM_EDITAR: 'imagem:editar',
   IMAGEM_EXPORTAR: 'imagem:exportar',
 
+  // M04 Portal do Cliente
+  /** Sem ela, nenhuma rota do Portal responde - e a porta do ambiente externo. */
+  PORTAL_ACESSAR: 'portal:acessar',
+  PORTAL_LAUDO_BAIXAR: 'portal:laudo_baixar',
+  PORTAL_HISTORICO_COMPLEMENTAR: 'portal:historico_complementar',
+  PORTAL_SOLICITAR: 'portal:solicitar',
+
   // M22 Qualidade e auditoria
   AUDITORIA_VISUALIZAR: 'auditoria:visualizar',
 } as const;

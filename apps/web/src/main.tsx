@@ -24,6 +24,11 @@ import { Administracao } from './paginas/Administracao';
 import { Usuarios } from './paginas/Usuarios';
 import { Dossie } from './paginas/Dossie';
 import { ValidarLaudo } from './paginas/ValidarLaudo';
+import { ShellPortal } from './portal/ShellPortal';
+import { PortalPainel } from './portal/PortalPainel';
+import { PortalExames } from './portal/PortalExames';
+import { PortalExame } from './portal/PortalExame';
+import { PortalSolicitacoes } from './portal/PortalSolicitacoes';
 import './estilos.css';
 
 /**
@@ -112,6 +117,55 @@ function App() {
   }
 
   const sair = () => irPara('anonimo');
+
+  /**
+   * M04: conta externa nao entra no sistema interno.
+   *
+   * Nao e questao de esconder menu: o Portal e outra aplicacao dentro da mesma
+   * casa (secao 55), e as rotas internas responderiam 403 de qualquer forma.
+   * Quem tem cliente vinculado tem o Portal inteiro e nada alem dele.
+   */
+  if (sessao.clienteId) {
+    const podeComplementar = sessao.permissoes.includes('portal:historico_complementar');
+
+    return (
+      <Routes>
+        <Route
+          path="/portal"
+          element={
+            <ShellPortal aoSair={sair}>
+              <PortalPainel />
+            </ShellPortal>
+          }
+        />
+        <Route
+          path="/portal/exames"
+          element={
+            <ShellPortal aoSair={sair}>
+              <PortalExames />
+            </ShellPortal>
+          }
+        />
+        <Route
+          path="/portal/exames/:id"
+          element={
+            <ShellPortal aoSair={sair}>
+              <PortalExame podeComplementar={podeComplementar} />
+            </ShellPortal>
+          }
+        />
+        <Route
+          path="/portal/solicitacoes"
+          element={
+            <ShellPortal aoSair={sair}>
+              <PortalSolicitacoes />
+            </ShellPortal>
+          }
+        />
+        <Route path="*" element={<Navigate to="/portal" replace />} />
+      </Routes>
+    );
+  }
 
   /**
    * M09/M02: o parceiro do laboratorio de apoio nao tem `fluxo:visualizar`, e

@@ -199,6 +199,62 @@ async function semear(tx: Transacao, tenantId: string): Promise<void> {
     clienteId: clinica!.id,
     principal: true,
   });
+
+  /**
+   * M04: um segundo cliente existe no seed por uma razao so - provar
+   * isolamento. Com um cliente unico, qualquer consulta do Portal passa no
+   * teste mesmo que o filtro nao exista.
+   */
+  const [petcare] = await tx
+    .insert(s.cliente)
+    .values({
+      tenantId,
+      nomeFantasia: 'PetCare Diagnóstico',
+      razaoSocial: 'PetCare Diagnóstico LTDA',
+      tipo: 'clinica',
+      codigo: 'PC',
+      status: 'ativo',
+    })
+    .returning();
+
+  // --- M04: contas do Portal ---------------------------------------------
+  const usuariosPortal = [
+    {
+      nome: 'Dr. Rafael Nogueira',
+      email: 'portal@clinicacentral.local',
+      perfil: PERFIS_PADRAO.VETERINARIO_SOLICITANTE,
+      clienteId: clinica!.id,
+    },
+    {
+      nome: 'Recepção PetCare',
+      email: 'portal@petcare.local',
+      perfil: PERFIS_PADRAO.CLIENTE,
+      clienteId: petcare!.id,
+    },
+  ];
+
+  for (const def of usuariosPortal) {
+    const [u] = await tx
+      .insert(s.usuario)
+      .values({
+        tenantId,
+        nomeCompleto: def.nome,
+        email: def.email,
+        senhaHash,
+        status: 'ativo',
+        categoria: 'externo',
+        // Conta do Portal nao pertence a uma unidade do laboratorio: ela
+        // pertence ao CLIENTE, e e dai que sai todo o escopo dela (M04 secao 5).
+        clienteId: def.clienteId,
+      })
+      .returning();
+
+    await tx.insert(s.usuarioPerfil).values({
+      tenantId,
+      usuarioId: u!.id,
+      perfilId: base.perfis.get(def.perfil)!,
+    });
+  }
 }
 
 async function main(): Promise<void> {
@@ -241,6 +297,8 @@ async function main(): Promise<void> {
     console.warn('  patologista@lapato.local  Patologista                [MFA]');
     console.warn('  residente@lapato.local    Residente (sem assinar/liberar)');
     console.warn('  apoio@lapato.local        Laboratório de Apoio (externo)');
+    console.warn('  portal@clinicacentral.local  Veterinário solicitante (Portal)');
+    console.warn('  portal@petcare.local         Cliente de outra instituição (Portal)');
     console.warn('');
     console.warn(`  [MFA] segredo TOTP de demonstracao: ${SEGREDO_MFA_DEMO}`);
   } finally {

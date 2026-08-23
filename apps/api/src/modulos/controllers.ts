@@ -51,6 +51,7 @@ import {
   ImagensService,
   type ArquivoRecebido,
 } from './m16-imagens/imagens.service.js';
+import { PortalService } from './m04-portal/portal.service.js';
 import {
   SolicitacoesService,
   type AbaSolicitacoes,
@@ -677,6 +678,8 @@ const novoUsuarioSchema = z.object({
   perfilIds: z.array(z.string().uuid()).min(1, 'Atribua ao menos um perfil.'),
   unidadePrincipalId: z.string().uuid().optional(),
   telefone: z.string().optional(),
+  /** M04: obrigatório quando algum perfil é do Portal - é o escopo da conta. */
+  clienteId: z.string().uuid().optional(),
 });
 
 const edicaoUsuarioSchema = z.object({
@@ -1465,5 +1468,106 @@ export class ImagensController {
     const dados = validarCorpo(z.object({ ordem: z.array(z.string().uuid()) }), corpo);
     await this.imagens.reordenarNoLaudo(casoId, dados.ordem);
     return { ok: true };
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// M04 - Portal do Cliente
+// ---------------------------------------------------------------------------
+
+/**
+ * Nenhuma rota daqui recebe `clienteId`.
+ *
+ * M04 seção 5: o isolamento não é visual, é de dados — e um identificador que
+ * viaja no request seria a escolha de quem o usuário quer ser. O escopo vem da
+ * conta, resolvido no servidor, do mesmo jeito que o tenant (ADR 0002).
+ */
+@ApiTags('M04 - Portal do Cliente')
+@Controller('portal')
+export class PortalController {
+  constructor(private readonly portal: PortalService) {}
+
+  @Get('painel')
+  @ExigePermissao(PERMISSOES.PORTAL_ACESSAR)
+  @ApiOperation({
+    summary: 'Painel do cliente',
+    description:
+      'Exames em andamento, laudos liberados, pendências que aguardam o cliente ' +
+      'e solicitações abertas (M04 §9).',
+  })
+  async painel() {
+    return this.portal.painel();
+  }
+
+  @Get('exames')
+  @ExigePermissao(PERMISSOES.PORTAL_ACESSAR)
+  @ApiOperation({
+    summary: 'Exames do cliente',
+    description:
+      'Busca por paciente, tutor ou registro — os três jeitos pelos quais o ' +
+      'cliente lembra do exame. Status já traduzidos para o vocabulário externo (§12).',
+  })
+  async exames(@Query('q') q?: string, @Query('situacao') situacao?: string) {
+    return this.portal.exames({
+      q,
+      situacao:
+        situacao === 'andamento' || situacao === 'liberados' ? situacao : 'todos',
+    });
+  }
+
+  @Get('exames/:casoId')
+  @ExigePermissao(PERMISSOES.PORTAL_ACESSAR)
+  @ApiOperation({
+    summary: 'Dossiê externo do exame',
+    description:
+      'A versão do caso que o cliente pode ver (§18): situação, previsão, histórico ' +
+      'enviado, pendências visíveis, linha do tempo traduzida e laudo, quando liberado.',
+  })
+  async exame(@Param('casoId', ParseUUIDPipe) casoId: string) {
+    return this.portal.exame(casoId);
+  }
+
+  @Post('exames/:casoId/historico')
+  @ExigePermissao(PERMISSOES.PORTAL_HISTORICO_COMPLEMENTAR)
+  @ApiOperation({
+    summary: 'Acrescenta informação clínica ao caso',
+    description:
+      'Acrescenta, nunca substitui (§§23-24): o patologista precisa reconstruir ' +
+      'a sequência do que soube e quando.',
+  })
+  async complementar(
+    @Param('casoId', ParseUUIDPipe) casoId: string,
+    @Body() corpo: unknown,
+  ) {
+    const dados = validarCorpo(
+      z.object({ texto: z.string().min(1, 'Escreva a informação a acrescentar.') }),
+      corpo,
+    );
+    await this.portal.complementarHistorico(casoId, dados.texto);
+    return { ok: true };
+  }
+
+  @Get('solicitacoes')
+  @ExigePermissao(PERMISSOES.PORTAL_ACESSAR)
+  @ApiOperation({ summary: 'Solicitações do cliente e seu andamento (§31)' })
+  async solicitacoes() {
+    return this.portal.solicitacoes();
+  }
+
+  @Get('laudos/:versaoId/pdf')
+  @ExigePermissao(PERMISSOES.PORTAL_LAUDO_BAIXAR)
+  @Header('Content-Type', 'application/pdf')
+  @ApiOperation({
+    summary: 'PDF do laudo liberado',
+    description:
+      'Só versão assinada de laudo liberado (§20). Rascunho, versão interna e ' +
+      'documento não assinado não existem deste lado. O acesso fica registrado (§22).',
+  })
+  async laudo(@Param('versaoId', ParseUUIDPipe) versaoId: string) {
+    const { bytes, nomeArquivo } = await this.portal.baixarLaudo(versaoId);
+    return new StreamableFile(bytes, {
+      disposition: `inline; filename="${nomeArquivo}"`,
+    });
   }
 }

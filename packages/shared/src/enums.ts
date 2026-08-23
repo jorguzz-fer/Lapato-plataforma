@@ -74,18 +74,10 @@ export const ALERTA_PRAZO = ['normal', 'atencao', 'critico', 'atrasado'] as cons
 export type AlertaPrazo = (typeof ALERTA_PRAZO)[number];
 
 /**
- * M07: status simplificado exposto ao Portal do Cliente. O Portal nao cria
- * status proprio - recebe a traducao feita pelo M07 (M04).
+ * M07: o status simplificado exposto ao Portal vive em `portal.ts`, junto da
+ * traducao que o produz - a lista aqui era um esboco do bootstrap, anterior a
+ * leitura do M04, e ficou sem uso.
  */
-export const STATUS_EXTERNO = [
-  'aguardando_material',
-  'material_recebido',
-  'em_analise',
-  'aguardando_informacao',
-  'laudo_liberado',
-  'cancelado',
-] as const;
-export type StatusExterno = (typeof STATUS_EXTERNO)[number];
 
 // --- M10 Solicitacoes e Pendencias -----------------------------------------
 

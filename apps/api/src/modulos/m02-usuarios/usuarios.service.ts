@@ -3,6 +3,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { hash } from '@node-rs/argon2';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
+  cliente,
   perfil,
   sessao,
   unidade,
@@ -10,6 +11,7 @@ import {
   usuarioPerfil,
   type Transacao,
 } from '@lapato/db';
+import { PERFIS_PADRAO } from '@lapato/shared';
 import { DbService } from '../../core/db/db.service.js';
 import { AuditoriaService } from '../../core/auditoria/auditoria.service.js';
 import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
@@ -20,6 +22,12 @@ export interface NovoUsuario {
   perfilIds: string[];
   unidadePrincipalId?: string;
   telefone?: string;
+  /**
+   * M04: cliente ao qual a conta EXTERNA pertence. E dele que sai todo o
+   * escopo do Portal - sem o vinculo, a conta entra e nao ve nada, porque nao
+   * existe "ver tudo" do lado de fora.
+   */
+  clienteId?: string;
 }
 
 /**
@@ -118,7 +126,7 @@ export class UsuariosService {
       }
 
       const perfisValidos = await tx
-        .select({ id: perfil.id })
+        .select({ id: perfil.id, chave: perfil.chave })
         .from(perfil)
         .where(
           and(
@@ -129,6 +137,32 @@ export class UsuariosService {
         );
       if (perfisValidos.length !== dados.perfilIds.length) {
         throw new BadRequestException('Perfil inexistente ou inativo na lista.');
+      }
+
+      /**
+       * M04 secao 5: perfil do Portal sem cliente vinculado seria uma conta
+       * externa sem escopo. Barrar na criacao evita a conta que entra e ve uma
+       * tela vazia sem ninguem entender por que.
+       */
+      const ehDoPortal = perfisValidos.some(
+        (p) =>
+          p.chave === PERFIS_PADRAO.CLIENTE ||
+          p.chave === PERFIS_PADRAO.VETERINARIO_SOLICITANTE,
+      );
+
+      if (ehDoPortal && !dados.clienteId) {
+        throw new BadRequestException(
+          'Conta do Portal precisa estar vinculada a um cliente.',
+        );
+      }
+
+      if (dados.clienteId) {
+        const [alvo] = await tx
+          .select({ id: cliente.id })
+          .from(cliente)
+          .where(and(eq(cliente.tenantId, ctx.tenantId), eq(cliente.id, dados.clienteId)))
+          .limit(1);
+        if (!alvo) throw new BadRequestException('Cliente inexistente.');
       }
 
       const senhaProvisoria = this.gerarSenhaProvisoria();
@@ -144,6 +178,8 @@ export class UsuariosService {
           senhaTrocaObrigatoria: true,
           status: 'ativo',
           unidadePrincipalId: dados.unidadePrincipalId ?? null,
+          categoria: dados.clienteId ? 'externo' : 'interno',
+          clienteId: dados.clienteId ?? null,
         })
         .returning({ id: usuario.id });
 

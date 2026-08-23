@@ -6,11 +6,38 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
 import { ENV, type Env } from './core/config/env.js';
+import { MigrationsService } from './core/db/migrations.service.js';
 import { ProblemaFilter } from './core/http/problema.filter.js';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   const env = app.get<Env>(ENV);
+
+  /**
+   * Schema do banco antes de qualquer request (ADR 0010).
+   *
+   * Fica antes do `listen` de proposito: um container que sobe e responde
+   * healthcheck com o banco atrasado passa por saudavel, e o proxy comeca a
+   * mandar trafego para uma API que vai dar 500 na primeira coluna que falta.
+   */
+  // `bufferLogs` segura os logs ate o `listen`. Se a checagem abaixo derrubar o
+  // processo antes disso, o motivo morreria no buffer - justamente a mensagem
+  // que o operador precisa ler.
+  app.flushLogs();
+
+  const migrations = app.get(MigrationsService);
+  if (migrations.situacao() === 'desatualizado') {
+    if (env.MIGRACOES_PENDENTES === 'bloquear') {
+      await app.close();
+      throw new Error(
+        `${migrations.descricao()}\n` +
+          'Para subir mesmo assim (emergencia), defina MIGRACOES_PENDENTES=avisar.',
+      );
+    }
+    Logger.warn(migrations.descricao(), 'Bootstrap');
+  } else if (migrations.situacao() === 'indeterminado') {
+    Logger.warn(migrations.descricao(), 'Bootstrap');
+  }
 
   // Blueprint secao 6: cabecalhos de seguranca e CSP estrita.
   app.use(helmet({ contentSecurityPolicy: env.NODE_ENV === 'production' }));

@@ -41,6 +41,20 @@ const envSchema = z.object({
 
   MFA_ISSUER: z.string().default('LAPATO'),
 
+  /**
+   * O que fazer quando o banco esta com migrations pendentes (ADR 0010).
+   *
+   * `bloquear` (padrao): a API recusa subir. Codigo novo contra schema velho
+   * nao falha na subida - falha depois, no primeiro request que toca a coluna
+   * que nao existe, com 500 para o usuario e o motivo escondido no log do
+   * Postgres. Foi exatamente assim que o M16 quebrou em producao.
+   *
+   * `avisar`: sobe e loga. Valvula de escape para emergencia (por exemplo,
+   * subir a API so para consultar dados enquanto a migration nao pode rodar).
+   * Nao e para ficar ligado.
+   */
+  MIGRACOES_PENDENTES: z.enum(['bloquear', 'avisar']).default('bloquear'),
+
   /** M17 / ADR 0007: `stub` mantem o sistema funcionando sem LLM. */
   COPILOT_PROVIDER: z.enum(['stub', 'claude']).default('stub'),
   ANTHROPIC_API_KEY: z.string().optional(),

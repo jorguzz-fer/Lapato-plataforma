@@ -428,11 +428,43 @@ interface. Cada aplicativo é independente: mudança só no front reimplanta só
 O **Pre-deployment Command** do `lapato-api` roda as migrations antes de o código
 novo subir. Isso não é ordem arbitrária — é o que torna o rollback possível.
 
+🌐 **Painel do Coolify** → `lapato-api` → *Configuration* → **Pre-deployment Command**:
+
+```
+node node_modules/@lapato/db/dist/cli/migrate.js
+```
+
+E a variável `DATABASE_MIGRATION_URL` precisa existir **no aplicativo** (não só no
+banco), apontando para o usuário dono do schema. Sem ela o comando falha; sem o
+comando, nada avisa.
+
+**A API recusa subir com o banco desatualizado** (ADR 0010). Se o pré-deploy não
+tiver rodado, o deploy falha na subida, com a lista de migrations pendentes no log,
+e o Coolify mantém a versão anterior no ar — que é coerente com o banco que existe.
+É o comportamento desejado: em 23/08/2026, antes dessa checagem existir, a API subiu
+contra um banco sem a coluna `miniatura_chave` e cada upload de imagem devolvia 500
+para o usuário, com a causa escondida no log do Postgres.
+
+Para subir mesmo assim, em emergência, defina `MIGRACOES_PENDENTES=avisar` no
+aplicativo. Não deixe ligado.
+
 Depois de cada deploy:
 
 ```bash
 curl -fsS https://app.lapato.com.br/api/v1/health
 ```
+
+A resposta traz o estado do schema:
+
+```json
+{ "status": "ok", "banco": "ok", "schema": "ok" }
+```
+
+| `schema` | Significa |
+|---|---|
+| `ok` | Banco e código na mesma versão |
+| `desatualizado` | Migrations pendentes — só aparece com `MIGRACOES_PENDENTES=avisar` |
+| `indeterminado` | A API não conseguiu ler o controle de migrations. Rode o `migrate.js` uma vez: é ele que concede a leitura à role da aplicação |
 
 ### Rollback
 

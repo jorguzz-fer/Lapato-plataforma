@@ -22,6 +22,7 @@ import { MacroscopiaService } from './modulos/m08-macroscopia/macroscopia.servic
 import { ProcessamentoService } from './modulos/m09-processamento/processamento.service.js';
 import { LaudosService } from './modulos/m11-laudos/laudos.service.js';
 import { CitopatologiaService } from './modulos/m12-citopatologia/citopatologia.service.js';
+import { ImagensService } from './modulos/m16-imagens/imagens.service.js';
 import { LaudoPdfService } from './modulos/m11-laudos/laudo-pdf.service.js';
 import { SolicitacoesService } from './modulos/m10-solicitacoes/solicitacoes.service.js';
 import { ClientesService } from './modulos/m03-clientes/clientes.service.js';
@@ -32,6 +33,7 @@ import {
   ClientesController,
   FluxoController,
   CitopatologiaController,
+  ImagensController,
   LaudosController,
   MacroscopiaController,
   ProcessamentoController,
@@ -66,6 +68,7 @@ import {
     ProcessamentoController,
     LaudosController,
     CitopatologiaController,
+    ImagensController,
     ValidacaoController,
     SolicitacoesController,
     FluxoController,
@@ -85,6 +88,7 @@ import {
     ProcessamentoService,
     LaudosService,
     CitopatologiaService,
+    ImagensService,
     LaudoPdfService,
     SolicitacoesService,
     ClientesService,

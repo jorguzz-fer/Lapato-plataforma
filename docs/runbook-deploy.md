@@ -475,9 +475,11 @@ Ambos precisam de decisão do dono do produto antes do go-live.
 ## 6. Decisões em aberto
 
 **Object storage — decidido (ADR 0009).** Cloudflare R2, atrás da interface
-`StorageProvider`: hoje guarda os PDFs dos laudos assinados, que são poucos e
-pequenos. O que continua em aberto é o M16 (imagens), onde o volume cresce sem
-parar — aí vale reavaliar retenção e classe de armazenamento, não o provedor.
+`StorageProvider`: guarda os PDFs dos laudos assinados e, desde o M16, as
+imagens do acervo. O provedor não está mais em aberto; o que fica é a política
+de retenção e classe de armazenamento, que só faz sentido decidir com o volume
+real do laboratório na mão — fotografia de macroscopia cresce sem parar, e o
+original nunca é descartado (M16 §22).
 
 **Residência de dados.** Recomendação: região Brasil, pela LGPD. Confirmar com o
 provedor escolhido e registrar como ADR (`docs/dados-pessoais.md`).

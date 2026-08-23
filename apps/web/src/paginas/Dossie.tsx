@@ -16,6 +16,7 @@ import ScienceOutlined from '@mui/icons-material/ScienceOutlined';
 import BiotechOutlined from '@mui/icons-material/BiotechOutlined';
 import { EVENTO_LABEL, type TipoEvento } from '@lapato/shared';
 import { api, type Dossie as DadosDossie } from '../api';
+import { GaleriaDoCaso } from './imagens/GaleriaDoCaso';
 
 /**
  * Dossie unico do caso (DIRETRIZES secoes 13 e 14).
@@ -25,11 +26,13 @@ import { api, type Dossie as DadosDossie } from '../api';
  * perfil, permissoes e etapa - mas o dossie e um so.
  */
 
-type Aba = 'visao' | 'amostras' | 'historico' | 'timeline';
+type Aba = 'visao' | 'amostras' | 'imagens' | 'historico' | 'timeline';
 
 const ABAS: Array<{ id: Aba; rotulo: string }> = [
   { id: 'visao', rotulo: 'Visão geral' },
   { id: 'amostras', rotulo: 'Amostras' },
+  // M16 seção 57: todo caso tem sua aba de imagens - o acervo é um só.
+  { id: 'imagens', rotulo: 'Imagens' },
   { id: 'historico', rotulo: 'Histórico' },
   { id: 'timeline', rotulo: 'Linha do tempo' },
 ];
@@ -292,6 +295,10 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
             ))}
           </Stack>
         </Card>
+      )}
+
+      {aba === 'imagens' && id && (
+        <GaleriaDoCaso casoId={id} permissoes={permissoes} moduloContexto="M05_RECEBIMENTO" />
       )}
 
       {aba === 'historico' && (

@@ -1,0 +1,1 @@
+ALTER TABLE "imagem" ADD COLUMN "miniatura_chave" text;

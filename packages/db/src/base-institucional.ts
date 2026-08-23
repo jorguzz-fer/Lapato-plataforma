@@ -53,6 +53,14 @@ export const PERFIS: Array<{
       PERMISSOES.VETERINARIO_VISUALIZAR,
       PERMISSOES.VETERINARIO_CRIAR,
       PERMISSOES.VETERINARIO_EDITAR,
+      /**
+       * M16 secao 5: o recebimento e uma das fontes de imagem do acervo -
+       * embalagem, frasco, identificacao, vazamento, nao conformidade. A foto
+       * da caixa que chegou molhada e a prova do que foi recebido, e quem a
+       * tira e quem abre a caixa.
+       */
+      PERMISSOES.IMAGEM_VISUALIZAR,
+      PERMISSOES.IMAGEM_ENVIAR,
       PERMISSOES.FLUXO_VISUALIZAR,
       PERMISSOES.SOLICITACAO_VISUALIZAR,
       PERMISSOES.SOLICITACAO_CRIAR,
@@ -85,6 +93,7 @@ export const PERFIS: Array<{
       PERMISSOES.SOLICITACAO_EXECUTAR,
       PERMISSOES.IMAGEM_VISUALIZAR,
       PERMISSOES.IMAGEM_ENVIAR,
+      PERMISSOES.IMAGEM_EDITAR,
     ],
   },
   {
@@ -125,6 +134,12 @@ export const PERFIS: Array<{
       PERMISSOES.PENDENCIA_RESOLVER,
       PERMISSOES.IMAGEM_VISUALIZAR,
       PERMISSOES.IMAGEM_ENVIAR,
+      /**
+       * M16 secao 36: escolher quais imagens entram no laudo e ato de quem
+       * assina o documento - a selecao integra o raciocinio diagnostico, nao a
+       * organizacao do arquivo.
+       */
+      PERMISSOES.IMAGEM_EDITAR,
       PERMISSOES.CLIENTE_VISUALIZAR,
       PERMISSOES.VETERINARIO_VISUALIZAR,
     ],
@@ -147,6 +162,9 @@ export const PERFIS: Array<{
       PERMISSOES.LAUDO_EDITAR,
       PERMISSOES.SOLICITACAO_VISUALIZAR,
       PERMISSOES.IMAGEM_VISUALIZAR,
+      // Elabora o laudo sob supervisao - e o laudo inclui escolher as imagens.
+      PERMISSOES.IMAGEM_ENVIAR,
+      PERMISSOES.IMAGEM_EDITAR,
     ],
   },
   {

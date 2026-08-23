@@ -66,11 +66,18 @@ async function requisitar<T>(
   caminho: string,
   corpo?: unknown,
 ): Promise<T> {
+  /**
+   * `FormData` vai cru: o navegador precisa definir o `content-type` com o
+   * boundary do multipart. Serializar como JSON, ou fixar o cabeçalho aqui,
+   * quebraria o upload de imagem (M16).
+   */
+  const ehFormulario = corpo instanceof FormData;
+
   const resposta = await fetch(`${BASE}${caminho}`, {
     method: metodo,
     credentials: 'include',
-    headers: corpo === undefined ? {} : { 'content-type': 'application/json' },
-    body: corpo === undefined ? undefined : JSON.stringify(corpo),
+    headers: corpo === undefined || ehFormulario ? {} : { 'content-type': 'application/json' },
+    body: corpo === undefined ? undefined : ehFormulario ? corpo : JSON.stringify(corpo),
   });
 
   const texto = await resposta.text();
@@ -97,7 +104,20 @@ async function requisitar<T>(
 export const api = {
   get: <T>(caminho: string) => requisitar<T>('GET', caminho),
   post: <T>(caminho: string, corpo?: unknown) => requisitar<T>('POST', caminho, corpo),
+  /** Envio de arquivo (M16): multipart, com o boundary definido pelo navegador. */
+  postForm: <T>(caminho: string, corpo: FormData) => requisitar<T>('POST', caminho, corpo),
 };
+
+/**
+ * URL absoluta de um recurso servido pela API, para uso direto em `<img src>`.
+ *
+ * A galeria do M16 não baixa os bytes por `fetch`: deixa o navegador buscá-los,
+ * com cache e carregamento preguiçoso. Como o cookie é `credentials: include`
+ * por padrão em imagens de mesma origem, a sessão viaja normalmente.
+ */
+export function urlArquivo(caminho: string): string {
+  return `${BASE}${caminho}`;
+}
 
 /**
  * Baixa um arquivo binário (o PDF do laudo) - `requisitar` assume corpo JSON e
@@ -361,6 +381,31 @@ export interface LaudoDoCaso {
     assinadaEm: string | null;
     substituida: boolean;
   }>;
+}
+
+// --- M16: imagens do caso ---------------------------------------------------
+
+export interface ImagemDoCaso {
+  id: string;
+  identificador: string;
+  tipo: string;
+  /** M16 §83: o que veio de fora aparece marcado, e não se confunde com o interno. */
+  origem: string;
+  moduloContexto: string;
+  objetoTipo: string | null;
+  objetoId: string | null;
+  legenda: string | null;
+  descricao: string | null;
+  metadados: Record<string, unknown>;
+  capturadaEm: string | null;
+  enviadaEm: string;
+  autor: string | null;
+  incluidaNoLaudo: boolean;
+  ordemNoLaudo: number | null;
+  autorizadaEnsino: boolean;
+  inativadaEm: string | null;
+  motivoInativacao: string | null;
+  temMiniatura: boolean;
 }
 
 // --- M12: avaliação citológica ----------------------------------------------

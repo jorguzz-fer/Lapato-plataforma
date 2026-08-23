@@ -7,6 +7,10 @@ import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
@@ -173,6 +177,7 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
   const [comentariosRevisao, setComentariosRevisao] = useState('');
   const [discordancia, setDiscordancia] = useState(false);
   const [motivoVersao, setMotivoVersao] = useState('');
+  const [motivoReabertura, setMotivoReabertura] = useState<string | null>(null);
   const [codigoAssinatura, setCodigoAssinatura] = useState<string | null>(null);
   const [processandoPdf, setProcessandoPdf] = useState<'previa' | 'download' | null>(null);
 
@@ -408,6 +413,15 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
       // documento entregue (M11).
       setCodigoAssinatura(r.codigoValidacao);
     }, 'Não foi possível assinar o laudo.');
+  }
+
+  function reabrirParaEdicao() {
+    const motivo = (motivoReabertura ?? '').trim();
+    void agir(async () => {
+      await api.post(`/laudos/versoes/${versao!.id}/reabertura`, { motivo });
+      setMotivoReabertura(null);
+      carregar(await api.get<LaudoDoCaso | null>(`/laudos/casos/${id}`));
+    }, 'Não foi possível retomar a edição.');
   }
 
   function liberar() {
@@ -1204,6 +1218,23 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
               </>
             )}
 
+            {/**
+              * Saida de `aguardando_assinatura`, que antes era um beco: o
+              * formulario vira leitura para nao editar por baixo do revisor, e
+              * so o revisor podia devolver - mas nessa altura ele ja aprovou.
+              * Quem elabora ficava vendo "adicione um diagnostico" numa tela
+              * que nao deixava adicionar.
+              */}
+            {laudo.status === 'aguardando_assinatura' && !assinada && podeEditar && (
+              <Button
+                variant="outlined"
+                onClick={() => setMotivoReabertura('')}
+                disabled={ocupado}
+              >
+                Retomar edição
+              </Button>
+            )}
+
             {laudo.status === 'aguardando_assinatura' && !assinada && (
               <Tooltip
                 title={
@@ -1237,6 +1268,41 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
           </Stack>
         </>
       )}
+
+      <Dialog
+        open={motivoReabertura !== null}
+        onClose={() => setMotivoReabertura(null)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Retomar edição</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 13, color: 'text.secondary', mb: 2 }}>
+            O laudo volta a rascunho e <strong>a aprovação do revisor é desfeita</strong> —
+            aprovar é um parecer sobre um texto específico. Depois de editar, ele passa
+            pela revisão de novo.
+          </Typography>
+          <TextField
+            label="Por que o laudo volta para edição"
+            value={motivoReabertura ?? ''}
+            onChange={(e) => setMotivoReabertura(e.target.value)}
+            multiline
+            minRows={2}
+            fullWidth
+            autoFocus
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMotivoReabertura(null)}>Cancelar</Button>
+          <Button
+            variant="contained"
+            disabled={ocupado || (motivoReabertura ?? '').trim().length < 5}
+            onClick={() => void reabrirParaEdicao()}
+          >
+            Retomar edição
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 

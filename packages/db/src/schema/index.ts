@@ -23,3 +23,4 @@ export * from './citologia.js';
 export * from './imagens.js';
 export * from './ia.js';
 export * from './cadaveres.js';
+export * from './necropsia.js';

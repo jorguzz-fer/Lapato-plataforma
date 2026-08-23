@@ -1,7 +1,15 @@
 import { pgEnum, timestamp, uuid } from 'drizzle-orm/pg-core';
 import {
   ADEQUACAO_CITOLOGICA,
+  CAVIDADE_NECROPSIA,
+  CLASSIFICACAO_LESAO,
   CONSERVACAO_CADAVER,
+  CONSERVACAO_NECROPSIA,
+  ESTADO_EXAME_ORGAO,
+  GRAU_CERTEZA_CAUSA,
+  MECANISMO_TERMINAL,
+  MODALIDADE_NECROPSIA,
+  RELACAO_LESAO,
   DESTINACAO_CADAVER,
   EMBALAGEM_CADAVER,
   IDENTIFICACAO_EXTERNA,
@@ -116,3 +124,18 @@ export const tipoMovimentacaoCadaverEnum = pgEnum(
 );
 export const tipoBloqueioCadaverEnum = pgEnum('tipo_bloqueio_cadaver', TIPO_BLOQUEIO_CADAVER);
 export const destinacaoCadaverEnum = pgEnum('destinacao_cadaver', DESTINACAO_CADAVER);
+
+// --- M14 Necropsia ---------------------------------------------------------
+export const modalidadeNecropsiaEnum = pgEnum('modalidade_necropsia', MODALIDADE_NECROPSIA);
+export const conservacaoNecropsiaEnum = pgEnum('conservacao_necropsia', CONSERVACAO_NECROPSIA);
+export const cavidadeNecropsiaEnum = pgEnum('cavidade_necropsia', CAVIDADE_NECROPSIA);
+export const estadoExameOrgaoEnum = pgEnum('estado_exame_orgao', ESTADO_EXAME_ORGAO);
+export const classificacaoLesaoEnum = pgEnum('classificacao_lesao', CLASSIFICACAO_LESAO);
+export const mecanismoTerminalEnum = pgEnum('mecanismo_terminal', MECANISMO_TERMINAL);
+export const grauCertezaCausaEnum = pgEnum('grau_certeza_causa', GRAU_CERTEZA_CAUSA);
+/**
+ * `tipo_relacao_lesao`, e nao `relacao_lesao`: o Postgres cria um tipo composto
+ * implicito com o nome de cada tabela, e a tabela `relacao_lesao` colidiria com
+ * o enum de mesmo nome.
+ */
+export const relacaoLesaoEnum = pgEnum('tipo_relacao_lesao', RELACAO_LESAO);

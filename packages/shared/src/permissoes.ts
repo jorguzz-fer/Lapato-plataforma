@@ -96,6 +96,18 @@ export const PERMISSOES = {
   IMAGEM_EDITAR: 'imagem:editar',
   IMAGEM_EXPORTAR: 'imagem:exportar',
 
+  // M14 Necropsia
+  NECROPSIA_VISUALIZAR: 'necropsia:visualizar',
+  /** Abrir o exame, descrever orgaos, criar lesoes e ligar relacoes. */
+  NECROPSIA_EXECUTAR: 'necropsia:executar',
+  /**
+   * Concluir a causa mortis. Separada de `executar` porque a conclusao e o ato
+   * interpretativo do modulo - o residente descreve, quem conclui assina
+   * (M14 secao 163: "a IA nao devera determinar autonomamente a causa da
+   * morte", e o mesmo vale para quem so registra achados).
+   */
+  NECROPSIA_CONCLUIR: 'necropsia:concluir',
+
   // M15 Controle de Cadaveres
   CADAVER_VISUALIZAR: 'cadaver:visualizar',
   CADAVER_RECEBER: 'cadaver:receber',

@@ -203,6 +203,182 @@ export const TABELAS_MESTRES: Array<{ chave: string; nome: string; termos: strin
 /** Setores criados na unidade sede, na ordem do fluxo. */
 const SETORES_PADRAO = ['recepcao', 'triagem', 'macroscopia', 'microscopia', 'histotecnica'];
 
+/**
+ * M07: workflows padrao, um por modalidade.
+ *
+ * Duas decisoes estruturais moram aqui:
+ *
+ * 1. **O workflow e da MODALIDADE, nao do servico** (`servicoId` nulo). As
+ *    etapas condicionais ja consultam as flags de cada servico, entao um
+ *    servico novo criado pelo M01 usa o mesmo workflow. Amarrado ao servico,
+ *    todo servico novo nascia sem fluxo e recusava casos.
+ *
+ * 2. **A citologia nao e histopatologia sem macroscopia.** Poderia parecer que
+ *    as flags do servico bastariam para reaproveitar um unico workflow, mas a
+ *    entrada da microscopia e diferente: na histopatologia as laminas nascem do
+ *    processamento (`laminas.disponiveis`), enquanto na citologia elas chegam
+ *    prontas da coleta e a triagem apta ja habilita a leitura (M12 secao 4).
+ *    Com um workflow so, o caso citologico sem processamento ficaria parado em
+ *    triagem esperando um evento que ninguem emitiria.
+ */
+export const WORKFLOWS_PADRAO: Array<{
+  nome: string;
+  modalidade: string;
+  etapas: Array<{
+    etapa: (typeof s.etapaWorkflow.$inferInsert)['etapa'];
+    ordem: number;
+    obrigatoriedade?: 'obrigatoria' | 'condicional' | 'opcional';
+    condicao?: Record<string, unknown>;
+    eventosEntrada?: string[];
+    eventosSaida?: string[];
+    setorTipo?: string;
+    limitePermanenciaHoras?: number;
+  }>;
+}> = [
+  {
+    nome: 'Histopatologia padrão',
+    modalidade: 'histopatologia',
+    /**
+     * As etapas condicionais consultam as flags do servico. Assim o mesmo motor
+     * atende biopsia, peca cirurgica e revisao de laminas sem codigo especial:
+     * a etapa que nao se aplica e simplesmente pulada (M07).
+     */
+    etapas: [
+      {
+        etapa: 'aguardando_recebimento',
+        ordem: 10,
+        eventosSaida: ['material.recebido'],
+        setorTipo: 'recepcao',
+      },
+      {
+        etapa: 'aguardando_triagem',
+        ordem: 20,
+        condicao: { 'servico.exigeTriagem': true },
+        eventosEntrada: ['material.recebido'],
+        eventosSaida: ['triagem.concluida.apta', 'triagem.concluida.ressalva'],
+        setorTipo: 'triagem',
+        limitePermanenciaHoras: 24,
+      },
+      {
+        etapa: 'aguardando_macroscopia',
+        ordem: 30,
+        obrigatoriedade: 'condicional',
+        condicao: { 'servico.exigeMacroscopia': true },
+        eventosEntrada: ['triagem.concluida.apta', 'triagem.concluida.ressalva'],
+        eventosSaida: ['macroscopia.concluida'],
+        setorTipo: 'macroscopia',
+        limitePermanenciaHoras: 48,
+      },
+      {
+        etapa: 'aguardando_processamento',
+        ordem: 40,
+        obrigatoriedade: 'condicional',
+        condicao: { 'servico.exigeProcessamento': true },
+        eventosEntrada: ['macroscopia.concluida'],
+        eventosSaida: ['laminas.disponiveis'],
+        setorTipo: 'histotecnica',
+        limitePermanenciaHoras: 72,
+      },
+      {
+        etapa: 'aguardando_microscopia',
+        ordem: 50,
+        condicao: { 'servico.exigeMicroscopia': true },
+        eventosEntrada: ['laminas.disponiveis'],
+        eventosSaida: ['laudo.enviado_revisao', 'laudo.assinado'],
+        setorTipo: 'microscopia',
+        limitePermanenciaHoras: 48,
+      },
+      {
+        etapa: 'aguardando_revisao',
+        ordem: 60,
+        obrigatoriedade: 'opcional',
+        eventosEntrada: ['laudo.enviado_revisao'],
+        eventosSaida: ['laudo.revisao_concluida'],
+        setorTipo: 'microscopia',
+      },
+      {
+        etapa: 'aguardando_assinatura',
+        ordem: 70,
+        eventosEntrada: ['laudo.revisao_concluida'],
+        eventosSaida: ['laudo.assinado'],
+        setorTipo: 'microscopia',
+      },
+      { etapa: 'liberado', ordem: 80, eventosEntrada: ['laudo.liberado'] },
+    ],
+  },
+  {
+    nome: 'Citopatologia padrão',
+    modalidade: 'citopatologia',
+    etapas: [
+      {
+        etapa: 'aguardando_recebimento',
+        ordem: 10,
+        eventosSaida: ['material.recebido'],
+        setorTipo: 'recepcao',
+      },
+      {
+        etapa: 'aguardando_triagem',
+        ordem: 20,
+        condicao: { 'servico.exigeTriagem': true },
+        eventosEntrada: ['material.recebido'],
+        eventosSaida: ['triagem.concluida.apta', 'triagem.concluida.ressalva'],
+        setorTipo: 'triagem',
+        limitePermanenciaHoras: 24,
+      },
+      {
+        /**
+         * M12 secao 4: coloracao e preparacao entram "quando necessaria" - e a
+         * excecao, nao a regra. O prazo aperta porque a citologia costuma ser
+         * o exame rapido do laboratorio (o servico CITO nasce com 3 dias).
+         */
+        etapa: 'aguardando_processamento',
+        ordem: 30,
+        obrigatoriedade: 'condicional',
+        condicao: { 'servico.exigeProcessamento': true },
+        eventosEntrada: ['triagem.concluida.apta', 'triagem.concluida.ressalva'],
+        eventosSaida: ['laminas.disponiveis'],
+        setorTipo: 'histotecnica',
+        limitePermanenciaHoras: 24,
+      },
+      {
+        /**
+         * Entra por QUALQUER um dos tres: as laminas ficaram prontas na
+         * histotecnica, ou a triagem aprovou o material que ja chegou em
+         * lamina. Sem os eventos de triagem aqui, o caso citologico sem
+         * processamento nunca sairia da triagem.
+         */
+        etapa: 'aguardando_microscopia',
+        ordem: 40,
+        condicao: { 'servico.exigeMicroscopia': true },
+        eventosEntrada: [
+          'laminas.disponiveis',
+          'triagem.concluida.apta',
+          'triagem.concluida.ressalva',
+        ],
+        eventosSaida: ['laudo.enviado_revisao', 'laudo.assinado'],
+        setorTipo: 'microscopia',
+        limitePermanenciaHoras: 24,
+      },
+      {
+        etapa: 'aguardando_revisao',
+        ordem: 50,
+        obrigatoriedade: 'opcional',
+        eventosEntrada: ['laudo.enviado_revisao'],
+        eventosSaida: ['laudo.revisao_concluida'],
+        setorTipo: 'microscopia',
+      },
+      {
+        etapa: 'aguardando_assinatura',
+        ordem: 60,
+        eventosEntrada: ['laudo.revisao_concluida'],
+        eventosSaida: ['laudo.assinado'],
+        setorTipo: 'microscopia',
+      },
+      { etapa: 'liberado', ordem: 70, eventosEntrada: ['laudo.liberado'] },
+    ],
+  },
+];
+
 export interface OpcoesBaseInstitucional {
   /** Nome da unidade principal. Toda instituicao tem pelo menos uma. */
   unidadeSede?: { nome?: string; codigo?: string; sigla?: string };
@@ -385,110 +561,26 @@ export async function criarBaseInstitucional(
     },
   ]);
 
-  // --- M07: workflow da histopatologia -----------------------------------
-  const [workflow] = await tx
-    .insert(s.definicaoWorkflow)
-    .values({
-      tenantId,
-      nome: 'Histopatologia padrão',
-      /**
-       * PADRAO da modalidade (`servicoId` nulo), nao do servico HISTO: as
-       * etapas condicionais ja consultam as flags de cada servico, entao um
-       * servico novo criado pelo M01 usa este mesmo workflow. Amarrado ao
-       * servico, todo servico novo de histopatologia nascia sem fluxo.
-       */
-      servicoId: null,
-      modalidade: 'histopatologia',
-    })
-    .returning();
+  // --- M07: workflows padrao por modalidade -------------------------------
+  for (const definicao of WORKFLOWS_PADRAO) {
+    const [workflow] = await tx
+      .insert(s.definicaoWorkflow)
+      .values({
+        tenantId,
+        nome: definicao.nome,
+        servicoId: null,
+        modalidade: definicao.modalidade,
+      })
+      .returning();
 
-  /**
-   * As etapas condicionais consultam as flags do servico. Assim o mesmo motor
-   * atende histopatologia, citologia e revisao de laminas sem codigo especial:
-   * a etapa que nao se aplica e simplesmente pulada (M07).
-   */
-  await tx.insert(s.etapaWorkflow).values([
-    {
-      tenantId,
-      workflowId: workflow!.id,
-      etapa: 'aguardando_recebimento',
-      ordem: 10,
-      eventosSaida: ['material.recebido'],
-      setorTipo: 'recepcao',
-    },
-    {
-      tenantId,
-      workflowId: workflow!.id,
-      etapa: 'aguardando_triagem',
-      ordem: 20,
-      condicao: { 'servico.exigeTriagem': true },
-      eventosEntrada: ['material.recebido'],
-      eventosSaida: ['triagem.concluida.apta', 'triagem.concluida.ressalva'],
-      setorTipo: 'triagem',
-      limitePermanenciaHoras: 24,
-    },
-    {
-      tenantId,
-      workflowId: workflow!.id,
-      etapa: 'aguardando_macroscopia',
-      ordem: 30,
-      obrigatoriedade: 'condicional',
-      condicao: { 'servico.exigeMacroscopia': true },
-      eventosEntrada: ['triagem.concluida.apta', 'triagem.concluida.ressalva'],
-      eventosSaida: ['macroscopia.concluida'],
-      setorTipo: 'macroscopia',
-      limitePermanenciaHoras: 48,
-    },
-    {
-      tenantId,
-      workflowId: workflow!.id,
-      etapa: 'aguardando_processamento',
-      ordem: 40,
-      obrigatoriedade: 'condicional',
-      condicao: { 'servico.exigeProcessamento': true },
-      eventosEntrada: ['macroscopia.concluida'],
-      eventosSaida: ['laminas.disponiveis'],
-      setorTipo: 'histotecnica',
-      limitePermanenciaHoras: 72,
-    },
-    {
-      tenantId,
-      workflowId: workflow!.id,
-      etapa: 'aguardando_microscopia',
-      ordem: 50,
-      condicao: { 'servico.exigeMicroscopia': true },
-      eventosEntrada: ['laminas.disponiveis'],
-      eventosSaida: ['laudo.enviado_revisao', 'laudo.assinado'],
-      setorTipo: 'microscopia',
-      limitePermanenciaHoras: 48,
-    },
-    {
-      tenantId,
-      workflowId: workflow!.id,
-      etapa: 'aguardando_revisao',
-      ordem: 60,
-      obrigatoriedade: 'opcional',
-      eventosEntrada: ['laudo.enviado_revisao'],
-      eventosSaida: ['laudo.revisao_concluida'],
-      setorTipo: 'microscopia',
-    },
-    {
-      tenantId,
-      workflowId: workflow!.id,
-      etapa: 'aguardando_assinatura',
-      ordem: 70,
-      eventosEntrada: ['laudo.revisao_concluida'],
-      eventosSaida: ['laudo.assinado'],
-      setorTipo: 'microscopia',
-    },
-    {
-      tenantId,
-      workflowId: workflow!.id,
-      etapa: 'liberado',
-      ordem: 80,
-      eventosEntrada: ['laudo.liberado'],
-    },
-  ]);
+    await tx.insert(s.etapaWorkflow).values(
+      definicao.etapas.map((etapa) => ({
+        ...etapa,
+        tenantId,
+        workflowId: workflow!.id,
+      })),
+    );
+  }
 
   // --- M02: perfis e permissoes ------------------------------------------
   const perfis = new Map<string, string>();

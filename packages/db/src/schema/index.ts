@@ -19,5 +19,6 @@ export * from './macroscopia.js';
 export * from './processamento.js';
 export * from './solicitacoes.js';
 export * from './laudo.js';
+export * from './citologia.js';
 export * from './imagens.js';
 export * from './ia.js';

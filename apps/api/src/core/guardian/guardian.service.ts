@@ -3,12 +3,14 @@ import { and, eq } from 'drizzle-orm';
 import {
   amostra,
   assinaturaProfissional,
+  avaliacaoCitologica,
   caso,
   cassete,
   diagnostico,
   laudoVersao,
   margemMicroscopica,
   paciente,
+  servico,
   type Transacao,
 } from '@lapato/db';
 import {
@@ -134,6 +136,7 @@ export class GuardianService {
 
     achados.push(...(await this.verificarLateralidade(tx, casoId, laudoVersaoId)));
     achados.push(...(await this.verificarMargens(tx, laudoVersaoId, versao.conteudo)));
+    achados.push(...(await this.verificarCitologia(tx, casoId, laudoVersaoId, diagnosticos)));
 
     return ordenarPorGravidade(achados);
   }
@@ -257,6 +260,143 @@ export class GuardianService {
         mensagem: `Margens ainda indeterminadas: ${semResultado.map((m) => m.nome).join(', ')}.`,
         modulo: MODULOS.M13_HISTOPATOLOGIA,
         campo: 'margens',
+      });
+    }
+
+    return achados;
+  }
+
+  /**
+   * M12 secoes 89 e 92-94: coerencia da avaliacao citologica.
+   *
+   * A regra central do modulo esta na secao 93 e e a unica que BLOQUEIA:
+   * "a amostra foi classificada como nao diagnostica, mas existe diagnostico
+   * definitivo preenchido - o sistema devera solicitar revisao". Ela merece
+   * nivel critico porque o laudo estaria afirmando com seguranca algo que o
+   * proprio material declarou nao sustentar; a secao 142 e explicita ao separar
+   * "nao diagnostico" de "negativo".
+   *
+   * As demais avisam e seguem, como manda o M17: a IA sugere, o profissional
+   * decide.
+   */
+  private async verificarCitologia(
+    tx: Transacao,
+    casoId: string,
+    laudoVersaoId: string,
+    diagnosticos: Array<{ comportamento: string | null; textoExibido: string }>,
+  ): Promise<AchadoGuardian[]> {
+    const ctx = exigirContexto();
+    const achados: AchadoGuardian[] = [];
+
+    const [registro] = await tx
+      .select({ modalidade: servico.modalidade })
+      .from(caso)
+      .innerJoin(servico, eq(servico.id, caso.servicoId))
+      .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.id, casoId)))
+      .limit(1);
+
+    if (registro?.modalidade !== 'citopatologia') return achados;
+
+    const [avaliacoes, amostras] = await Promise.all([
+      tx
+        .select()
+        .from(avaliacaoCitologica)
+        .where(
+          and(
+            eq(avaliacaoCitologica.tenantId, ctx.tenantId),
+            eq(avaliacaoCitologica.laudoVersaoId, laudoVersaoId),
+          ),
+        ),
+      tx
+        .select({ id: amostra.id, identificador: amostra.identificador })
+        .from(amostra)
+        .where(and(eq(amostra.tenantId, ctx.tenantId), eq(amostra.casoId, casoId))),
+    ]);
+
+    // M12 secao 142: toda interpretacao citologica se prende a uma amostra
+    // identificada - amostra sem avaliacao e laudo pela metade.
+    const avaliadas = new Set(avaliacoes.map((a) => a.amostraId));
+    const semAvaliacao = amostras.filter((a) => !avaliadas.has(a.id));
+
+    if (semAvaliacao.length > 0) {
+      achados.push({
+        codigo: 'CITOLOGIA_AMOSTRA_SEM_AVALIACAO',
+        nivel: 'atencao',
+        mensagem: `Sem avaliação citológica registrada: ${semAvaliacao
+          .map((a) => a.identificador)
+          .join(', ')}.`,
+        modulo: MODULOS.M12_CITOPATOLOGIA,
+        campo: 'avaliacaoCitologica',
+      });
+    }
+
+    const inconclusivas = avaliacoes.filter(
+      (a) => a.adequacao === 'nao_diagnostica' || a.adequacao === 'insatisfatoria',
+    );
+
+    /**
+     * Diagnostico "definitivo" aqui e o que o laudo afirma sem ressalva: sem
+     * marca de provisorio e sem hedge textual do vocabulario da secao 65
+     * ("compativel com", "sugestivo de", "suspeito para"...). O laudo que ja diz
+     * "inconclusivo" ou "nao diagnostico" esta coerente com a amostra e nao
+     * deve ser barrado.
+     */
+    const hedge =
+      /(compat[íi]vel com|sugestivo|indicativo|suspeito|inconclusiv|n[ãa]o diagn[óo]stic|prov[áa]vel|poss[íi]vel)/i;
+    const afirmativos = diagnosticos.filter((d) => !hedge.test(d.textoExibido));
+
+    if (inconclusivas.length > 0 && afirmativos.length > 0) {
+      achados.push({
+        codigo: 'CITOLOGIA_DIAGNOSTICO_EM_AMOSTRA_INADEQUADA',
+        nivel: 'critico',
+        mensagem:
+          `A amostra foi classificada como ${inconclusivas[0]!.adequacao === 'nao_diagnostica' ? 'não diagnóstica' : 'insatisfatória'}, ` +
+          'mas o laudo traz diagnóstico afirmativo. Revise a adequação, o grau de certeza ou a redação.',
+        modulo: MODULOS.M12_CITOPATOLOGIA,
+        campo: 'adequacao',
+        evidencias: { diagnosticos: afirmativos.map((d) => d.textoExibido) },
+      });
+    }
+
+    // M12 secao 89: alta confianca declarada sobre material que o proprio
+    // patologista marcou como limitado.
+    const confiantesEmMaterialLimitado = avaliacoes.filter(
+      (a) =>
+        a.grauCerteza === 'alta' &&
+        (a.adequacao === 'pouco_representativa' || a.adequacao === 'adequada_com_limitacoes'),
+    );
+
+    if (confiantesEmMaterialLimitado.length > 0) {
+      achados.push({
+        codigo: 'CITOLOGIA_CERTEZA_ALTA_EM_MATERIAL_LIMITADO',
+        nivel: 'atencao',
+        mensagem:
+          'Grau de certeza "alta" registrado sobre amostra com limitações. Confirmar se a limitação não afeta a conclusão.',
+        modulo: MODULOS.M12_CITOPATOLOGIA,
+        campo: 'grauCerteza',
+      });
+    }
+
+    /**
+     * M12 secao 94: diagnostico de malignidade sem nenhum criterio estruturado.
+     * "Isso nao significa necessariamente erro, mas podera gerar alerta
+     * discreto" - a propria secao pede o tom, e por isso e sugestao, nao
+     * atencao: existem malignidades reconhecidas por padrao, e nao por criterio
+     * a criterio.
+     */
+    const criteriosRegistrados = avaliacoes.some(
+      (a) =>
+        Object.values(a.criteriosMalignidade).filter((v) => v && v !== 'ausente').length > 0,
+    );
+
+    if (diagnosticos.some((d) => d.comportamento === 'maligno') && !criteriosRegistrados) {
+      achados.push({
+        codigo: 'CITOLOGIA_MALIGNO_SEM_CRITERIOS',
+        nivel: 'sugestao',
+        mensagem:
+          'Diagnóstico de neoplasia maligna sem nenhum critério de malignidade estruturado. Confirmar?',
+        modulo: MODULOS.M12_CITOPATOLOGIA,
+        campo: 'criteriosMalignidade',
       });
     }
 

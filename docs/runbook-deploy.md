@@ -354,6 +354,31 @@ As contas nascem com o nome do perfil ("Patologista (conta inicial)").
 individuais por lá e bloqueie estas. M02 §3: uma conta é uma pessoa, não uma
 função; estas existem para a instituição começar, não para ficar.
 
+### 3.6 Sincronizando os workflows de modalidade
+
+Necessário quando uma versão nova acrescenta uma **modalidade** — a
+citopatologia entrou com o M12, e instituição provisionada antes não tem o
+workflow dela. Sem isso, cadastrar um caso citológico devolve `400` com
+"Nenhum workflow ativo para a modalidade citopatologia".
+
+```bash
+# sem o slug, lista as instituições
+node node_modules/@lapato/db/dist/cli/sincronizar-workflows.js
+
+# confere o que faria
+SINCRONIZAR_TENANT_SLUG=lapato SINCRONIZAR_SIMULAR=sim \
+node node_modules/@lapato/db/dist/cli/sincronizar-workflows.js
+
+# grava
+SINCRONIZAR_TENANT_SLUG=lapato \
+node node_modules/@lapato/db/dist/cli/sincronizar-workflows.js
+```
+
+**Só preenche ausência.** Modalidade que já tem workflow padrão ativo é deixada
+como está, inclusive com etapas que a instituição tenha alterado — o fluxo
+configurado é decisão dela. Vale para casos cadastrados a partir de então; casos
+já abertos seguem no workflow em que nasceram.
+
 ### Verificação
 
 ```bash

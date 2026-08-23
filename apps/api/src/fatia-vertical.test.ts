@@ -1060,15 +1060,19 @@ describe('administração e configurações (M01)', () => {
 
   test('serviço de modalidade sem workflow orienta em vez de estourar', async () => {
     /**
-     * Estado alcançável pela tela: o admin cria o serviço de citopatologia
-     * antes de existir workflow da modalidade. O caso é recusado com 400 e a
-     * mensagem diz o que falta - era um 500 opaco.
+     * Estado alcançável pela tela: o admin cria um serviço de necropsia antes
+     * de a modalidade ter workflow - o M14 ainda não foi construído. O caso é
+     * recusado com 400 e a mensagem diz o que falta; era um 500 opaco.
+     *
+     * O teste usava citopatologia até ela ganhar workflow padrão no M12. A
+     * regra é a mesma: o que se prova aqui é o erro de configuração ser
+     * legível, não qual modalidade está faltando hoje.
      */
     const servico = await req('POST', '/administracao/servicos', {
-      nome: `Citologia ${marca}`,
-      codigo: `CITO${marca.slice(-4)}`,
+      nome: `Necropsia ${marca}`,
+      codigo: `NEC${marca.slice(-4)}`,
       categoria: 'anatomia_patologica',
-      modalidade: 'citopatologia',
+      modalidade: 'necropsia',
     });
     expect(servico.status).toBe(201);
 
@@ -1291,6 +1295,265 @@ describe('cadastro de clientes e veterinários (M03)', () => {
     const vets = await req('GET', `/veterinarios?q=Aurora Teste ${marca}`);
     expect(vets.status, JSON.stringify(vets.body)).toBe(200);
     expect(vets.body[0].vinculos).toContain(`Clínica Aurora ${marca}`);
+  });
+});
+
+describe('citopatologia de ponta a ponta (M12)', () => {
+  /**
+   * A citologia nao e histopatologia com menos etapas: ela tem workflow
+   * proprio (M07), avaliacao por amostra (M12 secoes 115 e 142) e uma regra de
+   * Guardian que so existe aqui - diagnostico afirmativo sobre material que o
+   * proprio patologista declarou nao diagnostico (secao 93).
+   *
+   * Este bloco percorre o caminho inteiro: cadastro, triagem, bancada
+   * citologica, bloqueio, correcao, assinatura e adendo.
+   */
+  const marca = Date.now().toString().slice(-6);
+
+  let casoId: string;
+  let amostraId: string;
+  let laudoId: string;
+  let versaoId: string;
+
+  test('caso citológico chega à microscopia sem passar por macroscopia nem processamento', async () => {
+    await entrar('admin@lapato.local');
+
+    const servicos = await req('GET', '/catalogo/servicos');
+    const cito = servicos.body.find((s: any) => s.codigo === 'CITO');
+    expect(cito, 'serviço de citopatologia ausente no catálogo').toBeTruthy();
+
+    const clientes = await req('GET', '/catalogo/clientes');
+
+    const criado = await req('POST', '/casos', {
+      servicoId: cito.id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Mel ${marca}`, sexo: 'femea' },
+      historicoClinico: 'Massa cutânea em região cervical, crescimento rápido.',
+      amostras: [
+        {
+          descricao: 'PAAF de massa cervical',
+          regiaoAnatomica: 'Região cervical',
+          lateralidade: 'esquerdo',
+          metodoColeta: 'PAAF',
+        },
+      ],
+      recipientes: [{ quantidadeDeclarada: 3 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    casoId = criado.body.id;
+
+    const dossie = await req('GET', `/casos/${casoId}`);
+    amostraId = dossie.body.amostras[0].id;
+    const recipienteId = dossie.body.recipientes[0].id;
+    expect(dossie.body.estado.etapa).toBe('aguardando_recebimento');
+
+    await req('POST', `/casos/${casoId}/recebimento`, {
+      conferencia: [{ recipienteId, quantidadeRecebida: 3 }],
+    });
+
+    const triagem = await req('POST', `/casos/${casoId}/triagem`, {
+      amostras: [{ amostraId, resultado: 'apto' }],
+    });
+    expect(triagem.status, JSON.stringify(triagem.body)).toBe(201);
+
+    /**
+     * O ponto do teste: as lâminas chegaram prontas da coleta, então a triagem
+     * apta já habilita a leitura (M12 seção 4). No workflow da histopatologia
+     * a microscopia só entra por `laminas.disponiveis`, e o caso citológico
+     * ficaria parado na triagem esperando um evento que ninguém emitiria.
+     */
+    const depois = await req('GET', `/casos/${casoId}`);
+    expect(depois.body.estado.etapa).toBe('aguardando_microscopia');
+  });
+
+  test('a bancada citológica grava a avaliação por amostra', async () => {
+    await entrar('patologista@lapato.local');
+
+    const abrir = await req('POST', `/laudos/casos/${casoId}`);
+    expect(abrir.status, JSON.stringify(abrir.body)).toBe(201);
+    laudoId = abrir.body.laudoId;
+    versaoId = abrir.body.versaoId;
+
+    // O vocabulário vem do servidor, não de constantes da tela (M12 seção 3).
+    const vocab = await req('GET', '/citologia/vocabulario');
+    expect(vocab.status).toBe(200);
+    expect(vocab.body.adequacao).toContain('nao_diagnostica');
+    expect(vocab.body.criteriosMalignidade).toContain('anisocariose');
+
+    const antes = await req('GET', `/citologia/versoes/${versaoId}`);
+    expect(antes.status).toBe(200);
+    // As amostras vêm mesmo sem avaliação: é a lista do que falta avaliar.
+    expect(antes.body.amostras).toHaveLength(1);
+    expect(antes.body.avaliacoes).toHaveLength(0);
+
+    const salvo = await req('POST', `/citologia/versoes/${versaoId}/amostras/${amostraId}`, {
+      tipoColeta: 'paaf',
+      sitio: 'massa cervical',
+      numeroLaminas: 3,
+      adequacao: 'nao_diagnostica',
+      motivosLimitacao: ['baixa celularidade', 'excesso de sangue'],
+      celularidade: 'muito_baixa',
+      preservacao: 'ruim',
+      fundo: ['hemorrágico', 'proteináceo'],
+      hemorragia: 'acentuada',
+      populacoes: [{ tipo: 'indeterminada' }],
+      grauCerteza: 'limitada',
+      descricaoCitologica: 'Esfregaços acentuadamente hemodiluídos, com raras células preservadas.',
+      limitacoes: ['baixa celularidade'],
+    });
+    expect(salvo.status, JSON.stringify(salvo.body)).toBe(201);
+
+    const relido = await req('GET', `/citologia/versoes/${versaoId}`);
+    const avaliacao = relido.body.avaliacoes[0];
+    expect(avaliacao.amostraId).toBe(amostraId);
+    expect(avaliacao.adequacao).toBe('nao_diagnostica');
+    // Fundo é multivalorado por exigência do módulo (seção 16).
+    expect(avaliacao.fundo).toEqual(['hemorrágico', 'proteináceo']);
+    expect(avaliacao.motivosLimitacao).toHaveLength(2);
+
+    // Regravar a mesma amostra atualiza, não duplica.
+    await req('POST', `/citologia/versoes/${versaoId}/amostras/${amostraId}`, {
+      adequacao: 'nao_diagnostica',
+      celularidade: 'baixa',
+    });
+    const segunda = await req('GET', `/citologia/versoes/${versaoId}`);
+    expect(segunda.body.avaliacoes).toHaveLength(1);
+    expect(segunda.body.avaliacoes[0].celularidade).toBe('baixa');
+
+    /**
+     * Amostra que não é do caso não entra no laudo (M12 seção 142): sem esta
+     * checagem, a interpretação citológica poderia se prender ao material de
+     * outro paciente.
+     */
+    const recusado = await req(
+      'POST',
+      `/citologia/versoes/${versaoId}/amostras/00000000-0000-4000-8000-000000000000`,
+      { adequacao: 'adequada' },
+    );
+    expect(recusado.status).toBe(400);
+  });
+
+  test('rascunho sem diagnóstico ainda é gravável', async () => {
+    /**
+     * Pego na verificação visual: a bancada citológica salva a morfologia antes
+     * de existir conclusão, e o save ia com `diagnosticos: []`. O insert sem
+     * valores estourava 500 - e o mesmo acontecia em qualquer rascunho de
+     * histopatologia salvo antes do primeiro diagnóstico.
+     */
+    const r = await req('POST', `/laudos/versoes/${versaoId}`, {
+      descricaoMicroscopica: 'Leitura em andamento.',
+      diagnosticos: [],
+      margens: [],
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+  });
+
+  test('Guardian barra diagnóstico afirmativo em amostra não diagnóstica (M12 seção 93)', async () => {
+    await req('POST', `/laudos/versoes/${versaoId}`, {
+      descricaoMicroscopica: 'Ver avaliação por amostra.',
+      diagnosticos: [
+        {
+          amostraId,
+          textoExibido: 'Mastocitoma cutâneo',
+          entidade: 'Mastocitoma',
+          comportamento: 'maligno',
+          lateralidade: 'esquerdo',
+        },
+      ],
+    });
+
+    const r = await req('POST', `/laudos/versoes/${versaoId}/assinatura`);
+    expect(r.status, JSON.stringify(r.body)).toBe(409);
+
+    const achado = r.body.achados.find(
+      (a: any) => a.codigo === 'CITOLOGIA_DIAGNOSTICO_EM_AMOSTRA_INADEQUADA',
+    );
+    expect(achado, JSON.stringify(r.body.achados)).toBeTruthy();
+    expect(achado.nivel).toBe('critico');
+
+    /**
+     * Seção 94: maligno sem nenhum critério estruturado gera alerta DISCRETO -
+     * a própria seção pede o tom, então é sugestão e não pode bloquear
+     * sozinho.
+     */
+    const discreto = r.body.achados.find(
+      (a: any) => a.codigo === 'CITOLOGIA_MALIGNO_SEM_CRITERIOS',
+    );
+    expect(discreto?.nivel).toBe('sugestao');
+  });
+
+  test('a mesma conclusão, com a ressalva que o material sustenta, assina', async () => {
+    /**
+     * Duas formas de sair do bloqueio, e o teste usa as duas: a adequação passa
+     * a refletir o que foi visto depois de reavaliar as lâminas, e a redação
+     * assume o grau de certeza que o material permite (seção 65). O laudo que
+     * diz "sugestivo de" está coerente com amostra limitada - o que o Guardian
+     * impede é afirmar sem ressalva sobre material declarado insuficiente.
+     */
+    await req('POST', `/citologia/versoes/${versaoId}/amostras/${amostraId}`, {
+      tipoColeta: 'paaf',
+      sitio: 'massa cervical',
+      numeroLaminas: 3,
+      adequacao: 'adequada_com_limitacoes',
+      motivosLimitacao: ['excesso de sangue'],
+      celularidade: 'moderada',
+      preservacao: 'boa',
+      fundo: ['hemorrágico'],
+      populacoes: [{ tipo: 'células redondas', predominante: true }],
+      criteriosMalignidade: { anisocariose: 'moderada', 'nucléolos proeminentes': 'discreto' },
+      descricaoCitologica:
+        'Esfregaços moderadamente celulares, com população discreta de células redondas.',
+      interpretacao: 'Achados sugestivos de neoplasia de células redondas.',
+      grauCerteza: 'moderada',
+      recomendacoes: 'Histopatologia para classificação definitiva.',
+    });
+
+    await req('POST', `/laudos/versoes/${versaoId}`, {
+      diagnosticos: [
+        {
+          amostraId,
+          textoExibido: 'Sugestivo de mastocitoma cutâneo',
+          entidade: 'Mastocitoma',
+          comportamento: 'maligno',
+          lateralidade: 'esquerdo',
+        },
+      ],
+    });
+
+    const r = await req('POST', `/laudos/versoes/${versaoId}/assinatura`);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(r.body.codigoValidacao).toBeTruthy();
+
+    // M12 seção 96: o documento entregue traz a avaliação citológica.
+    const pdf = await fetch(`${servidor}${BASE}/laudos/versoes/${versaoId}/pdf`, {
+      headers: { cookie },
+    });
+    expect(pdf.status).toBe(200);
+    expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  test('adendo herda a avaliação citológica e os diagnósticos da versão anterior', async () => {
+    await req('POST', `/laudos/versoes/${versaoId}/liberacao`);
+
+    const nova = await req('POST', `/laudos/${laudoId}/versoes`, {
+      tipo: 'adendo',
+      motivo: 'Resultado de imuno-histoquímica em cell block.',
+    });
+    expect(nova.status, JSON.stringify(nova.body)).toBe(201);
+
+    /**
+     * M11: adendo ACRESCENTA. A versão nova nascia só com o texto, sem
+     * diagnóstico nem avaliação - e o Guardian barrava a assinatura de um laudo
+     * cujo conteúdo já estava assinado na versão anterior.
+     */
+    const citologia = await req('GET', `/citologia/versoes/${nova.body.versaoId}`);
+    expect(citologia.body.avaliacoes).toHaveLength(1);
+    expect(citologia.body.avaliacoes[0].adequacao).toBe('adequada_com_limitacoes');
+
+    const laudoAtual = await req('GET', `/laudos/casos/${casoId}`);
+    expect(laudoAtual.body.versaoCorrente.versao).toBe(2);
+    expect(laudoAtual.body.diagnosticos).toHaveLength(1);
+    expect(laudoAtual.body.diagnosticos[0].entidade).toBe('Mastocitoma');
   });
 });
 

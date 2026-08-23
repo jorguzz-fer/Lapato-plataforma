@@ -33,9 +33,16 @@ import {
   api,
   baixarArquivo,
   ErroApi,
+  type CitologiaDaVersao,
   type Dossie as DadosDossie,
   type LaudoDoCaso,
+  type VocabularioCitologia,
 } from '../api';
+import {
+  PainelCitologia,
+  temConteudo,
+  type AvaliacaoEditavel,
+} from './laudo/PainelCitologia';
 
 /**
  * M11 + M13 - Microscopia e laudo. Parte 1: elaboracao.
@@ -146,6 +153,10 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
   const [descricao, setDescricao] = useState('');
   const [diagnosticos, setDiagnosticos] = useState<Diagnostico[]>([]);
   const [margens, setMargens] = useState<Margem[]>([]);
+  // M12: só carregado quando o caso é citológico - a bancada muda de forma.
+  const [citologia, setCitologia] = useState<CitologiaDaVersao | null>(null);
+  const [vocabulario, setVocabulario] = useState<VocabularioCitologia | null>(null);
+  const [avaliacoes, setAvaliacoes] = useState<Record<string, AvaliacaoEditavel>>({});
   const [comentarios, setComentarios] = useState('');
   const [conclusao, setConclusao] = useState('');
   const [notaInterna, setNotaInterna] = useState('');
@@ -212,6 +223,34 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
   const versao = laudo?.versaoCorrente;
   const assinada = versao?.assinadaEm != null;
   /**
+   * M12 seção 6 - interface adaptativa: "a citologia não deverá possuir uma
+   * única ficha universal". A modalidade do serviço decide o que a bancada
+   * mostra; margens e contagem mitótica são histopatologia (M13) e não fazem
+   * sentido sobre um esfregaço.
+   */
+  const citologico = dossie?.servico.modalidade === 'citopatologia';
+  const versaoId = versao?.id;
+
+  useEffect(() => {
+    if (!citologico || !versaoId) return;
+
+    Promise.all([
+      api.get<CitologiaDaVersao>(`/citologia/versoes/${versaoId}`),
+      api.get<VocabularioCitologia>('/citologia/vocabulario'),
+    ])
+      .then(([dados, vocab]) => {
+        setCitologia(dados);
+        setVocabulario(vocab);
+        setAvaliacoes(
+          Object.fromEntries(
+            dados.avaliacoes.map(({ amostraId, ...resto }) => [amostraId, resto]),
+          ),
+        );
+      })
+      .catch(() => setErro('Não foi possível carregar a avaliação citológica.'));
+  }, [citologico, versaoId]);
+
+  /**
    * Editável só enquanto o laudo está nas mãos de quem elabora. Em revisão ou
    * adiante o formulário vira leitura — editar por baixo do revisor tornaria a
    * aprovação dele um parecer sobre um texto que já não existe.
@@ -277,6 +316,18 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
           ...(m.observacoes.trim() ? { observacoes: m.observacoes.trim() } : {}),
         })),
       });
+
+      /**
+       * M12: uma chamada por amostra, porque cada uma é uma avaliação
+       * independente (§115). Vai só o que tem conteúdo - amostra intocada não
+       * gera registro vazio no banco.
+       */
+      if (citologico) {
+        for (const [amostraId, avaliacao] of Object.entries(avaliacoes)) {
+          if (!temConteudo(avaliacao)) continue;
+          await api.post(`/citologia/versoes/${versao.id}/amostras/${amostraId}`, avaliacao);
+        }
+      }
 
       carregar(await api.get<LaudoDoCaso | null>(`/laudos/casos/${id}`));
       setAviso('Rascunho salvo.');
@@ -530,9 +581,33 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
           )}
 
           <Stack spacing={2.5}>
+            {citologico && vocabulario && citologia && (
+              /* M12: a lógica citológica vem ANTES da descrição e do
+                 diagnóstico porque é ela que os sustenta - o raciocínio da
+                 seção 143 vai do material à interpretação, não o contrário. */
+              <Secao
+                titulo="Avaliação citológica"
+                descricao="Uma avaliação por amostra: material, adequação, fundo, populações, critérios e interpretação (M12)."
+              >
+                <PainelCitologia
+                  amostras={citologia.amostras}
+                  valores={avaliacoes}
+                  vocabulario={vocabulario}
+                  editavel={editavel}
+                  aoAlterar={(amostraId, avaliacao) =>
+                    setAvaliacoes((a) => ({ ...a, [amostraId]: avaliacao }))
+                  }
+                />
+              </Secao>
+            )}
+
             <Secao
-              titulo="Descrição microscópica"
-              descricao="O que foi visto nas lâminas, com as palavras do patologista."
+              titulo={citologico ? 'Descrição geral' : 'Descrição microscópica'}
+              descricao={
+                citologico
+                  ? 'Observações que valem para o caso todo. A descrição de cada esfregaço fica na avaliação da amostra.'
+                  : 'O que foi visto nas lâminas, com as palavras do patologista.'
+              }
             >
               <TextField
                 value={descricao}
@@ -758,6 +833,9 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
               </Stack>
             </Secao>
 
+            {/* Margem microscópica é histopatologia (M13): num esfregaço não há
+                peça orientada onde medir distância até a borda. */}
+            {!citologico && (
             <Secao
               titulo="Margens"
               descricao="O sistema não impõe valor universal para “margem próxima” — depende do tumor e do protocolo. “Não avaliável” é resposta válida, não preenchimento pendente."
@@ -845,6 +923,7 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
                 </Stack>
               ))}
             </Secao>
+            )}
 
             <Secao titulo="Comentários e conclusão">
               <TextField

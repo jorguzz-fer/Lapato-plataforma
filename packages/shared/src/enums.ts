@@ -149,6 +149,61 @@ export const RESULTADO_MARGEM = [
 ] as const;
 export type ResultadoMargem = (typeof RESULTADO_MARGEM)[number];
 
+// --- M12 Citopatologia -----------------------------------------------------
+
+/**
+ * M12 secoes 9-12: adequacao da amostra citologica.
+ *
+ * A escala inteira existe porque o modulo e explicito ao recusar a simplificacao
+ * para "adequada / inadequada": "adequada com limitacoes" (secao 11) NAO
+ * equivale a insatisfatoria, e secao 142 fecha a regra - amostra inadequada nao
+ * pode ser tratada como equivalente a amostra negativa, e "nao diagnostica" e
+ * diferente de "negativa".
+ */
+export const ADEQUACAO_CITOLOGICA = [
+  'adequada',
+  'adequada_com_limitacoes',
+  'pouco_representativa',
+  'insatisfatoria',
+  'nao_diagnostica',
+] as const;
+export type AdequacaoCitologica = (typeof ADEQUACAO_CITOLOGICA)[number];
+
+/** M12 secao 13. */
+export const CELULARIDADE = [
+  'acelular',
+  'muito_baixa',
+  'baixa',
+  'moderada',
+  'alta',
+  'muito_alta',
+] as const;
+export type Celularidade = (typeof CELULARIDADE)[number];
+
+/** M12 secao 15. */
+export const PRESERVACAO_CELULAR = [
+  'excelente',
+  'boa',
+  'moderada',
+  'ruim',
+  'acentuadamente_degenerada',
+] as const;
+export type PreservacaoCelular = (typeof PRESERVACAO_CELULAR)[number];
+
+/** M12 secoes 17-18 e 28: escala de intensidade compartilhada. */
+export const INTENSIDADE = ['ausente', 'discreta', 'moderada', 'acentuada'] as const;
+export type Intensidade = (typeof INTENSIDADE)[number];
+
+/**
+ * M12 secao 66: grau de certeza estruturado, de uso **interno**.
+ *
+ * "Podera ajudar na auditoria e IA, mas nao devera necessariamente aparecer no
+ * laudo" - por isso ele nao entra no PDF, e serve ao Guardian (secao 89:
+ * amostra pouco representativa com diagnostico definitivo pede revisao).
+ */
+export const GRAU_CERTEZA = ['alta', 'moderada', 'limitada'] as const;
+export type GrauCerteza = (typeof GRAU_CERTEZA)[number];
+
 // --- M11 Laudos ------------------------------------------------------------
 
 export const STATUS_LAUDO = [

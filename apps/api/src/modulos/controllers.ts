@@ -12,12 +12,17 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import {
+  ADEQUACAO_CITOLOGICA,
+  CELULARIDADE,
   ETAPA,
   GRAVIDADE_NC,
+  GRAU_CERTEZA,
+  INTENSIDADE,
   LATERALIDADE,
   METODO_AMOSTRAGEM,
   NIVEL_BLOQUEIO,
   PERMISSOES,
+  PRESERVACAO_CELULAR,
   PRIORIDADE,
   RESULTADO_MARGEM,
   RESULTADO_TRIAGEM,
@@ -35,6 +40,7 @@ import { TriagemService } from './m06-triagem/triagem.service.js';
 import { MacroscopiaService } from './m08-macroscopia/macroscopia.service.js';
 import { ProcessamentoService } from './m09-processamento/processamento.service.js';
 import { LaudosService } from './m11-laudos/laudos.service.js';
+import { CitopatologiaService } from './m12-citopatologia/citopatologia.service.js';
 import {
   SolicitacoesService,
   type AbaSolicitacoes,
@@ -1185,6 +1191,97 @@ export class FluxoController {
     const dados = validarCorpo(transicaoSchema, corpo);
     await this.db.executar((tx) =>
       this.consulta.transicaoManual(tx, casoId, dados.etapa, dados.justificativa),
+    );
+    return { ok: true };
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// M12 - Citopatologia
+// ---------------------------------------------------------------------------
+
+/**
+ * Os campos livres continuam livres de proposito.
+ *
+ * M12 secao 73 proibe o "diagnostico por cliques" e a secao 142 diz que campos
+ * estruturados nao substituem a descricao profissional. O schema valida FORMA -
+ * os enums fechados sao escalas, e escala com valor inventado nao e mais
+ * escala; as listas de vocabulario ficam abertas porque a instituicao vai
+ * acrescentar as suas.
+ */
+const avaliacaoCitologicaSchema = z.object({
+  tipoColeta: z.string().nullish(),
+  sitio: z.string().nullish(),
+  numeroLaminas: z.number().int().positive().nullish(),
+  coloracoes: z.array(z.string()).optional(),
+  adequacao: z.enum(ADEQUACAO_CITOLOGICA).nullish(),
+  motivosLimitacao: z.array(z.string()).optional(),
+  celularidade: z.enum(CELULARIDADE).nullish(),
+  preservacao: z.enum(PRESERVACAO_CELULAR).nullish(),
+  fundo: z.array(z.string()).optional(),
+  hemorragia: z.enum(INTENSIDADE).nullish(),
+  achadosHemorragia: z.array(z.string()).optional(),
+  necrose: z.enum(INTENSIDADE).nullish(),
+  materialExtracelular: z.array(z.string()).optional(),
+  populacoes: z.array(z.record(z.unknown())).optional(),
+  criteriosMalignidade: z.record(z.string()).optional(),
+  mitoses: z.string().nullish(),
+  inflamacao: z.record(z.unknown()).nullish(),
+  agentes: z.array(z.record(z.unknown())).optional(),
+  descricaoCitologica: z.string().nullish(),
+  interpretacao: z.string().nullish(),
+  grauCerteza: z.enum(GRAU_CERTEZA).nullish(),
+  limitacoes: z.array(z.string()).optional(),
+  recomendacoes: z.string().nullish(),
+});
+
+@ApiTags('M12 - Citopatologia')
+@Controller('citologia')
+export class CitopatologiaController {
+  constructor(private readonly citopatologia: CitopatologiaService) {}
+
+  @Get('vocabulario')
+  @ExigePermissao(PERMISSOES.LAUDO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Vocabulário estruturado da citologia',
+    description:
+      'Tipos de coleta, adequação, celularidade, fundo, populações, critérios de ' +
+      'malignidade, inflamação e agentes (M12 seção 3).',
+  })
+  vocabulario() {
+    return this.citopatologia.vocabulario();
+  }
+
+  @Get('versoes/:versaoId')
+  @ExigePermissao(PERMISSOES.LAUDO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Avaliações citológicas da versão, com as amostras do caso',
+    description:
+      'As amostras vêm juntas para que a tela mostre também as que ainda não ' +
+      'foram avaliadas (M12 seção 142).',
+  })
+  async listar(@Param('versaoId', ParseUUIDPipe) versaoId: string) {
+    return this.citopatologia.listarPorVersao(versaoId);
+  }
+
+  @Post('versoes/:versaoId/amostras/:amostraId')
+  @ExigePermissao(PERMISSOES.LAUDO_EDITAR)
+  @ApiOperation({
+    summary: 'Grava a avaliação citológica de uma amostra',
+    description:
+      'Uma amostra por chamada: cada material aspirado tem interpretação ' +
+      'independente dentro do mesmo caso (M12 seção 115).',
+  })
+  async salvar(
+    @Param('versaoId', ParseUUIDPipe) versaoId: string,
+    @Param('amostraId', ParseUUIDPipe) amostraId: string,
+    @Body() corpo: unknown,
+  ) {
+    await this.citopatologia.salvar(
+      versaoId,
+      amostraId,
+      validarCorpo(avaliacaoCitologicaSchema, corpo),
     );
     return { ok: true };
   }

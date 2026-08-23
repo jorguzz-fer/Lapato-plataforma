@@ -116,19 +116,50 @@ describe('configuracao institucional minima', () => {
     expect(cito?.exigeProcessamento).toBe(false);
   });
 
-  test('cria o workflow de histopatologia com as oito etapas em ordem', async () => {
-    const etapas = await comTenant(db, tenantId, (tx) =>
+  test('cria um workflow por modalidade, cada um com suas etapas em ordem', async () => {
+    const workflows = await comTenant(db, tenantId, (tx) =>
       tx
-        .select({ etapa: s.etapaWorkflow.etapa })
-        .from(s.etapaWorkflow)
-        .where(eq(s.etapaWorkflow.tenantId, tenantId))
-        .orderBy(s.etapaWorkflow.ordem),
+        .select({ id: s.definicaoWorkflow.id, modalidade: s.definicaoWorkflow.modalidade })
+        .from(s.definicaoWorkflow)
+        .where(eq(s.definicaoWorkflow.tenantId, tenantId)),
     );
 
-    expect(etapas.map((x) => x.etapa)).toEqual([
+    expect(workflows.map((w) => w.modalidade).sort()).toEqual([
+      'citopatologia',
+      'histopatologia',
+    ]);
+
+    const etapasDe = async (modalidade: string) => {
+      const workflow = workflows.find((w) => w.modalidade === modalidade)!;
+      const etapas = await comTenant(db, tenantId, (tx) =>
+        tx
+          .select({ etapa: s.etapaWorkflow.etapa })
+          .from(s.etapaWorkflow)
+          .where(eq(s.etapaWorkflow.workflowId, workflow.id))
+          .orderBy(s.etapaWorkflow.ordem),
+      );
+      return etapas.map((x) => x.etapa);
+    };
+
+    expect(await etapasDe('histopatologia')).toEqual([
       'aguardando_recebimento',
       'aguardando_triagem',
       'aguardando_macroscopia',
+      'aguardando_processamento',
+      'aguardando_microscopia',
+      'aguardando_revisao',
+      'aguardando_assinatura',
+      'liberado',
+    ]);
+
+    /**
+     * A citologia nao tem macroscopia: nao ha peca a descrever, medir ou
+     * clivar. E o processamento e condicional aqui pelo motivo oposto ao da
+     * histopatologia - a lamina em geral ja chega pronta da coleta (M12 secao 4).
+     */
+    expect(await etapasDe('citopatologia')).toEqual([
+      'aguardando_recebimento',
+      'aguardando_triagem',
       'aguardando_processamento',
       'aguardando_microscopia',
       'aguardando_revisao',

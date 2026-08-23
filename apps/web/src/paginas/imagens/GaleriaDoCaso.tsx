@@ -35,6 +35,15 @@ import { api, ErroApi, urlArquivo, type ImagemDoCaso } from '../../api';
  *   com ordem, e a numeracao do documento sai dela (secao 38).
  */
 
+/**
+ * Espelho do que o servidor aceita (M16 secao 61: "limite de tamanho, formatos
+ * permitidos... arquivos rejeitados deverao gerar mensagem clara"). Repetir a
+ * regra aqui nao substitui a validacao do servidor - serve para o usuario saber
+ * ANTES de escolher o arquivo, em vez de descobrir por erro.
+ */
+const FORMATOS = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
+const TAMANHO_MAXIMO_MB = 25;
+
 const TIPO_LABEL: Record<string, string> = {
   recebimento: 'Recebimento',
   triagem: 'Triagem',
@@ -137,6 +146,23 @@ export function GaleriaDoCaso({ casoId, permissoes, moduloContexto = 'M16_IMAGEN
       // Uma por vez: o módulo permite lote (§20), e enviar em série mantém o
       // relato de erro por arquivo em vez de um "falhou" para as 40.
       for (const arquivo of Array.from(arquivos)) {
+        /**
+         * Recusa antes de subir: mandar 30 MB pela rede para receber "não
+         * aceito" gasta o tempo de quem envia, e num laboratório isso costuma
+         * ser conexão de celular.
+         */
+        if (!FORMATOS.includes(arquivo.type)) {
+          throw new Error(
+            `"${arquivo.name}" não é um formato aceito. Envie JPEG, PNG, WebP ou HEIC — ` +
+              'PDF e documentos não entram no acervo de imagens.',
+          );
+        }
+        if (arquivo.size > TAMANHO_MAXIMO_MB * 1024 * 1024) {
+          throw new Error(
+            `"${arquivo.name}" tem ${(arquivo.size / 1024 / 1024).toFixed(1)} MB e o limite é ${TAMANHO_MAXIMO_MB} MB.`,
+          );
+        }
+
         const corpo = new FormData();
         corpo.append('arquivo', arquivo);
         corpo.append('tipo', novoTipo);
@@ -149,7 +175,13 @@ export function GaleriaDoCaso({ casoId, permissoes, moduloContexto = 'M16_IMAGEN
       }
       carregar();
     } catch (err) {
-      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível enviar a imagem.');
+      setErro(
+        err instanceof ErroApi
+          ? err.detalhe
+          : err instanceof Error
+            ? err.message
+            : 'Não foi possível enviar a imagem.',
+      );
     } finally {
       setOcupado(false);
       if (entrada.current) entrada.current.value = '';
@@ -210,10 +242,18 @@ export function GaleriaDoCaso({ casoId, permissoes, moduloContexto = 'M16_IMAGEN
         spacing={2}
         sx={{ mb: 2.5, alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
       >
-        <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
-          Acervo do caso — todas as etapas num só lugar. Toda imagem guarda quem produziu,
-          quando e em qual contexto.
-        </Typography>
+        <Box>
+          <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+            Acervo do caso — todas as etapas num só lugar. Toda imagem guarda quem produziu,
+            quando e em qual contexto.
+          </Typography>
+          {podeEnviar && (
+            <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.5 }}>
+              JPEG, PNG, WebP ou HEIC · até {TAMANHO_MAXIMO_MB} MB por arquivo · o original é
+              preservado; recorte e anotação não alteram o arquivo enviado.
+            </Typography>
+          )}
+        </Box>
 
         {podeEnviar && (
           <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
@@ -243,7 +283,7 @@ export function GaleriaDoCaso({ casoId, permissoes, moduloContexto = 'M16_IMAGEN
             <input
               ref={entrada}
               type="file"
-              accept="image/*"
+              accept={FORMATOS.join(',')}
               multiple
               hidden
               onChange={(e) => void enviar(e.target.files)}

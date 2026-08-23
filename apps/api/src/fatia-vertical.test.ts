@@ -2007,6 +2007,240 @@ describe('Portal do Cliente (M04)', () => {
   });
 });
 
+describe('necropsia (M14)', () => {
+  /**
+   * A necropsia nao termina num diagnostico de lesao: termina numa reconstrucao
+   * de por que o animal morreu. O teste percorre esse raciocinio e checa as
+   * regras da secao 163 que mais custam caro quando se perdem:
+   *
+   * - "nao examinado" e diferente de "sem alteracoes";
+   * - mecanismo de morte e causa basica sao conceitos distintos;
+   * - a conclusao usa linguagem proporcional a evidencia.
+   */
+  let casoId: string;
+  let necropsiaId: string;
+  let l01: string;
+  let l02: string;
+
+  test('a necropsia dispensa veterinário, mas exige responsável (§4)', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Thor ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Cadáver' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    casoId = criado.body.id;
+
+    await entrar('patologista@lapato.local');
+
+    const semResponsavel = await req('POST', `/necropsia/casos/${casoId}`, {
+      modalidade: 'diagnostica',
+    });
+    expect(semResponsavel.status).toBe(400);
+
+    // O tutor pode ser o solicitante - nenhum veterinario envolvido.
+    const abertura = await req('POST', `/necropsia/casos/${casoId}`, {
+      modalidade: 'diagnostica',
+      responsavelSolicitacao: 'Fernanda Alves (tutora)',
+      conservacao: 'refrigerado',
+    });
+    expect(abertura.status, JSON.stringify(abertura.body)).toBe(201);
+    necropsiaId = abertura.body.id;
+  });
+
+  test('"não examinado" não convive com descrição (§§118 e 163)', async () => {
+    const semAlteracoes = await req('POST', `/necropsia/${necropsiaId}/orgaos`, {
+      cavidade: 'toracica',
+      sistema: 'cardiovascular',
+      orgao: 'Coração',
+      estado: 'sem_alteracoes',
+    });
+    expect(semAlteracoes.status).toBe(201);
+
+    const naoExaminado = await req('POST', `/necropsia/${necropsiaId}/orgaos`, {
+      cavidade: 'craniana',
+      orgao: 'Encéfalo',
+      estado: 'nao_examinado',
+    });
+    expect(naoExaminado.status).toBe(201);
+
+    const contradicao = await req('POST', `/necropsia/${necropsiaId}/orgaos`, {
+      cavidade: 'craniana',
+      orgao: 'Encéfalo',
+      estado: 'nao_examinado',
+      descricao: 'Sem alterações macroscópicas.',
+    });
+    expect(contradicao.status, 'descrever o que não se olhou não pode passar').toBe(400);
+    expect(contradicao.body.detail).toContain('não examinado');
+
+    // A completude conta os que ficaram DE FORA, que é o número que importa.
+    const banca = await req('GET', `/necropsia/casos/${casoId}`);
+    expect(banca.body.completude.examinados).toBe(1);
+    expect(banca.body.completude.naoExaminados).toBe(1);
+  });
+
+  test('lesões ganham código próprio e se ligam em cadeia (§§73-76)', async () => {
+    const a = await req('POST', `/necropsia/${necropsiaId}/lesoes`, {
+      orgao: 'Baço',
+      descricao: 'Ruptura capsular de 4 cm no polo cranial.',
+      diagnosticoMorfologico: 'Ruptura esplênica traumática',
+      classificacao: 'processo_principal',
+    });
+    expect(a.status, JSON.stringify(a.body)).toBe(201);
+    expect(a.body.codigo).toBe('L01');
+    l01 = a.body.id;
+
+    const b = await req('POST', `/necropsia/${necropsiaId}/lesoes`, {
+      orgao: 'Cavidade abdominal',
+      descricao: 'Cerca de 800 mL de sangue livre.',
+      diagnosticoMorfologico: 'Hemoperitônio',
+      classificacao: 'processo_secundario',
+    });
+    expect(b.body.codigo).toBe('L02');
+    l02 = b.body.id;
+
+    // Achado que NAO participa da morte fica registrado sem entrar na cadeia.
+    const c = await req('POST', `/necropsia/${necropsiaId}/lesoes`, {
+      orgao: 'Rim',
+      descricao: 'Cistos corticais milimétricos.',
+      classificacao: 'incidental',
+    });
+    expect(c.body.codigo).toBe('L03');
+
+    const ligacao = await req('POST', `/necropsia/${necropsiaId}/relacoes`, {
+      origemId: l01,
+      destinoId: l02,
+      tipo: 'causou',
+    });
+    expect(ligacao.status).toBe(201);
+
+    const autoRelacao = await req('POST', `/necropsia/${necropsiaId}/relacoes`, {
+      origemId: l01,
+      destinoId: l01,
+    });
+    expect(autoRelacao.status).toBe(400);
+
+    const banca = await req('GET', `/necropsia/casos/${casoId}`);
+    expect(banca.body.lesoesCausais, 'o incidental não conta na cadeia causal').toBe(2);
+  });
+
+  test('o Guardian separa mecanismo de causa e vê atribuição exclusiva (§§108 e 116)', async () => {
+    const salvou = await req('POST', `/necropsia/${necropsiaId}/causa-mortis`, {
+      mecanismoTerminal: 'choque_hipovolemico',
+      causaBasica: 'Choque hipovolemico',
+      grauCerteza: 'altamente_provavel',
+      conclusao: 'O animal morreu exclusivamente por hemorragia interna.',
+    });
+    expect(salvou.status).toBe(201);
+
+    const conferencia = await req('GET', `/necropsia/${necropsiaId}/conferencia`);
+    const codigos = conferencia.body.map((a: { codigo: string }) => a.codigo);
+
+    expect(codigos, 'repetir o mecanismo como causa básica é o erro clássico').toContain(
+      'NECROPSIA_MECANISMO_COMO_CAUSA',
+    );
+    expect(codigos, 'conclusão exclusiva com dois achados causais').toContain(
+      'NECROPSIA_ATRIBUICAO_CAUSAL_EXCLUSIVA',
+    );
+
+    // Nenhum dos dois barra: sao observacoes, e a atribuicao exclusiva pode
+    // estar certa (secao 116 pede confirmacao, nao recusa).
+    expect(conferencia.body.every((a: { nivel: string }) => a.nivel !== 'critico')).toBe(true);
+  });
+
+  test('indeterminada com causa afirmada barra a conclusão (§§111 e 118)', async () => {
+    await req('POST', `/necropsia/${necropsiaId}/causa-mortis`, {
+      causaBasica: 'Ruptura esplênica traumática',
+      grauCerteza: 'indeterminada',
+    });
+
+    const tentativa = await req('POST', `/necropsia/${necropsiaId}/conclusao`);
+    expect(tentativa.status, JSON.stringify(tentativa.body)).toBe(409);
+
+    const achado = tentativa.body.achados.find(
+      (a: { codigo: string }) => a.codigo === 'NECROPSIA_INDETERMINADA_COM_CAUSA_AFIRMADA',
+    );
+    expect(achado).toBeTruthy();
+    expect(achado.comoResolver).toContain('grau de certeza');
+  });
+
+  test('causa afirmada sem achado causal também barra (§117)', async () => {
+    /**
+     * O caso da secao 117: conclusao de septicemia sem nenhuma lesao que a
+     * sustente. Aqui, causa estabelecida com todas as lesoes reclassificadas
+     * como incidentais.
+     */
+    const banca = await req('GET', `/necropsia/casos/${casoId}`);
+    for (const lesao of banca.body.lesoes) {
+      await req('POST', `/necropsia/lesoes/${lesao.id}`, { classificacao: 'incidental' });
+    }
+
+    await req('POST', `/necropsia/${necropsiaId}/causa-mortis`, {
+      causaBasica: 'Septicemia',
+      grauCerteza: 'estabelecida',
+    });
+
+    const tentativa = await req('POST', `/necropsia/${necropsiaId}/conclusao`);
+    expect(tentativa.status).toBe(409);
+    expect(
+      tentativa.body.achados.map((a: { codigo: string }) => a.codigo),
+    ).toContain('NECROPSIA_EVIDENCIA_INSUFICIENTE');
+  });
+
+  test('coerente, conclui - e concluída não aceita edição', async () => {
+    const banca = await req('GET', `/necropsia/casos/${casoId}`);
+    const baco = banca.body.lesoes.find((l: { orgao: string }) => l.orgao === 'Baço');
+    const abdome = banca.body.lesoes.find(
+      (l: { orgao: string }) => l.orgao === 'Cavidade abdominal',
+    );
+    await req('POST', `/necropsia/lesoes/${baco.id}`, { classificacao: 'processo_principal' });
+    await req('POST', `/necropsia/lesoes/${abdome.id}`, { classificacao: 'processo_secundario' });
+
+    await req('POST', `/necropsia/${necropsiaId}/causa-mortis`, {
+      causaImediata: 'Choque hipovolêmico',
+      causaBasica: 'Ruptura esplênica traumática',
+      mecanismoTerminal: 'choque_hipovolemico',
+      grauCerteza: 'altamente_provavel',
+      conclusao: 'Ruptura esplênica com hemoperitônio, compatível com trauma contuso abdominal.',
+    });
+
+    const conclusao = await req('POST', `/necropsia/${necropsiaId}/conclusao`);
+    expect(conclusao.status, JSON.stringify(conclusao.body)).toBe(201);
+
+    const depois = await req('POST', `/necropsia/${necropsiaId}/lesoes`, {
+      orgao: 'Fígado',
+      descricao: 'Alteração encontrada depois de concluir.',
+    });
+    expect(depois.status).toBe(400);
+    expect(depois.body.detail).toContain('Reabra');
+
+    // A linha do tempo do caso registra o exame.
+    const dossie = await req('GET', `/casos/${casoId}`);
+    const tipos = dossie.body.linhaDoTempo.map((e: { tipo: string }) => e.tipo);
+    expect(tipos).toContain('necropsia.iniciada');
+    expect(tipos).toContain('necropsia.concluida');
+  });
+
+  test('o residente descreve, mas não conclui (§163)', async () => {
+    await entrar('residente@lapato.local');
+
+    const conferir = await req('GET', `/necropsia/${necropsiaId}/conferencia`);
+    expect(conferir.status, 'o residente enxerga o exame').toBe(200);
+
+    const concluir = await req('POST', `/necropsia/${necropsiaId}/conclusao`);
+    expect(concluir.status, 'concluir a causa mortis é ato interpretativo').toBe(403);
+
+    const causa = await req('POST', `/necropsia/${necropsiaId}/causa-mortis`, {
+      grauCerteza: 'provavel',
+    });
+    expect(causa.status).toBe(403);
+  });
+});
+
 describe('controle de cadáveres (M15)', () => {
   /**
    * O modulo responde, a qualquer momento (secao 4): quem esta sob

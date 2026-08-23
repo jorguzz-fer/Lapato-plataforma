@@ -154,6 +154,24 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
               )}
 
             {/**
+             * M14: a necropsia é uma modalidade própria, não uma etapa da
+             * histopatologia — por isso o atalho não depende da triagem como o
+             * da macroscopia. Quem recebe um cadáver examina o cadáver.
+             */}
+            {permissoes.includes('necropsia:executar') && (
+              <Button
+                component={Link}
+                to={`/casos/${id}/necropsia`}
+                variant="outlined"
+                size="small"
+                startIcon={<BiotechOutlined />}
+                sx={{ flex: { xs: 1, md: 'none' } }}
+              >
+                Necropsia
+              </Button>
+            )}
+
+            {/**
              * Triado e liberado pela triagem: a bancada é a próxima ação. Uma
              * triagem bloqueada ou recusada não chega aqui — é o M06 segurando
              * o caso, e oferecer o atalho contradiria isso.

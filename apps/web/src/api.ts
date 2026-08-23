@@ -616,6 +616,71 @@ export interface UsuarioLista {
   perfis: string;
 }
 
+// --- M14 Necropsia ----------------------------------------------------------
+
+export interface OrgaoExaminado {
+  id: string;
+  cavidade: string;
+  sistema: string | null;
+  orgao: string;
+  estado: string;
+  descricao: string | null;
+  pesoGramas: number | null;
+}
+
+export interface LesaoNecroscopica {
+  id: string;
+  codigo: string;
+  orgao: string;
+  descricao: string;
+  localizacao: string | null;
+  distribuicao: string | null;
+  dimensao: string | null;
+  diagnosticoMorfologico: string | null;
+  classificacao: string | null;
+  impressaoMacroscopica: string | null;
+  observacoes: string | null;
+}
+
+export interface BancadaNecropsia {
+  necropsia: {
+    id: string;
+    casoId: string;
+    modalidade: string;
+    responsavelSolicitacao: string;
+    contatoResponsavel: string | null;
+    conservacao: string | null;
+    circunstanciasMorte: string | null;
+    perguntasSolicitante: string | null;
+    exameExterno: Record<string, unknown>;
+    limitacoes: string[];
+    limitacoesObservacao: string | null;
+    concluidaEm: string | null;
+  };
+  orgaos: OrgaoExaminado[];
+  lesoes: LesaoNecroscopica[];
+  relacoes: Array<{
+    id: string;
+    origemId: string;
+    destinoId: string;
+    tipo: string;
+    observacao: string | null;
+  }>;
+  causaMortis: {
+    causaImediata: string | null;
+    condicaoAntecedente: string | null;
+    causaBasica: string | null;
+    condicoesContribuintes: string | null;
+    mecanismoTerminal: string | null;
+    grauCerteza: string;
+    diagnosticosDiferenciais: string[];
+    conclusao: string | null;
+  } | null;
+  /** M14 secao 72: o que importa e quantos orgaos ficaram DE FORA. */
+  completude: { examinados: number; naoExaminados: number; comAlteracao: number };
+  lesoesCausais: number;
+}
+
 // --- M15 Controle de Cadaveres ---------------------------------------------
 
 export interface CadaverLista {

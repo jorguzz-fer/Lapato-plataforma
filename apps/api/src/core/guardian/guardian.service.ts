@@ -8,6 +8,10 @@ import {
   cadaver,
   caso,
   cassete,
+  causaMortis,
+  exameOrgao,
+  lesaoNecroscopica,
+  necropsia,
   diagnostico,
   laudoVersao,
   margemMicroscopica,
@@ -540,6 +544,216 @@ export class GuardianService {
    * exige ate a lamina, e por isso bloqueia a conclusao da macroscopia.
    */
 /**
+   * M14 secoes 116-118: checagem consolidada antes de concluir a necropsia.
+   *
+   * As tres regras que a documentacao nomeia atacam o mesmo erro por angulos
+   * diferentes: **afirmar mais do que o exame sustenta**. Uma conclusao
+   * necroscopica e o que o laudo vai dizer sobre por que o animal morreu, e
+   * extrapolar ali nao e questao de estilo.
+   */
+  async verificarNecropsia(tx: Transacao, necropsiaId: string): Promise<AchadoGuardian[]> {
+    const ctx = exigirContexto();
+    const achados: AchadoGuardian[] = [];
+
+    const [registro] = await tx
+      .select()
+      .from(necropsia)
+      .where(and(eq(necropsia.tenantId, ctx.tenantId), eq(necropsia.id, necropsiaId)))
+      .limit(1);
+
+    if (!registro) {
+      return [
+        {
+          codigo: 'NECROPSIA_INEXISTENTE',
+          nivel: 'critico',
+          mensagem: 'A necropsia não foi encontrada.',
+          modulo: MODULOS.M14_NECROPSIA,
+        },
+      ];
+    }
+
+    const orgaos = await tx
+      .select()
+      .from(exameOrgao)
+      .where(and(eq(exameOrgao.tenantId, ctx.tenantId), eq(exameOrgao.necropsiaId, necropsiaId)));
+
+    const lesoes = await tx
+      .select()
+      .from(lesaoNecroscopica)
+      .where(
+        and(
+          eq(lesaoNecroscopica.tenantId, ctx.tenantId),
+          eq(lesaoNecroscopica.necropsiaId, necropsiaId),
+        ),
+      );
+
+    const [causa] = await tx
+      .select()
+      .from(causaMortis)
+      .where(and(eq(causaMortis.tenantId, ctx.tenantId), eq(causaMortis.necropsiaId, necropsiaId)))
+      .limit(1);
+
+    // --- completude minima ---------------------------------------------------
+    if (orgaos.length === 0) {
+      achados.push({
+        codigo: 'NECROPSIA_SEM_EXAME_DE_ORGAO',
+        nivel: 'critico',
+        mensagem: 'Nenhum órgão foi registrado no exame.',
+        modulo: MODULOS.M14_NECROPSIA,
+        comoResolver:
+          'Registre os órgãos examinados na aba “Exame interno”. Órgão sem alterações também é achado — e órgão não examinado precisa constar como tal.',
+      });
+    }
+
+    if (!causa) {
+      achados.push({
+        codigo: 'NECROPSIA_SEM_CAUSA_MORTIS',
+        nivel: 'critico',
+        mensagem: 'A causa mortis não foi preenchida.',
+        modulo: MODULOS.M14_NECROPSIA,
+        comoResolver:
+          'Preencha o bloco “Causa mortis”. Indeterminada é resposta válida — o que não pode é ficar em branco.',
+      });
+    }
+
+    // --- secao 118: coerencia ------------------------------------------------
+    const naoExaminados = new Set(
+      orgaos.filter((o) => o.estado === 'nao_examinado').map((o) => o.orgao.toLowerCase()),
+    );
+    const descritosSemExame = lesoes.filter((l) => naoExaminados.has(l.orgao.toLowerCase()));
+
+    if (descritosSemExame.length > 0) {
+      achados.push({
+        codigo: 'NECROPSIA_LESAO_EM_ORGAO_NAO_EXAMINADO',
+        nivel: 'critico',
+        mensagem: `Há lesão descrita em órgão marcado como não examinado: ${descritosSemExame
+          .map((l) => `${l.codigo} (${l.orgao})`)
+          .join(', ')}.`,
+        modulo: MODULOS.M14_NECROPSIA,
+        comoResolver:
+          'Ou o órgão foi examinado — mude o estado dele — ou a lesão não é dele. As duas afirmações não convivem no mesmo laudo.',
+        evidencias: { lesoes: descritosSemExame.map((l) => l.codigo) },
+      });
+    }
+
+    const semClassificacao = lesoes.filter((l) => !l.classificacao);
+    if (semClassificacao.length > 0) {
+      achados.push({
+        codigo: 'NECROPSIA_LESAO_SEM_CLASSIFICACAO',
+        nivel: 'atencao',
+        mensagem: `${semClassificacao.length} lesão(ões) sem classificação funcional.`,
+        modulo: MODULOS.M14_NECROPSIA,
+        comoResolver:
+          'Classifique cada lesão como processo principal, secundário, contribuinte, incidental, post mortem ou artefato. Sem isso, todo achado acaba lido como causal.',
+        evidencias: { lesoes: semClassificacao.map((l) => l.codigo) },
+      });
+    }
+
+    if (causa) {
+      /**
+       * Secao 111: causa indeterminada e conclusao cientificamente adequada em
+       * muitos casos - o que a secao 118 barra e o contrario: dizer
+       * "indeterminada" e escrever uma conclusao afirmativa logo abaixo.
+       */
+      if (causa.grauCerteza === 'indeterminada' && causa.causaBasica?.trim()) {
+        achados.push({
+          codigo: 'NECROPSIA_INDETERMINADA_COM_CAUSA_AFIRMADA',
+          nivel: 'critico',
+          mensagem:
+            'O grau de certeza é “indeterminada”, mas há uma causa básica afirmada.',
+          modulo: MODULOS.M14_NECROPSIA,
+          comoResolver:
+            'Ou o exame sustenta a causa básica — então eleve o grau de certeza — ou não sustenta, e a causa básica sai. Indeterminada com causa afirmada diz duas coisas opostas.',
+          evidencias: { causaBasica: causa.causaBasica },
+        });
+      }
+
+      /**
+       * Secao 116: Guardian de causalidade. A conclusao atribui a morte a uma
+       * coisa so ("exclusivamente", "unica causa"), mas existem outros achados
+       * classificados como causais. Nao barra: pede confirmacao, porque a
+       * atribuicao exclusiva pode estar certa.
+       */
+      const causais = lesoes.filter(
+        (l) =>
+          l.classificacao &&
+          (['processo_principal', 'processo_secundario', 'contribuinte'] as string[]).includes(
+            l.classificacao,
+          ),
+      );
+      const exclusiva = /(exclusivamente|unicamente|única causa|unica causa|somente por)/i;
+
+      if (causa.conclusao && exclusiva.test(causa.conclusao) && causais.length > 1) {
+        achados.push({
+          codigo: 'NECROPSIA_ATRIBUICAO_CAUSAL_EXCLUSIVA',
+          nivel: 'atencao',
+          mensagem: `A conclusão atribui a morte a uma causa exclusiva, mas ${causais.length} achados estão classificados como participantes da cadeia causal.`,
+          modulo: MODULOS.M14_NECROPSIA,
+          comoResolver:
+            'Confirme a atribuição exclusiva ou reclassifique os demais achados. Se eles não participaram da morte, são incidentais.',
+          evidencias: { causais: causais.map((l) => `${l.codigo} ${l.orgao}`) },
+        });
+      }
+
+      /**
+       * Secao 117: Guardian de evidencia insuficiente. Causa afirmada com grau
+       * alto e nenhum achado classificado como causal - a conclusao nao se
+       * apoia em nada que o exame registrou.
+       */
+      const grauAlto = causa.grauCerteza === 'estabelecida' || causa.grauCerteza === 'altamente_provavel';
+      if (grauAlto && causais.length === 0) {
+        achados.push({
+          codigo: 'NECROPSIA_EVIDENCIA_INSUFICIENTE',
+          nivel: 'critico',
+          mensagem: `Causa mortis “${causa.grauCerteza.replace(/_/g, ' ')}” sem nenhum achado classificado como participante da cadeia causal.`,
+          modulo: MODULOS.M14_NECROPSIA,
+          comoResolver:
+            'Classifique como processo principal, secundário ou contribuinte os achados que sustentam a conclusão — ou reduza o grau de certeza para o que o exame de fato mostra.',
+        });
+      }
+
+      /**
+       * Secao 108: mecanismo nao e causa. Repetir o mecanismo terminal como
+       * causa basica e o erro classico do laudo necroscopico - o choque
+       * hipovolemico e como o animal morreu, nao por que.
+       */
+      if (causa.mecanismoTerminal && causa.causaBasica) {
+        const mecanismo = causa.mecanismoTerminal.replace(/_/g, ' ');
+        if (causa.causaBasica.toLowerCase().includes(mecanismo.toLowerCase())) {
+          achados.push({
+            codigo: 'NECROPSIA_MECANISMO_COMO_CAUSA',
+            nivel: 'atencao',
+            mensagem: `A causa básica repete o mecanismo terminal (${mecanismo}).`,
+            modulo: MODULOS.M14_NECROPSIA,
+            comoResolver:
+              'Mecanismo é como o animal morreu; causa básica é por quê. “Choque hipovolêmico” é mecanismo — a causa básica seria, por exemplo, a ruptura que o provocou.',
+            evidencias: { mecanismoTerminal: causa.mecanismoTerminal },
+          });
+        }
+      }
+
+      /**
+       * Secao 120: o impacto das limitacoes sobre a conclusao precisa ficar
+       * explicito. Autolise acentuada com causa estabelecida e o caso tipico.
+       */
+      const limitacoes = registro.limitacoes ?? [];
+      if (limitacoes.length > 0 && causa.grauCerteza === 'estabelecida') {
+        achados.push({
+          codigo: 'NECROPSIA_CERTEZA_ALTA_COM_LIMITACAO',
+          nivel: 'atencao',
+          mensagem: `O exame tem ${limitacoes.length} limitação(ões) registrada(s) e a causa está como “estabelecida”.`,
+          modulo: MODULOS.M14_NECROPSIA,
+          comoResolver:
+            'Reveja o grau de certeza, ou explique na conclusão por que a limitação não compromete a atribuição. A linguagem precisa ser proporcional à evidência.',
+          evidencias: { limitacoes },
+        });
+      }
+    }
+
+    return ordenarPorGravidade(achados);
+  }
+
+  /**
    * M15 secao 70: conferencias do Controle de Cadaveres.
    *
    * Rodam por varredura, e nao antes de uma acao, porque o que elas procuram

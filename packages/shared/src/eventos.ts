@@ -63,6 +63,11 @@ export const TIPO_EVENTO = [
   'laudo.enviado_revisao',
   'laudo.reaberto_para_edicao',
 
+  // M14 Necropsia
+  'necropsia.iniciada',
+  'necropsia.concluida',
+  'necropsia.reaberta',
+
   // M15 Controle de Cadaveres
   'cadaver.recebido',
   'cadaver.liberado',
@@ -158,6 +163,9 @@ export const EVENTO_LABEL: Record<TipoEvento, string> = {
   'laudo.rascunho_salvo': 'Rascunho de laudo salvo',
   'laudo.enviado_revisao': 'Laudo enviado para revisão',
   'laudo.reaberto_para_edicao': 'Laudo retomado para edição',
+  'necropsia.iniciada': 'Necropsia iniciada',
+  'necropsia.concluida': 'Necropsia concluída',
+  'necropsia.reaberta': 'Necropsia reaberta para correção',
   'cadaver.recebido': 'Cadáver recebido',
   'cadaver.liberado': 'Cadáver liberado para retirada',
   'cadaver.retirado': 'Cadáver retirado do laboratório',

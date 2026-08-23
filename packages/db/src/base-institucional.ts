@@ -102,6 +102,8 @@ export const PERFIS: Array<{
       /** M15 secao 68: o tecnico armazena, transfere, retira para exame e retorna. */
       PERMISSOES.CADAVER_VISUALIZAR,
       PERMISSOES.CADAVER_MOVIMENTAR,
+      /** Auxilia na sala: acompanha o exame, nao descreve nem conclui. */
+      PERMISSOES.NECROPSIA_VISUALIZAR,
       PERMISSOES.IMAGEM_VISUALIZAR,
       PERMISSOES.IMAGEM_ENVIAR,
       PERMISSOES.IMAGEM_EDITAR,
@@ -161,6 +163,10 @@ export const PERFIS: Array<{
       PERMISSOES.CADAVER_VISUALIZAR,
       PERMISSOES.CADAVER_BLOQUEAR,
       PERMISSOES.CADAVER_LIBERAR,
+      /** M14: descreve o exame e conclui a causa mortis. */
+      PERMISSOES.NECROPSIA_VISUALIZAR,
+      PERMISSOES.NECROPSIA_EXECUTAR,
+      PERMISSOES.NECROPSIA_CONCLUIR,
       PERMISSOES.CLIENTE_VISUALIZAR,
       PERMISSOES.VETERINARIO_VISUALIZAR,
     ],
@@ -182,6 +188,13 @@ export const PERFIS: Array<{
       PERMISSOES.LAUDO_VISUALIZAR,
       PERMISSOES.LAUDO_EDITAR,
       PERMISSOES.SOLICITACAO_VISUALIZAR,
+      /**
+       * M14: descreve o exame necroscopico, mas `NECROPSIA_CONCLUIR` esta
+       * ausente de proposito - concluir a causa mortis e ato interpretativo,
+       * da mesma familia de assinar laudo.
+       */
+      PERMISSOES.NECROPSIA_VISUALIZAR,
+      PERMISSOES.NECROPSIA_EXECUTAR,
       PERMISSOES.IMAGEM_VISUALIZAR,
       // Elabora o laudo sob supervisao - e o laudo inclui escolher as imagens.
       PERMISSOES.IMAGEM_ENVIAR,

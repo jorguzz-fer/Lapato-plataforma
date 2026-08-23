@@ -20,6 +20,7 @@ import { Laudo } from './paginas/Laudo';
 import { Processamento } from './paginas/Processamento';
 import { Solicitacoes } from './paginas/Solicitacoes';
 import { Cadaveres } from './paginas/Cadaveres';
+import { Necropsia } from './paginas/Necropsia';
 import { Clientes } from './paginas/Clientes';
 import { Administracao } from './paginas/Administracao';
 import { Usuarios } from './paginas/Usuarios';
@@ -268,6 +269,14 @@ function App() {
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Macroscopia" etapa="macroscopia">
             <Macroscopia exigeSupervisao={sessao.exigeSupervisao} />
+          </Shell>
+        }
+      />
+      <Route
+        path="/casos/:id/necropsia"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Necropsia">
+            <Necropsia permissoes={sessao.permissoes} />
           </Shell>
         }
       />

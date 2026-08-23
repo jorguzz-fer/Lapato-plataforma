@@ -17,8 +17,17 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import {
   ADEQUACAO_CITOLOGICA,
+  CAVIDADE_NECROPSIA,
   CELULARIDADE,
+  CLASSIFICACAO_LESAO,
   CONSERVACAO_CADAVER,
+  CONSERVACAO_NECROPSIA,
+  ESTADO_EXAME_ORGAO,
+  GRAU_CERTEZA_CAUSA,
+  LIMITACAO_NECROPSIA,
+  MECANISMO_TERMINAL,
+  MODALIDADE_NECROPSIA,
+  RELACAO_LESAO,
   DESTINACAO_CADAVER,
   EMBALAGEM_CADAVER,
   IDENTIFICACAO_EXTERNA,
@@ -56,6 +65,7 @@ import { MacroscopiaService } from './m08-macroscopia/macroscopia.service.js';
 import { ProcessamentoService } from './m09-processamento/processamento.service.js';
 import { LaudosService } from './m11-laudos/laudos.service.js';
 import { CitopatologiaService } from './m12-citopatologia/citopatologia.service.js';
+import { NecropsiaService } from './m14-necropsia/necropsia.service.js';
 import { CadaveresService } from './m15-cadaveres/cadaveres.service.js';
 import {
   ImagensService,
@@ -1879,5 +1889,213 @@ export class CadaveresController {
   })
   async confirmarDestinacao(@Param('id', ParseUUIDPipe) id: string) {
     await this.cadaveres.confirmarDestinacao(id);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// M14 - Necropsia
+// ---------------------------------------------------------------------------
+
+/**
+ * §4: a necropsia não exige médico-veterinário solicitante — pode ser pedida
+ * pelo tutor, por seguradora ou por autoridade. Mas §163 é firme: "deverá
+ * existir responsável pela solicitação".
+ */
+const aberturaNecropsiaSchema = z.object({
+  modalidade: z.enum(MODALIDADE_NECROPSIA).optional(),
+  responsavelSolicitacao: z.string().min(3, 'Informe quem solicitou a necropsia.'),
+  contatoResponsavel: z.string().nullish(),
+  cadaverId: z.string().uuid().nullish(),
+  conservacao: z.enum(CONSERVACAO_NECROPSIA).nullish(),
+  obitoEm: z.string().datetime({ offset: true }).nullish(),
+  circunstanciasMorte: z.string().nullish(),
+  perguntasSolicitante: z.string().nullish(),
+});
+
+const exameExternoSchema = z.object({
+  exameExterno: z.record(z.unknown()).optional(),
+  limitacoes: z.array(z.enum(LIMITACAO_NECROPSIA)).optional(),
+  limitacoesObservacao: z.string().nullish(),
+  conservacao: z.enum(CONSERVACAO_NECROPSIA).nullish(),
+  circunstanciasMorte: z.string().nullish(),
+  perguntasSolicitante: z.string().nullish(),
+});
+
+const orgaoSchema = z.object({
+  cavidade: z.enum(CAVIDADE_NECROPSIA),
+  sistema: z.string().nullish(),
+  orgao: z.string().min(1, 'Informe o órgão.'),
+  estado: z.enum(ESTADO_EXAME_ORGAO),
+  descricao: z.string().nullish(),
+  pesoGramas: z.number().int().positive().nullish(),
+});
+
+const lesaoSchema = z.object({
+  orgao: z.string().min(1, 'Informe o órgão.'),
+  descricao: z.string().min(3, 'Descreva a alteração.'),
+  localizacao: z.string().nullish(),
+  distribuicao: z.string().nullish(),
+  dimensao: z.string().nullish(),
+  diagnosticoMorfologico: z.string().nullish(),
+  classificacao: z.enum(CLASSIFICACAO_LESAO).nullish(),
+  impressaoMacroscopica: z.string().nullish(),
+  observacoes: z.string().nullish(),
+});
+
+const relacaoSchema = z.object({
+  origemId: z.string().uuid(),
+  destinoId: z.string().uuid(),
+  tipo: z.enum(RELACAO_LESAO).optional(),
+  observacao: z.string().nullish(),
+});
+
+/**
+ * §111: `indeterminada` é resposta válida, não pendência. O schema aceita todos
+ * os campos vazios com grau indeterminado — é a conclusão cientificamente
+ * adequada em muitos casos.
+ */
+const causaMortisSchema = z.object({
+  causaImediata: z.string().nullish(),
+  condicaoAntecedente: z.string().nullish(),
+  causaBasica: z.string().nullish(),
+  condicoesContribuintes: z.string().nullish(),
+  mecanismoTerminal: z.enum(MECANISMO_TERMINAL).nullish(),
+  grauCerteza: z.enum(GRAU_CERTEZA_CAUSA),
+  diagnosticosDiferenciais: z.array(z.string()).optional(),
+  conclusao: z.string().nullish(),
+});
+
+@ApiTags('M14 - Necropsia')
+@Controller('necropsia')
+export class NecropsiaController {
+  constructor(private readonly necropsia: NecropsiaService) {}
+
+  @Get('casos/:casoId')
+  @ExigePermissao(PERMISSOES.NECROPSIA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'A bancada inteira do caso',
+    description:
+      'Exame externo, órgãos, lesões, relações causais e causa mortis. Traz também o ' +
+      'checklist de completude (§72): quantos órgãos ficaram sem exame.',
+  })
+  async porCaso(@Param('casoId', ParseUUIDPipe) casoId: string) {
+    return this.necropsia.porCaso(casoId);
+  }
+
+  @Post('casos/:casoId')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Abre a necropsia do caso',
+    description:
+      'O veterinário solicitante é opcional (§4); o responsável pela solicitação, não — ' +
+      'a necropsia pode ser pedida pelo tutor, por seguradora ou por autoridade.',
+  })
+  async abrir(@Param('casoId', ParseUUIDPipe) casoId: string, @Body() corpo: unknown) {
+    return this.necropsia.abrir(casoId, validarCorpo(aberturaNecropsiaSchema, corpo));
+  }
+
+  @Post(':id/exame-externo')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({ summary: 'Salva exame externo, conservação e limitações (§§57 e 119)' })
+  async salvarExameExterno(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.necropsia.salvarExameExterno(id, validarCorpo(exameExternoSchema, corpo));
+  }
+
+  @Post(':id/orgaos')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Registra o exame de um órgão',
+    description:
+      '“Não examinado” é diferente de “sem alterações” (§163) — e órgão não examinado ' +
+      'com descrição é recusado, porque as duas afirmações não convivem.',
+  })
+  async registrarOrgao(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.necropsia.registrarOrgao(id, validarCorpo(orgaoSchema, corpo));
+  }
+
+  @Post(':id/lesoes')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Cria um Objeto Lesão',
+    description: 'Registro individual (L01, L02…), o que permite ligá-lo a outras lesões (§73).',
+  })
+  async criarLesao(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    return this.necropsia.criarLesao(id, validarCorpo(lesaoSchema, corpo));
+  }
+
+  @Post('lesoes/:lesaoId')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Edita a lesão, inclusive a classificação funcional',
+    description:
+      'Processo principal, secundário, contribuinte, incidental, post mortem ou artefato ' +
+      '(§75) — a separação que evita que todo achado seja lido como causal (§97).',
+  })
+  async editarLesao(@Param('lesaoId', ParseUUIDPipe) lesaoId: string, @Body() corpo: unknown) {
+    await this.necropsia.editarLesao(lesaoId, validarCorpo(lesaoSchema.partial(), corpo));
+  }
+
+  @Post(':id/relacoes')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Liga duas lesões',
+    description:
+      'Ruptura esplênica → hemoperitônio → hipovolemia → choque (§76). É o mapa ' +
+      'fisiopatológico, e o que separa uma lista de achados de um raciocínio sobre a morte.',
+  })
+  async relacionar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.necropsia.relacionar(id, validarCorpo(relacaoSchema, corpo));
+  }
+
+  @Post('relacoes/:relacaoId/remocao')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({ summary: 'Desfaz uma relação entre lesões' })
+  async removerRelacao(@Param('relacaoId', ParseUUIDPipe) relacaoId: string) {
+    await this.necropsia.removerRelacao(relacaoId);
+  }
+
+  @Post(':id/causa-mortis')
+  @ExigePermissao(PERMISSOES.NECROPSIA_CONCLUIR)
+  @ApiOperation({
+    summary: 'Salva a causa mortis',
+    description:
+      'Imediata, antecedente, básica e contribuintes (§109), com o mecanismo terminal em ' +
+      'campo próprio — mecanismo não é causa (§108). Indeterminada é resposta válida (§111).',
+  })
+  async salvarCausaMortis(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.necropsia.salvarCausaMortis(id, validarCorpo(causaMortisSchema, corpo));
+  }
+
+  @Get(':id/conferencia')
+  @ExigePermissao(PERMISSOES.NECROPSIA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Conferências do Guardian antes de concluir',
+    description: 'Causalidade, evidência insuficiente e coerência (§§116-118), sem barrar nada.',
+  })
+  async conferir(@Param('id', ParseUUIDPipe) id: string) {
+    return this.necropsia.conferir(id);
+  }
+
+  @Post(':id/conclusao')
+  @ExigePermissao(PERMISSOES.NECROPSIA_CONCLUIR)
+  @ApiOperation({
+    summary: 'Conclui o exame necroscópico',
+    description:
+      'Roda a checagem consolidada do Guardian. Achado crítico barra: a conclusão é o que ' +
+      'o laudo vai afirmar sobre por que o animal morreu.',
+  })
+  async concluir(@Param('id', ParseUUIDPipe) id: string) {
+    await this.necropsia.concluir(id);
+  }
+
+  @Post(':id/reabertura')
+  @ExigePermissao(PERMISSOES.NECROPSIA_CONCLUIR)
+  @ApiOperation({ summary: 'Reabre a necropsia concluída para correção' })
+  async reabrir(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({ motivo: z.string().min(5, 'Diga por que o exame volta para correção.') }),
+      corpo,
+    );
+    await this.necropsia.reabrir(id, dados.motivo);
   }
 }

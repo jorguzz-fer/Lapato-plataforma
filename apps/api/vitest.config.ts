@@ -20,6 +20,16 @@ export default defineConfig({
     hookTimeout: 60_000,
     // Compartilham o mesmo banco: rodar em paralelo geraria interferencia.
     fileParallelism: false,
+    /**
+     * Os testes de integracao disparam centenas de chamadas do mesmo IP em
+     * segundos - exatamente o padrao que o rate limit existe para cortar. O
+     * teto e afrouxado aqui, e `rate-limit.test.ts` aperta o proprio (cada
+     * arquivo roda em ambiente isolado) para provar que o limite funciona.
+     */
+    env: {
+      RATE_LIMIT_REQUISICOES: '100000',
+      RATE_LIMIT_LOGIN: '100000',
+    },
   },
   plugins: [
     swc.vite({

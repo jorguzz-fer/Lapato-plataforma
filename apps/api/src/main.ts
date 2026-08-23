@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
@@ -10,7 +11,7 @@ import { MigrationsService } from './core/db/migrations.service.js';
 import { ProblemaFilter } from './core/http/problema.filter.js';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
   const env = app.get<Env>(ENV);
 
   /**
@@ -37,6 +38,28 @@ async function bootstrap(): Promise<void> {
     Logger.warn(migrations.descricao(), 'Bootstrap');
   } else if (migrations.situacao() === 'indeterminado') {
     Logger.warn(migrations.descricao(), 'Bootstrap');
+  }
+
+  /**
+   * Quem e o cliente, atras do proxy.
+   *
+   * Em producao o request chega pelo Traefik do Coolify, entao sem isto
+   * `req.ip` e o IP do proxy - identico para todo mundo. Isso quebraria as duas
+   * coisas que dependem de saber quem chamou: o rate limit por IP (um balde
+   * unico, um usuario derrubando os demais) e o `audit_log`, que gravaria o
+   * proxy no lugar de quem agiu.
+   *
+   * Fica em `0` por padrao porque confiar em `X-Forwarded-For` sem proxy na
+   * frente e pior que nao ter IP: qualquer cliente escolheria o proprio.
+   */
+  if (env.TRUST_PROXY > 0) {
+    app.set('trust proxy', env.TRUST_PROXY);
+  } else if (env.NODE_ENV === 'production') {
+    Logger.warn(
+      'TRUST_PROXY=0 em producao: o IP registrado na auditoria e usado no rate ' +
+        'limit sera o do proxy, nao o do usuario. Atras do Coolify, use 1.',
+      'Bootstrap',
+    );
   }
 
   // Blueprint secao 6: cabecalhos de seguranca e CSP estrita.

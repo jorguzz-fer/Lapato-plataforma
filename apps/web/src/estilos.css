@@ -7,7 +7,20 @@
  * branco antes da primeira pintura.
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+/**
+ * A Inter vem do pacote, nao do Google Fonts.
+ *
+ * Duas razoes. Privacidade: a folha do Google e buscada pelo navegador de cada
+ * usuario, o que entrega IP e user-agent de quem opera o laboratorio a um
+ * terceiro em toda visita - transferencia que nenhuma base legal do sistema
+ * cobre (Blueprint secao 14). Seguranca: a CSP da SPA e `default-src 'self'`,
+ * e abrir excecao para dominio de terceiro em `style-src`/`font-src` cria uma
+ * origem confiavel que ninguem controla.
+ *
+ * O `Variable` traz todos os pesos num arquivo so - os cinco que o tema usa
+ * (400 a 800) sem cinco requisicoes.
+ */
+@import '@fontsource-variable/inter';
 
 html,
 body,
@@ -17,6 +30,6 @@ body,
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   background-color: #f6f7f9;
 }

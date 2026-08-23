@@ -46,7 +46,7 @@ const EXTENSAO: Record<string, string> = {
 };
 
 /** 25 MB: fotografia de macroscopia em alta resolucao cabe; video nao. */
-const TAMANHO_MAXIMO = 25 * 1024 * 1024;
+export const TAMANHO_MAXIMO = 25 * 1024 * 1024;
 
 /**
  * M16 - Imagens e Gestao do Acervo Digital.

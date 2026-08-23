@@ -400,7 +400,7 @@ que nunca existiram (perfil que a instituição inativou continua intocado).
 ### Verificação
 
 ```bash
-curl -fsS https://app.lapato.com.br/api/v1/health     # {"status":"ok","banco":"ok"}
+curl -fsS https://app.lapato.com.br/api/v1/health     # {"status":"ok","banco":"ok","schema":"ok"}
 curl -o /dev/null -w '%{http_code}\n' https://app.lapato.com.br/api/v1/fluxo/casos   # 401
 curl -sI http://app.lapato.com.br | head -1           # 301/308, redirecionando para HTTPS
 ```
@@ -416,6 +416,21 @@ Coolify consome o `/api` ao rotear por caminho. Ver
 > `pnpm db:seed`, cujo usuário e senha (`admin@lapato.local` / `lapato123`) estão
 > em texto puro num repositório público. Enquanto o tenant existir, essa
 > credencial vale.
+
+### `TRUST_PROXY=1` no `lapato-api`
+
+🌐 **Painel do Coolify** → `lapato-api` → *Environment Variables* → `TRUST_PROXY=1`.
+
+Atrás do Traefik do Coolify, sem isto **todo request parece vir do mesmo IP** —
+o do proxy. Duas coisas quebram em silêncio:
+
+- o rate limit por IP vira um balde único: a rajada de um usuário derruba todos;
+- o `audit_log` grava o IP do proxy no lugar do IP de quem agiu, e a trilha
+  exigida pelo Blueprint §6 fica sem a parte do "de onde".
+
+O valor é a quantidade de saltos confiáveis. `1` é o certo para o Coolify.
+Aumentar sem ter mesmo essa quantidade de proxies deixa o cliente escolher o
+próprio IP pelo `X-Forwarded-For`.
 
 ---
 

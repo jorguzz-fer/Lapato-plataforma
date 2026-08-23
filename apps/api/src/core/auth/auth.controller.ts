@@ -10,6 +10,7 @@ import {
 import { AuthService } from './auth.service.js';
 import { Contexto, PermiteEstagio, Publica } from './guards.js';
 import { ENV, type Env } from '../config/env.js';
+import { LimiteEntrada } from '../http/rate-limit.js';
 import { validarCorpo } from '../http/validacao.js';
 import type { ContextoRequisicao } from '../contexto/contexto-requisicao.js';
 
@@ -36,6 +37,7 @@ export class AuthController {
   ) {}
 
   @Publica()
+  @LimiteEntrada()
   @Post('login')
   @HttpCode(200)
   @ApiOperation({
@@ -82,6 +84,7 @@ export class AuthController {
   }
 
   @Publica()
+  @LimiteEntrada()
   @Post('mfa')
   @HttpCode(200)
   @ApiOperation({ summary: 'Valida o segundo fator (TOTP) da sessão corrente' })

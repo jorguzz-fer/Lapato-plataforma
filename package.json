@@ -35,10 +35,12 @@
     "typescript-eslint": "^8.18.1"
   },
   "pnpm": {
-    "//": "Overrides de seguranca: dependencias transitivas que os pacotes pais ainda nao atualizaram. Revisar a cada bump de NestJS e Vitest; remover assim que o pai passar a exigir a versao corrigida.",
+    "//": "Overrides de seguranca: dependencias transitivas que os pacotes pais ainda nao atualizaram. `qs` e `esbuild` entraram na auditoria de 23/08/2026 (ver docs/auditoria-seguranca.md). Revisar a cada bump de NestJS, Vite e Vitest; remover assim que o pai passar a exigir a versao corrigida.",
     "overrides": {
       "vite": "^6.4.3",
-      "js-yaml": "^4.3.1"
+      "js-yaml": "^4.3.1",
+      "qs": "^6.15.2",
+      "esbuild": "^0.25.0"
     }
   }
 }

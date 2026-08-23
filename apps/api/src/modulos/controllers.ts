@@ -38,6 +38,8 @@ import {
   type Etapa,
 } from '@lapato/shared';
 import { ExigePermissao, Publica } from '../core/auth/guards.js';
+import { nomeParaCabecalho } from '../core/http/cabecalhos.js';
+import { LimiteEntrada } from '../core/http/rate-limit.js';
 import { validarCorpo } from '../core/http/validacao.js';
 import { UsuariosService } from './m02-usuarios/usuarios.service.js';
 import { ClientesService } from './m03-clientes/clientes.service.js';
@@ -49,6 +51,7 @@ import { LaudosService } from './m11-laudos/laudos.service.js';
 import { CitopatologiaService } from './m12-citopatologia/citopatologia.service.js';
 import {
   ImagensService,
+  TAMANHO_MAXIMO,
   type ArquivoRecebido,
 } from './m16-imagens/imagens.service.js';
 import { PortalService } from './m04-portal/portal.service.js';
@@ -632,7 +635,7 @@ export class LaudosController {
   async baixarPdf(@Param('versaoId', ParseUUIDPipe) versaoId: string) {
     const { bytes, nomeArquivo } = await this.laudos.baixarPdf(versaoId);
     return new StreamableFile(bytes, {
-      disposition: `inline; filename="${nomeArquivo}"`,
+      disposition: `inline; filename="${nomeParaCabecalho(nomeArquivo)}"`,
     });
   }
 }
@@ -653,6 +656,9 @@ export class ValidacaoController {
   constructor(private readonly laudos: LaudosService) {}
 
   @Publica()
+  // Rota anonima e enumeravel por natureza: o codigo do laudo e o unico
+  // segredo. Sem teto, da para varrer o espaco de codigos a vontade.
+  @LimiteEntrada()
   @Get(':tenantSlug/:codigo')
   @ApiOperation({
     summary: 'Confere a autenticidade de um laudo pelo QR Code',
@@ -1354,10 +1360,23 @@ export class ImagensController {
   @Post('casos/:casoId')
   @ExigePermissao(PERMISSOES.IMAGEM_ENVIAR)
   @UseInterceptors(
-    FileFieldsInterceptor([
-      { name: 'arquivo', maxCount: 1 },
-      { name: 'miniatura', maxCount: 1 },
-    ]),
+    FileFieldsInterceptor(
+      [
+        { name: 'arquivo', maxCount: 1 },
+        { name: 'miniatura', maxCount: 1 },
+      ],
+      /**
+       * O limite precisa estar AQUI, e nao so no servico.
+       *
+       * O multer guarda o arquivo em memoria antes de o handler existir: sem
+       * `limits`, um envio de alguns GB e integralmente bufferizado e so entao
+       * recusado por tamanho - o processo pode morrer por falta de memoria
+       * antes de chegar a checagem. Com `limits`, o multer aborta durante o
+       * stream. A checagem do servico continua valendo: ela e a regra de
+       * negocio, esta e a defesa do processo.
+       */
+      { limits: { fileSize: TAMANHO_MAXIMO, files: 2, fields: 20 } },
+    ),
   )
   @ApiOperation({
     summary: 'Envia uma imagem para o acervo do caso',
@@ -1411,7 +1430,7 @@ export class ImagensController {
     );
     return new StreamableFile(bytes, {
       type: mimeType,
-      disposition: `inline; filename="${nomeArquivo}"`,
+      disposition: `inline; filename="${nomeParaCabecalho(nomeArquivo)}"`,
     });
   }
 
@@ -1567,7 +1586,7 @@ export class PortalController {
   async laudo(@Param('versaoId', ParseUUIDPipe) versaoId: string) {
     const { bytes, nomeArquivo } = await this.portal.baixarLaudo(versaoId);
     return new StreamableFile(bytes, {
-      disposition: `inline; filename="${nomeArquivo}"`,
+      disposition: `inline; filename="${nomeParaCabecalho(nomeArquivo)}"`,
     });
   }
 }

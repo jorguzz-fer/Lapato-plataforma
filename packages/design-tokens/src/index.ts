@@ -142,7 +142,7 @@ export const superficie = {
  * dezenas de casos por dia, e cada pixel de entrelinha vira rolagem.
  */
 export const tipografia = {
-  familia: "'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif",
+  familia: "'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif",
   base: 12.3,
   pesos: { normal: 400, medio: 500, forte: 600, forteMais: 700 },
 } as const;

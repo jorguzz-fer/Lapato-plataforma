@@ -42,6 +42,38 @@ const envSchema = z.object({
   MFA_ISSUER: z.string().default('LAPATO'),
 
   /**
+   * Rate limiting (Blueprint secao 6, "Protecoes de fluxo").
+   *
+   * Complementa o lockout por conta, nao substitui: o lockout defende UMA conta
+   * de muitas tentativas; o rate limit defende o SERVICO de um cliente que
+   * dispara em volume - inclusive credential stuffing, que tenta uma senha em
+   * milhares de contas diferentes e nunca chega ao limite de nenhuma delas.
+   *
+   * Contagem em memoria do processo. Com mais de uma replica cada uma tem seu
+   * proprio balde e o limite efetivo multiplica pelo numero de replicas; quando
+   * houver replica, isto passa a precisar do Redis que ja esta na stack.
+   */
+  RATE_LIMIT_JANELA_SEGUNDOS: z.coerce.number().int().positive().default(60),
+  /** Teto geral por IP na janela. Generoso: navegar numa tela dispara varias chamadas. */
+  RATE_LIMIT_REQUISICOES: z.coerce.number().int().positive().default(300),
+  /** Teto por IP nas rotas de entrada (login, MFA, validacao publica de laudo). */
+  RATE_LIMIT_LOGIN: z.coerce.number().int().positive().default(10),
+
+  /**
+   * Quantos proxies existem entre o cliente e este processo.
+   *
+   * Sem isto, `req.ip` e o IP do Traefik do Coolify - o mesmo para todo mundo.
+   * Duas consequencias: o rate limit por IP viraria um balde unico compartilhado
+   * (um usuario derruba todos), e o `audit_log` gravaria o IP do proxy no lugar
+   * do IP de quem agiu, esvaziando a trilha exigida pelo Blueprint secao 6.
+   *
+   * O valor e a quantidade de saltos confiaveis contados da direita para a
+   * esquerda no `X-Forwarded-For`. `1` = so o proxy imediato. Confiar demais
+   * deixa o cliente forjar o proprio IP; `0` desliga.
+   */
+  TRUST_PROXY: z.coerce.number().int().min(0).default(0),
+
+  /**
    * O que fazer quando o banco esta com migrations pendentes (ADR 0010).
    *
    * `bloquear` (padrao): a API recusa subir. Codigo novo contra schema velho

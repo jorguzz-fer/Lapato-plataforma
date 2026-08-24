@@ -1,6 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { comTenant, criarConexao } from '../client.js';
 import * as s from '../schema/index.js';
+import { resolverInstituicao } from './tenant.js';
 
 /**
  * Vincula lotes orfaos ao laboratorio de apoio (M09).
@@ -32,7 +33,8 @@ import * as s from '../schema/index.js';
  *
  * Variaveis:
  *
- *   VINCULO_TENANT_SLUG      instituicao; sem ela, o comando lista as
+ *   VINCULO_TENANT_SLUG      instituicao; sem ela, o comando usa a unica que
+ *                            existir, ou lista as
  *                            existentes e para
  *   VINCULO_LABORATORIO_ID   destino, quando ha mais de um laboratorio
  *   VINCULO_SIMULAR=sim      mostra o que faria, sem gravar
@@ -46,43 +48,14 @@ async function main(): Promise<void> {
     );
   }
 
-  const slug = process.env.VINCULO_TENANT_SLUG?.trim().toLowerCase();
+  const slugPedido = process.env.VINCULO_TENANT_SLUG?.trim().toLowerCase();
   const laboratorioInformado = process.env.VINCULO_LABORATORIO_ID?.trim();
   const simular = process.env.VINCULO_SIMULAR?.toLowerCase() === 'sim';
 
   const { db, encerrar } = criarConexao({ url, max: 1 });
 
   try {
-    /**
-     * Sem o slug, listar as instituicoes em vez de so recusar.
-     *
-     * Quem roda isto esta num terminal de container, num deploy, resolvendo um
-     * problema - e nao com o `docs/` aberto ao lado. "VINCULO_TENANT_SLUG nao
-     * definida" obrigaria a sair daqui para descobrir um dado que este mesmo
-     * comando ja tem em maos.
-     */
-    if (!slug) {
-      const instituicoes = await db
-        .select({ slug: s.tenant.slug, nome: s.tenant.nomeFantasia })
-        .from(s.tenant);
-
-      console.warn('');
-      console.warn('VINCULO_TENANT_SLUG nao definida. Instituicoes existentes:');
-      console.warn('');
-      for (const i of instituicoes) {
-        console.warn(`  ${i.slug}${' '.repeat(Math.max(1, 24 - i.slug.length))}${i.nome}`);
-      }
-      console.warn('');
-      throw new Error('Rode de novo com VINCULO_TENANT_SLUG igual a um destes.');
-    }
-
-    const [instituicao] = await db
-      .select({ id: s.tenant.id })
-      .from(s.tenant)
-      .where(eq(s.tenant.slug, slug))
-      .limit(1);
-
-    if (!instituicao) throw new Error(`Instituicao "${slug}" nao existe.`);
+    const instituicao = await resolverInstituicao(db, slugPedido, 'VINCULO_TENANT_SLUG');
 
     await comTenant(db, instituicao.id, async (tx) => {
       const orfaos = await tx
@@ -102,7 +75,7 @@ async function main(): Promise<void> {
 
       if (orfaos.length === 0) {
         console.warn('');
-        console.warn(`Nenhum lote sem destino em "${slug}". Nada a fazer.`);
+        console.warn(`Nenhum lote sem destino em "${instituicao.slug}". Nada a fazer.`);
         return;
       }
 
@@ -119,7 +92,7 @@ async function main(): Promise<void> {
 
       if (laboratorios.length === 0) {
         throw new Error(
-          `Nenhum laboratorio de apoio ativo em "${slug}". ` +
+          `Nenhum laboratorio de apoio ativo em "${instituicao.slug}". ` +
             'Cadastre a unidade antes de vincular os lotes.',
         );
       }
@@ -134,7 +107,7 @@ async function main(): Promise<void> {
         console.warn('');
         console.warn(
           laboratorioInformado
-            ? `VINCULO_LABORATORIO_ID nao corresponde a um laboratorio de apoio de "${slug}".`
+            ? `VINCULO_LABORATORIO_ID nao corresponde a um laboratorio de apoio de "${instituicao.slug}".`
             : `Ha ${laboratorios.length} laboratorios de apoio. Escolher por conta propria mandaria material para o parceiro errado.`,
         );
         console.warn('');
@@ -147,7 +120,7 @@ async function main(): Promise<void> {
       }
 
       console.warn('');
-      console.warn(`${orfaos.length} lote(s) sem destino em "${slug}":`);
+      console.warn(`${orfaos.length} lote(s) sem destino em "${instituicao.slug}":`);
       for (const l of orfaos) {
         console.warn(`  ${l.identificador}  enviado em ${l.dataEnvio}  [${l.status}]`);
       }

@@ -2,6 +2,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { comTenant, criarConexao } from '../client.js';
 import { WORKFLOWS_PADRAO } from '../base-institucional.js';
 import * as s from '../schema/index.js';
+import { resolverInstituicao } from './tenant.js';
 
 /**
  * Cria os workflows padrao de modalidade que faltam numa instituicao existente
@@ -22,7 +23,8 @@ import * as s from '../schema/index.js';
  *
  *   node node_modules/@lapato/db/dist/cli/sincronizar-workflows.js
  *
- * Sem SINCRONIZAR_TENANT_SLUG, lista as instituicoes e para.
+ * Sem SINCRONIZAR_TENANT_SLUG: com uma unica instituicao, usa ela; com varias,
+ * lista e para.
  * SINCRONIZAR_SIMULAR=sim mostra o que faria, sem gravar.
  */
 
@@ -34,34 +36,13 @@ async function main(): Promise<void> {
     );
   }
 
-  const slug = process.env.SINCRONIZAR_TENANT_SLUG?.trim().toLowerCase();
+  const slugPedido = process.env.SINCRONIZAR_TENANT_SLUG?.trim().toLowerCase();
   const simular = process.env.SINCRONIZAR_SIMULAR?.toLowerCase() === 'sim';
 
   const { db, encerrar } = criarConexao({ url, max: 1 });
 
   try {
-    if (!slug) {
-      const instituicoes = await db
-        .select({ slug: s.tenant.slug, nome: s.tenant.nomeFantasia })
-        .from(s.tenant);
-
-      console.warn('');
-      console.warn('SINCRONIZAR_TENANT_SLUG nao definida. Instituicoes existentes:');
-      console.warn('');
-      for (const i of instituicoes) {
-        console.warn(`  ${i.slug}${' '.repeat(Math.max(1, 24 - i.slug.length))}${i.nome}`);
-      }
-      console.warn('');
-      throw new Error('Rode de novo com SINCRONIZAR_TENANT_SLUG igual a um destes.');
-    }
-
-    const [instituicao] = await db
-      .select({ id: s.tenant.id })
-      .from(s.tenant)
-      .where(eq(s.tenant.slug, slug))
-      .limit(1);
-
-    if (!instituicao) throw new Error(`Instituicao "${slug}" nao existe.`);
+    const instituicao = await resolverInstituicao(db, slugPedido, 'SINCRONIZAR_TENANT_SLUG');
 
     await comTenant(db, instituicao.id, async (tx) => {
       let criados = 0;
@@ -113,7 +94,7 @@ async function main(): Promise<void> {
 
       console.warn('');
       if (criados === 0) {
-        console.warn(`Workflows de "${slug}" ja estao em dia com a base. Nada a fazer.`);
+        console.warn(`Workflows de "${instituicao.slug}" ja estao em dia com a base. Nada a fazer.`);
       } else if (simular) {
         console.warn(`${criados} workflow(s) faltando. SINCRONIZAR_SIMULAR=sim: nada gravado.`);
       } else {

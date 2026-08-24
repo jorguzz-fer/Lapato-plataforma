@@ -123,6 +123,17 @@ export const PERMISSOES = {
   /** Registrar a entrega fisica e a destinacao (secoes 44 e 49). */
   CADAVER_ENTREGAR: 'cadaver:entregar',
 
+  // M17 Inteligencia Artificial
+  /**
+   * Pedir sugestoes ao Copiloto e registrar feedback.
+   *
+   * Existe por causa do Portal: as rotas de IA valiam para qualquer sessao, e
+   * uma conta externa de cliente podia consulta-las. Com o Copiloto em stub
+   * isso nao vazava nada; com um LLM real lendo contexto de caso, vazaria.
+   * O gate entra antes do provedor real, nao depois.
+   */
+  IA_UTILIZAR: 'ia:utilizar',
+
   // M18 Bioteca e Gestao de Acervo Biologico
   BIOTECA_VISUALIZAR: 'bioteca:visualizar',
   /** Arquivar objeto, mover entre posicoes, retirar e devolver (secao 84). */

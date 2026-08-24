@@ -4,6 +4,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { PERFIS_PADRAO } from '@lapato/shared';
 import { comTenant, criarConexao } from '../client.js';
 import * as s from '../schema/index.js';
+import { resolverInstituicao } from './tenant.js';
 
 /**
  * Cria a equipe inicial de uma instituicao: um usuario por perfil padrao,
@@ -28,7 +29,8 @@ import * as s from '../schema/index.js';
  *
  * Opcional: EQUIPE_CRMV="CRMV-CE 12345" registra a identificacao profissional
  * do patologista - e ela que sai na assinatura do PDF do laudo (M11 secao 82).
- * Sem SINCRONIZAR... sem EQUIPE_TENANT_SLUG, lista as instituicoes e para.
+ * Sem EQUIPE_TENANT_SLUG: com uma unica instituicao, usa ela; com varias, lista
+ * e para.
  */
 
 /** Um por perfil, na ordem em que a operacao precisa deles. */
@@ -62,28 +64,18 @@ async function main(): Promise<void> {
     );
   }
 
-  const slug = process.env.EQUIPE_TENANT_SLUG?.trim().toLowerCase();
+  const slugPedido = process.env.EQUIPE_TENANT_SLUG?.trim().toLowerCase();
   const dominio = process.env.EQUIPE_EMAIL_DOMINIO?.trim().toLowerCase();
   const crmv = process.env.EQUIPE_CRMV?.trim();
 
   const { db, encerrar } = criarConexao({ url, max: 1 });
 
   try {
-    if (!slug) {
-      const instituicoes = await db
-        .select({ slug: s.tenant.slug, nome: s.tenant.nomeFantasia })
-        .from(s.tenant);
-
-      console.warn('');
-      console.warn('EQUIPE_TENANT_SLUG nao definida. Instituicoes existentes:');
-      console.warn('');
-      for (const i of instituicoes) {
-        console.warn(`  ${i.slug}${' '.repeat(Math.max(1, 24 - i.slug.length))}${i.nome}`);
-      }
-      console.warn('');
-      throw new Error('Rode de novo com EQUIPE_TENANT_SLUG igual a um destes.');
-    }
-
+    /**
+     * O dominio vem antes da instituicao de proposito: ele nao tem como ser
+     * adivinhado, e descobrir a instituicao para so depois esbarrar nele
+     * gastaria uma rodada do comando a toa.
+     */
     if (!dominio || !dominio.includes('.')) {
       throw new Error(
         'EQUIPE_EMAIL_DOMINIO nao definida (ex.: minhaclinica.com.br). ' +
@@ -91,13 +83,7 @@ async function main(): Promise<void> {
       );
     }
 
-    const [instituicao] = await db
-      .select({ id: s.tenant.id, nome: s.tenant.nomeFantasia })
-      .from(s.tenant)
-      .where(eq(s.tenant.slug, slug))
-      .limit(1);
-
-    if (!instituicao) throw new Error(`Instituicao "${slug}" nao existe.`);
+    const instituicao = await resolverInstituicao(db, slugPedido, 'EQUIPE_TENANT_SLUG');
 
     const credenciais: Array<{ rotulo: string; email: string; senha: string }> = [];
     const pulados: string[] = [];
@@ -195,7 +181,7 @@ async function main(): Promise<void> {
     });
 
     console.warn('');
-    console.warn(`Equipe inicial de "${instituicao.nome}" (${slug}):`);
+    console.warn(`Equipe inicial de "${instituicao.nome}" (${instituicao.slug}):`);
     console.warn('');
 
     if (credenciais.length > 0) {

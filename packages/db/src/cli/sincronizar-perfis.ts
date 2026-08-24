@@ -3,6 +3,7 @@ import { PERFIS_PADRAO, TODAS_PERMISSOES } from '@lapato/shared';
 import { comTenant, criarConexao } from '../client.js';
 import { PERFIS } from '../base-institucional.js';
 import * as s from '../schema/index.js';
+import { resolverInstituicao } from './tenant.js';
 
 /**
  * Sincroniza os perfis padrao de uma instituicao existente com a base
@@ -23,7 +24,8 @@ import * as s from '../schema/index.js';
  *
  *   node node_modules/@lapato/db/dist/cli/sincronizar-perfis.js
  *
- * Sem SINCRONIZAR_TENANT_SLUG, lista as instituicoes e para.
+ * Sem SINCRONIZAR_TENANT_SLUG: com uma unica instituicao, usa ela; com varias,
+ * lista e para.
  * SINCRONIZAR_SIMULAR=sim mostra o que faria, sem gravar.
  */
 
@@ -35,34 +37,13 @@ async function main(): Promise<void> {
     );
   }
 
-  const slug = process.env.SINCRONIZAR_TENANT_SLUG?.trim().toLowerCase();
+  const slugPedido = process.env.SINCRONIZAR_TENANT_SLUG?.trim().toLowerCase();
   const simular = process.env.SINCRONIZAR_SIMULAR?.toLowerCase() === 'sim';
 
   const { db, encerrar } = criarConexao({ url, max: 1 });
 
   try {
-    if (!slug) {
-      const instituicoes = await db
-        .select({ slug: s.tenant.slug, nome: s.tenant.nomeFantasia })
-        .from(s.tenant);
-
-      console.warn('');
-      console.warn('SINCRONIZAR_TENANT_SLUG nao definida. Instituicoes existentes:');
-      console.warn('');
-      for (const i of instituicoes) {
-        console.warn(`  ${i.slug}${' '.repeat(Math.max(1, 24 - i.slug.length))}${i.nome}`);
-      }
-      console.warn('');
-      throw new Error('Rode de novo com SINCRONIZAR_TENANT_SLUG igual a um destes.');
-    }
-
-    const [instituicao] = await db
-      .select({ id: s.tenant.id })
-      .from(s.tenant)
-      .where(eq(s.tenant.slug, slug))
-      .limit(1);
-
-    if (!instituicao) throw new Error(`Instituicao "${slug}" nao existe.`);
+    const instituicao = await resolverInstituicao(db, slugPedido, 'SINCRONIZAR_TENANT_SLUG');
 
     await comTenant(db, instituicao.id, async (tx) => {
       let inseridas = 0;
@@ -101,11 +82,11 @@ async function main(): Promise<void> {
             .limit(1);
 
           if (inativado) {
-            console.warn(`  perfil "${def.chave}" esta inativado em "${slug}" - mantido.`);
+            console.warn(`  perfil "${def.chave}" esta inativado em "${instituicao.slug}" - mantido.`);
             continue;
           }
 
-          console.warn(`  perfil "${def.chave}" nao existe em "${slug}" - criando.`);
+          console.warn(`  perfil "${def.chave}" nao existe em "${instituicao.slug}" - criando.`);
           criados += 1;
 
           if (simular) continue;
@@ -168,7 +149,7 @@ async function main(): Promise<void> {
         .join(', ');
 
       if (!resumo) {
-        console.warn(`Perfis de "${slug}" ja estao em dia com a base. Nada a fazer.`);
+        console.warn(`Perfis de "${instituicao.slug}" ja estao em dia com a base. Nada a fazer.`);
       } else if (simular) {
         console.warn(`${resumo}. SINCRONIZAR_SIMULAR=sim: nada gravado.`);
       } else {

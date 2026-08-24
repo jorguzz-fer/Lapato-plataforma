@@ -28,7 +28,7 @@ Todo código, nome de módulo, evento e ADR deste repositório usa a numeração
 | 14 | Necropsia | Diagnóstico | Implementado |
 | 15 | Controle de Cadáveres | Materiais e imagens | Implementado |
 | 16 | Imagens e Scanner de Lâminas | Materiais e imagens | Implementado (WSI fora do v1, ADR-0004) |
-| 17 | Inteligência Artificial | Conhecimento | Guardian + painel; Copiloto stub |
+| 17 | Inteligência Artificial | Conhecimento | Implementado (Copiloto real opcional, ADR-0007) |
 | 18 | Bioteca e Gestão de Acervo Biológico | Materiais e imagens | Implementado |
 | 19 | Logística | Relacionamento e entrada | Sem documentação |
 | 20 | Financeiro | Gestão institucional | Sem documentação |

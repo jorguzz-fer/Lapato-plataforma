@@ -488,7 +488,13 @@
 <div class="pagina">
 
   <header>
-    <p class="eyebrow">LAPATO · Gestão Anatomopatológica Veterinária</p>
+    <!-- A arte é traço preto sobre transparência: o respaldo claro é fixo
+         para o logo não sumir no tema escuro do sistema. -->
+    <span style="display: inline-block; background: #eef0f3; border-radius: 8px; padding: 10px 16px; margin-bottom: 14px;">
+      <img src="logo.webp" alt="LAPATO — Patologia Geral Veterinária e Forense"
+           style="width: 220px; max-width: 100%; display: block;">
+    </span>
+    <p class="eyebrow">Gestão Anatomopatológica Veterinária</p>
     <h1>Os 26 módulos, e onde estamos em cada um</h1>
     <p class="resumo-texto">
       Cada módulo é medido em <strong>dois eixos</strong>, porque eles avançam separados: o
@@ -497,23 +503,19 @@
       testado; só ainda não tem interface própria.
     </p>
     <p class="resumo-texto">
-      <strong>Todos os módulos com documentação escrita estão construídos.</strong> O único que
-      ainda conta como parcial é o de Inteligência Artificial: o Guardian determinístico está
-      ativo e o painel existe, mas o Copiloto continua em <code>stub</code> — e é assim de
-      propósito, porque o próprio módulo exige que o LAPATO funcione sem IA. Dos oito que
-      aguardam documentação, dois já têm a base pronta: a trilha de auditoria imutável (M22) e
-      a fila de notificações (M26).
+      <strong>Todos os dezoito módulos com documentação escrita estão construídos de ponta a
+      ponta</strong> — o último a fechar foi a Inteligência Artificial, com o Copiloto real
+      ligado por variável de ambiente. O LAPATO continua operando integralmente sem IA, que é
+      exigência do próprio módulo, e não um modo degradado. Dos oito que aguardam documentação,
+      dois já têm a base pronta: a trilha de auditoria imutável (M22) e a fila de notificações
+      (M26). <strong>O que destrava a próxima fase é a especificação dos oito, não código.</strong>
     </p>
   </header>
 
   <section class="placar" aria-label="Resumo do estado dos módulos">
     <div class="metrica is-pronto">
-      <span class="n">17</span>
+      <span class="n">18</span>
       <span class="r">Prontos de ponta a ponta</span>
-    </div>
-    <div class="metrica is-parcial">
-      <span class="n">1</span>
-      <span class="r">Parcial por decisão de fase</span>
     </div>
     <div class="metrica is-semdoc">
       <span class="n">8</span>
@@ -755,9 +757,9 @@
     <div class="modulo">
       <span class="num">17</span>
       <span class="nome">Inteligência Artificial</span>
-      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Parcial</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronta</span></span>
-      <span class="nota">Guardian determinístico ativo e painel flutuante prontos. Copiloto ainda é <code>stub</code> — falta o LLM real.</span>
+      <span class="nota">Guardian determinístico ativo, painel flutuante e Copiloto real sobre a API da Anthropic — atrás da mesma interface, ligado por variável de ambiente. O contexto enviado ao modelo é montado campo a campo, sem nome de tutor, cliente ou veterinário; o LLM não emite nível crítico, porque bloquear ação continua sendo do Guardian. Sem chave, o sistema opera igual e mostra o indicador de indisponibilidade.</span>
     </div>
 
     <div class="modulo">
@@ -834,20 +836,12 @@
       continua localizável daqui a dez anos.
     </p>
     <p class="intro">
-      O que resta são duas coisas de naturezas diferentes: trocar o provedor de IA, que é
-      trabalho de engenharia, e escrever a especificação dos oito módulos restantes, que é
-      trabalho de produto — e é o que destrava a próxima fase.
+      Com o Copiloto real ligado, acabou também o que havia de engenharia pendente sobre a
+      documentação existente. O que resta é de outra natureza: <strong>escrever a especificação
+      dos oito módulos restantes</strong>. Nenhum deles é construído por suposição — uma regra
+      inventada agora vira retrabalho depois.
     </p>
 
-    <ol class="passos">
-      <li class="passo">
-        <div>
-          <h3>Copiloto com LLM real</h3>
-          <p class="marca">M17</p>
-          <p>O contrato e o painel já existem, e o sistema funciona sem IA por exigência do próprio módulo. É trocar o provedor.</p>
-        </div>
-      </li>
-    </ol>
   </section>
 
   <!-- ================= BLOQUEADO ================= -->

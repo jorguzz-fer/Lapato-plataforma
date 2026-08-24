@@ -61,3 +61,38 @@ Opção 1.
   anonimização, isolamento entre tenants no contexto enviado ao modelo) fica documentada
   como pré-requisito da fase que ligar o Copiloto real.
 - O custo é uma indireção: as telas chamam `CopilotProvider`, não o modelo.
+
+## Adendo — o provedor real ligado (2026-08)
+
+`COPILOT_PROVIDER=claude` passou a existir de verdade: `CopilotoClaudeProvider`
+fala com a API da Anthropic atrás da mesma interface `CopilotProvider`, e
+nenhuma tela mudou para isso. Como os pré-requisitos listados acima foram
+resolvidos:
+
+- **Minimização de dados (M17 §95).** O contexto enviado ao modelo é montado
+  campo a campo em `resumoDoCaso()` — espécie, raça, sexo, idade, serviço,
+  amostras e histórico clínico. Nome de tutor, cliente, veterinário, contatos,
+  microchip e até o nome do animal ficam fora: identificam sem acrescentar
+  valor clínico. Adicionar um campo ao prompt é uma decisão de código revisável,
+  nunca um spread de objeto do banco.
+- **Isolamento entre instituições.** A consulta do resumo roda dentro de
+  `comTenant`, sob a mesma RLS de qualquer outra consulta — o contexto de uma
+  instituição não tem caminho até o prompt de outra.
+- **Hierarquia de fontes (M17 §99).** O cartão declara `caso_atual` ou
+  `conhecimento_externo`, num enum fechado validado na volta. Conhecimento
+  geral não se disfarça de dado do caso.
+- **Transparência e registro (M17 §§15 e 109).** Todo cartão apresentado é
+  gravado em `sugestao_ia` com o modelo que respondeu (`resposta.model`), e o
+  id do cartão é o id da linha — o feedback do usuário fecha o ciclo sobre o
+  mesmo registro.
+- **O LLM não bloqueia nada.** O schema de saída não aceita nível `critico`:
+  travar ação segue sendo exclusivo do Guardian determinístico, que é auditável.
+  A saída do modelo é validada com zod como entrada não confiável; cartão fora
+  do contrato é descartado em silêncio.
+- **Falha vira indisponibilidade, não erro.** Timeout, 429, 5xx e chave
+  revogada retornam `disponivel: false`; o painel mostra o indicador do §110 e
+  a bancada continua. O modo sem IA segue sendo o padrão dos testes.
+- **Retenção e DPA (Blueprint §14).** A chamada usa a API padrão da Anthropic,
+  que não treina em dados de API. A celebração de DPA e a política de retenção
+  contratual são passo operacional de quem opera a instância, documentado no
+  runbook — o código registra o modelo usado para tornar isso auditável.

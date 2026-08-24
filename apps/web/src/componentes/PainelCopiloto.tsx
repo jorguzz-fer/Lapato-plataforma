@@ -13,9 +13,11 @@ import Close from '@mui/icons-material/CloseOutlined';
 import PushPin from '@mui/icons-material/PushPinOutlined';
 import PushPinFilled from '@mui/icons-material/PushPin';
 import AutoAwesome from '@mui/icons-material/AutoAwesomeOutlined';
+import CircularProgress from '@mui/material/CircularProgress';
+import Button from '@mui/material/Button';
 import { nivelIa, raio, shell, sombra } from '@lapato/design-tokens';
-import type { NivelIa } from '@lapato/shared';
-import { api, type StatusIa } from '../api';
+import { MODULO_LABEL, MODULOS, type NivelIa } from '@lapato/shared';
+import { api, type CartaoIa, type RespostaCopiloto, type StatusIa } from '../api';
 
 /**
  * Painel do LAPATO Copiloto (M17 secao 8).
@@ -82,6 +84,9 @@ export function PainelCopiloto({
   onAlternar,
 }: Props) {
   const [status, setStatus] = useState<StatusIa | null>(null);
+  const [cartoesIa, setCartoesIa] = useState<CartaoIa[]>([]);
+  const [buscandoIa, setBuscandoIa] = useState(false);
+  const [reagidos, setReagidos] = useState<Record<string, 'aceita' | 'rejeitada'>>({});
   const [fixado, setFixado] = useState(() => {
     try {
       return localStorage.getItem(CHAVE_FIXADO) === 'sim';
@@ -96,6 +101,54 @@ export function PainelCopiloto({
       .then(setStatus)
       .catch(() => setStatus({ disponivel: false, provedor: 'indisponivel' }));
   }, []);
+
+  /**
+   * As sugestoes so sao buscadas com o painel ABERTO, de proposito: cada
+   * consulta ao provedor custa dinheiro e registra uma sugestao apresentada
+   * (M17 secao 15) - e sugestao que ninguem viu nao foi apresentada. Abrir o
+   * painel e o gesto de pedir ajuda.
+   *
+   * O casoId sai da URL em vez de descer por prop atraves de cada tela: a rota
+   * `/casos/:id/...` e a unica fonte dele, e o painel e o unico consumidor.
+   */
+  useEffect(() => {
+    if (!aberto || !status?.disponivel) return;
+
+    const chaveModulo = (Object.keys(MODULO_LABEL) as Array<keyof typeof MODULO_LABEL>).find(
+      (k) => MODULO_LABEL[k] === modulo,
+    );
+    const casoId = /\/casos\/([0-9a-f-]{36})/.exec(window.location.pathname)?.[1];
+
+    let cancelado = false;
+    setBuscandoIa(true);
+    api
+      .post<RespostaCopiloto>('/ia/sugerir', {
+        modulo: chaveModulo ?? MODULOS.M17_IA,
+        etapa,
+        casoId,
+      })
+      .then((r) => {
+        if (cancelado) return;
+        setCartoesIa(r.cartoes);
+        if (!r.disponivel) setStatus((s) => (s ? { ...s, disponivel: false } : s));
+      })
+      // Sem permissao (conta externa) ou falha: o painel segue so com o Guardian.
+      .catch(() => !cancelado && setCartoesIa([]))
+      .finally(() => !cancelado && setBuscandoIa(false));
+
+    return () => {
+      cancelado = true;
+    };
+  }, [aberto, status?.disponivel, modulo, etapa]);
+
+  async function reagir(cartao: CartaoIa, acao: 'aceita' | 'rejeitada') {
+    setReagidos((r) => ({ ...r, [cartao.id]: acao }));
+    try {
+      await api.post('/ia/feedback', { sugestaoId: cartao.id, acao });
+    } catch {
+      // O feedback alimenta indicadores; a falha dele nao interrompe ninguem.
+    }
+  }
 
   function alternarFixado() {
     setFixado((atual) => {
@@ -168,7 +221,7 @@ export function PainelCopiloto({
           </Alert>
         )}
 
-        {cartoes.length === 0 && (
+        {cartoes.length === 0 && cartoesIa.length === 0 && !buscandoIa && (
           <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
             Nenhum apontamento para esta etapa.
           </Typography>
@@ -233,6 +286,93 @@ export function PainelCopiloto({
             </Box>
           );
         })}
+
+        {buscandoIa && (
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', py: 0.5 }}>
+            <CircularProgress size={14} />
+            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+              Consultando o Copiloto…
+            </Typography>
+          </Stack>
+        )}
+
+        {cartoesIa.map((c) => {
+          const n = NIVEL[c.nivel];
+          const reacao = reagidos[c.id];
+          return (
+            <Box
+              key={c.id}
+              component="article"
+              sx={{
+                p: 1.75,
+                borderRadius: `${raio.medio}px`,
+                border: '1px solid',
+                borderColor: 'divider',
+                borderLeft: `4px solid ${n.cor}`,
+                opacity: reacao === 'rejeitada' ? 0.55 : 1,
+              }}
+            >
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.5 }}>
+                <AutoAwesome sx={{ fontSize: 13, color: n.cor }} aria-hidden />
+                <Typography
+                  sx={{ fontSize: 11, fontWeight: 600, color: n.cor, textTransform: 'uppercase' }}
+                >
+                  {n.rotulo} · IA
+                </Typography>
+              </Stack>
+
+              <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{c.titulo}</Typography>
+              <Typography
+                sx={{ fontSize: 12.5, color: 'text.secondary', mt: 0.5, whiteSpace: 'pre-wrap' }}
+              >
+                {c.corpo}
+              </Typography>
+
+              {c.textoSugerido && (
+                <Box
+                  sx={{
+                    mt: 1,
+                    p: 1.25,
+                    borderRadius: `${raio.pequeno}px`,
+                    backgroundColor: 'action.hover',
+                    fontSize: 12.5,
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {c.textoSugerido}
+                </Box>
+              )}
+
+              {/* M17 secao 15: produzida pela IA, com fontes e inferencia ditas. */}
+              <Typography component="footer" sx={{ mt: 1, fontSize: 11, color: 'text.secondary' }}>
+                Produzido pela IA · Fontes: {c.fontes.join(', ')}.{' '}
+                {c.inferencia ? 'Contém inferência.' : 'Leitura de dados do caso.'}
+              </Typography>
+
+              {/* O feedback alimenta os indicadores do M17 - apresentadas,
+                  aceitas, rejeitadas - e nada alem disso. */}
+              {reacao ? (
+                <Typography sx={{ mt: 0.75, fontSize: 11, color: 'text.secondary' }}>
+                  {reacao === 'aceita' ? 'Marcada como útil.' : 'Marcada como não útil.'}
+                </Typography>
+              ) : (
+                <Stack direction="row" spacing={0.5} sx={{ mt: 0.75 }}>
+                  <Button size="small" sx={{ fontSize: 11, py: 0 }} onClick={() => reagir(c, 'aceita')}>
+                    Útil
+                  </Button>
+                  <Button
+                    size="small"
+                    color="inherit"
+                    sx={{ fontSize: 11, py: 0, color: 'text.secondary' }}
+                    onClick={() => reagir(c, 'rejeitada')}
+                  >
+                    Não ajudou
+                  </Button>
+                </Stack>
+              )}
+            </Box>
+          );
+        })}
       </Stack>
     </>
   );
@@ -284,7 +424,7 @@ export function PainelCopiloto({
       >
         {/* A contagem e o motivo de abrir: sem ela, a aba seria so um enfeite
             na borda da tela. */}
-        <Badge badgeContent={cartoes.length} color="primary">
+        <Badge badgeContent={cartoes.length + cartoesIa.length} color="primary">
           <AutoAwesome sx={{ fontSize: 16, color: 'primary.main' }} />
         </Badge>
         <Typography sx={{ fontSize: 11.5, writingMode: 'vertical-rl' }}>Copiloto</Typography>

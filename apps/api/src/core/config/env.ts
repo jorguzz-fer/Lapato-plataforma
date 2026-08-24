@@ -90,6 +90,8 @@ const envSchema = z.object({
   /** M17 / ADR 0007: `stub` mantem o sistema funcionando sem LLM. */
   COPILOT_PROVIDER: z.enum(['stub', 'claude']).default('stub'),
   ANTHROPIC_API_KEY: z.string().optional(),
+  /** Modelo servindo o Copiloto. Registrado junto de cada sugestao (M17 secao 109). */
+  COPILOT_MODELO: z.string().default('claude-opus-5'),
 
   /**
    * Armazenamento de arquivos (M11: PDF do laudo; M16 reutiliza depois).

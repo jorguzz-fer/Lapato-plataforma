@@ -40,6 +40,11 @@ export function MolduraEntrada({
     manchete: ReactNode;
     texto: string;
     destaques: DestaqueEntrada[];
+    /**
+     * Caminho do logotipo. Vem por prop, e nao fixo aqui, porque este pacote e
+     * a camada base de componentes - o asset pertence ao app que o serve.
+     */
+    logo?: string;
   };
 }) {
   return (
@@ -62,11 +67,32 @@ export function MolduraEntrada({
           }}
         >
           <Stack spacing={3} sx={{ maxWidth: 460, textAlign: 'center', alignItems: 'center' }}>
-            <Typography
-              sx={{ fontSize: 34, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}
-            >
-              LAPATO
-            </Typography>
+            {vitrine.logo ? (
+              /* A arte e traco preto sobre transparencia; o cartao claro e o
+                 que a torna legivel sobre o painel escuro. */
+              <Box
+                sx={{
+                  backgroundColor: '#eef0f3',
+                  borderRadius: 3,
+                  px: 3.5,
+                  py: 2,
+                  display: 'flex',
+                }}
+              >
+                <Box
+                  component="img"
+                  src={vitrine.logo}
+                  alt="LAPATO"
+                  sx={{ width: 280, maxWidth: '100%' }}
+                />
+              </Box>
+            ) : (
+              <Typography
+                sx={{ fontSize: 34, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}
+              >
+                LAPATO
+              </Typography>
+            )}
 
             <Box
               sx={{

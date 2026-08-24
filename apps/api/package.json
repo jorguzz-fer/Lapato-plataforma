@@ -13,6 +13,7 @@
     "openapi:generate": "tsx src/cli/exportar-openapi.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.120.0",
     "@aws-sdk/client-s3": "^3.1116.0",
     "@lapato/db": "workspace:*",
     "@lapato/shared": "workspace:*",

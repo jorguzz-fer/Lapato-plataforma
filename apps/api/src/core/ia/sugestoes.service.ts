@@ -29,6 +29,12 @@ export class SugestoesService {
     await this.db.executar(async (tx) => {
       await tx.insert(sugestaoIa).values(
         cartoes.map((c) => ({
+          /**
+           * O id do cartao vira o id da linha: e ele que o painel devolve no
+           * feedback (M17 secao 15), e gerar outro id aqui quebraria o ciclo
+           * apresentou -> usuario reagiu -> registrado.
+           */
+          id: c.id,
           tenantId: ctx.tenantId,
           casoId,
           usuarioId: ctx.usuarioId,

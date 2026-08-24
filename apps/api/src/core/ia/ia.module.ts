@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { CopilotoFactory, CopilotoStubProvider } from './copiloto.provider.js';
+import { CopilotoClaudeProvider } from './copiloto-claude.provider.js';
 import { IaController } from './ia.controller.js';
 import { SugestoesService } from './sugestoes.service.js';
 import { GuardianService } from '../guardian/guardian.service.js';
@@ -13,7 +14,7 @@ import { GuardianService } from '../guardian/guardian.service.js';
 @Global()
 @Module({
   controllers: [IaController],
-  providers: [CopilotoStubProvider, CopilotoFactory, SugestoesService, GuardianService],
+  providers: [CopilotoStubProvider, CopilotoClaudeProvider, CopilotoFactory, SugestoesService, GuardianService],
   exports: [CopilotoFactory, SugestoesService, GuardianService],
 })
 export class IaModule {}

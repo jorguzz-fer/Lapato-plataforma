@@ -220,10 +220,11 @@ senha do provisionamento foi anotada errado, o administrador saiu, a conta
 travou por tentativas.
 
 ```bash
-RESET_TENANT_SLUG=lapato \
 RESET_EMAIL=administrador@lapato.com.br \
 node node_modules/@lapato/db/dist/cli/redefinir-senha.js
 ```
+
+Com mais de uma instituição no banco, acrescente `RESET_TENANT_SLUG=lapato`.
 
 Sorteia uma senha, imprime **uma vez**, marca a troca obrigatória no próximo
 login e zera o contador de tentativas — porque senha nova não adianta se a conta

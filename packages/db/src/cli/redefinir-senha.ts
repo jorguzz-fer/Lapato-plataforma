@@ -3,6 +3,7 @@ import { hash } from '@node-rs/argon2';
 import { and, eq } from 'drizzle-orm';
 import { comTenant, criarConexao } from '../client.js';
 import * as s from '../schema/index.js';
+import { resolverInstituicao } from './tenant.js';
 
 /**
  * Redefinicao administrativa de senha (M02).
@@ -26,7 +27,7 @@ import * as s from '../schema/index.js';
  *
  * Uso:
  *
- *   RESET_TENANT_SLUG=lapato RESET_EMAIL=alguem@exemplo.com \
+ *   RESET_EMAIL=alguem@exemplo.com \
  *   node node_modules/@lapato/db/dist/cli/redefinir-senha.js
  */
 
@@ -51,7 +52,7 @@ async function main(): Promise<void> {
     );
   }
 
-  const slug = obrigatoria('RESET_TENANT_SLUG').toLowerCase();
+  const slugPedido = process.env.RESET_TENANT_SLUG?.trim().toLowerCase();
   const email = obrigatoria('RESET_EMAIL').toLowerCase();
 
   const informada = process.env.RESET_SENHA;
@@ -69,13 +70,7 @@ async function main(): Promise<void> {
   const { db, encerrar } = criarConexao({ url, max: 1 });
 
   try {
-    const [instituicao] = await db
-      .select({ id: s.tenant.id })
-      .from(s.tenant)
-      .where(eq(s.tenant.slug, slug))
-      .limit(1);
-
-    if (!instituicao) throw new Error(`Instituicao "${slug}" nao existe.`);
+    const instituicao = await resolverInstituicao(db, slugPedido, 'RESET_TENANT_SLUG');
 
     const senhaHash = await hash(senha);
 
@@ -104,10 +99,10 @@ async function main(): Promise<void> {
       return antes;
     });
 
-    if (!conta) throw new Error(`Nenhum usuario "${email}" na instituicao "${slug}".`);
+    if (!conta) throw new Error(`Nenhum usuario "${email}" na instituicao "${instituicao.slug}".`);
 
     console.warn('');
-    console.warn(`senha redefinida: ${conta.nome} <${email}> @ ${slug}`);
+    console.warn(`senha redefinida: ${conta.nome} <${email}> @ ${instituicao.slug}`);
     console.warn('');
     console.warn('  SENHA (aparece uma unica vez):');
     console.warn(`    ${senha}`);

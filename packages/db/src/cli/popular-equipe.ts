@@ -83,14 +83,7 @@ async function main(): Promise<void> {
       );
     }
 
-    const resolvida = await resolverInstituicao(db, slugPedido, 'EQUIPE_TENANT_SLUG');
-    const [instituicao] = await db
-      .select({ id: s.tenant.id, nome: s.tenant.nomeFantasia })
-      .from(s.tenant)
-      .where(eq(s.tenant.id, resolvida.id))
-      .limit(1);
-
-    if (!instituicao) throw new Error(`Instituicao "${resolvida.slug}" nao existe.`);
+    const instituicao = await resolverInstituicao(db, slugPedido, 'EQUIPE_TENANT_SLUG');
 
     const credenciais: Array<{ rotulo: string; email: string; senha: string }> = [];
     const pulados: string[] = [];
@@ -188,7 +181,7 @@ async function main(): Promise<void> {
     });
 
     console.warn('');
-    console.warn(`Equipe inicial de "${instituicao.nome}" (${resolvida.slug}):`);
+    console.warn(`Equipe inicial de "${instituicao.nome}" (${instituicao.slug}):`);
     console.warn('');
 
     if (credenciais.length > 0) {

@@ -50,10 +50,20 @@ export function ShellPortal({ aoSair, children }: { aoSair: () => void; children
             direction="row"
             sx={{ alignItems: 'center', justifyContent: 'space-between', py: 1.5, gap: 2 }}
           >
-            <Stack direction="row" sx={{ alignItems: 'baseline', gap: 1.5, minWidth: 0 }}>
-              <Typography sx={{ fontWeight: 800, letterSpacing: '-0.02em', fontSize: 20 }}>
-                LAPATO
-              </Typography>
+            <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+              {/* Respaldo claro fixo: a arte e traco preto sobre transparencia. */}
+              <Box
+                sx={{
+                  backgroundColor: '#eef0f3',
+                  borderRadius: 1,
+                  px: 1,
+                  py: 0.25,
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                <Box component="img" src="/logo.webp" alt="LAPATO" sx={{ height: 32 }} />
+              </Box>
               {/* O nome da instituição aparece no painel, não aqui: a conta do
                   Portal pertence a um cliente só, e repeti-lo em toda tela
                   gastaria a barra estreita do celular (§54). */}

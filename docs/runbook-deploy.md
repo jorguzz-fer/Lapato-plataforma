@@ -400,6 +400,48 @@ perfis do Portal não aparecerem na lista, a instituição foi provisionada ante
 do M04 — rode o `sincronizar-perfis` (§3.3), que agora **cria** perfis padrão
 que nunca existiram (perfil que a instituição inativou continua intocado).
 
+### 3.8 Ligando o Copiloto (IA real)
+
+O sistema opera integralmente sem IA (M17 §§110–112): `COPILOT_PROVIDER=stub`
+é o padrão, o Guardian determinístico segue ativo e nada depende deste passo.
+Ligar o Copiloto é uma decisão da instituição, com custo por uso.
+
+1. 🌐 **Painel do Coolify** → `lapato-api` → Environment Variables:
+
+   ```
+   COPILOT_PROVIDER=claude
+   ANTHROPIC_API_KEY=<a chave, criada em console.anthropic.com>
+   # opcional; padrão claude-opus-5
+   # COPILOT_MODELO=claude-opus-5
+   ```
+
+   A chave **nunca** entra no repositório, em chat ou em log. Com
+   `COPILOT_PROVIDER=claude` e sem chave, a API se recusa a subir — o erro é
+   imediato e nomeia a variável.
+
+2. 🌐 **Painel do Coolify** → redeploy do `lapato-api`.
+
+3. 🌐 **No LAPATO**, abra um caso e o painel do Copiloto (aba lateral direita).
+   O indicador "assistência de IA indisponível" some e os cartões passam a
+   chegar. Sugestão só é buscada com o painel aberto — painel fechado não
+   gera custo.
+
+O que a instituição precisa saber ao ligar:
+
+- **Minimização**: o prompt leva espécie, raça, sexo, idade, amostras e
+  histórico clínico — nunca nome de tutor, cliente, veterinário, contato ou
+  microchip (M17 §95; ver ADR 0007).
+- **Sem treinamento**: a API padrão da Anthropic não treina em dados de API.
+  Celebrar DPA e definir a política de retenção contratual é passo da
+  instituição junto ao provedor (Blueprint §14).
+- **Transparência**: cada cartão apresentado fica registrado em `sugestao_ia`
+  com o modelo que respondeu e a reação do usuário (M17 §§15 e 109).
+- **Falha não trava**: chave revogada, cota estourada ou indisponibilidade do
+  provedor viram o indicador de indisponível; a bancada segue.
+
+Para desligar: volte `COPILOT_PROVIDER=stub` e redeploy. Nenhum dado é
+perdido — só param as sugestões novas.
+
 ### Verificação
 
 ```bash

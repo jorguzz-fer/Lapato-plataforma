@@ -73,6 +73,7 @@ export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => voi
       titulo="Bem-vindo de volta"
       descricao="Entre com suas credenciais para acessar o sistema."
       vitrine={{
+        logo: '/logo.webp',
         etiqueta: 'Gestão anatomopatológica veterinária',
         manchete: (
           <>

@@ -275,9 +275,20 @@ export function Shell({ sessao, aoSair, modulo, etapa, cartoes, children }: Prop
             </IconButton>
           )}
 
-          <Typography sx={{ fontSize: 20, fontWeight: 800, color: 'primary.main' }}>
-            LAPATO
-          </Typography>
+          {/* A arte e transparente com traco preto, entao o respaldo claro e
+              fixo de proposito: sem ele, o logo desaparece no tema escuro. */}
+          <Box
+            sx={{
+              backgroundColor: '#eef0f3',
+              borderRadius: 1,
+              px: 1,
+              py: 0.25,
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <Box component="img" src="/logo.webp" alt="LAPATO" sx={{ height: 34 }} />
+          </Box>
           <Typography
             sx={{ fontSize: 12, color: 'text.secondary', display: { xs: 'none', sm: 'block' } }}
           >

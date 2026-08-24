@@ -224,6 +224,24 @@ export interface StatusIa {
   provedor: string;
 }
 
+/** M17 secao 15: o cartao carrega fontes, inferencia e o id que o feedback devolve. */
+export interface CartaoIa {
+  id: string;
+  nivel: 'informacao' | 'sugestao' | 'atencao' | 'critico';
+  titulo: string;
+  corpo: string;
+  fontes: string[];
+  inferencia: boolean;
+  textoSugerido?: string;
+  campoDestino?: string;
+}
+
+export interface RespostaCopiloto {
+  cartoes: CartaoIa[];
+  disponivel: boolean;
+  modelo?: string;
+}
+
 // --- M01: dados mestres consumidos pelos formulários ------------------------
 
 export interface Servico {

@@ -8,9 +8,17 @@
 <meta name="theme-color" content="#fafafc" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d0f15" media="(prefers-color-scheme: dark)">
 <title>Mapa dos Módulos LAPATO</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600&display=swap">
+<!--
+  Sem fonte externa de propósito.
+
+  A CSP de produção (`infra/nginx-seguranca.conf`) traz `style-src 'self'` e
+  `font-src 'self' data:`, então o link para o Google Fonts que existia aqui era
+  recusado pelo navegador e a página já renderizava com a pilha de fallback —
+  só que deixando um erro no console e uma requisição que nunca completava.
+  As três famílias declaradas abaixo (sans, mono, serif) preservam a hierarquia
+  tipográfica com o que o sistema já tem, sem pedir exceção na CSP nem embarcar
+  arquivos de fonte para uma página de status interna.
+-->
 
 <style>
   /* Paleta clara — completa, no :root puro. */
@@ -113,7 +121,7 @@
     margin: 0;
     background: var(--ground);
     color: var(--ink);
-    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family: system-ui, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
     font-size: 15px;
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
@@ -131,7 +139,7 @@
   /* --- cabeçalho --- */
 
   .eyebrow {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
     font-size: 11.5px;
     letter-spacing: .14em;
     text-transform: uppercase;
@@ -140,7 +148,7 @@
   }
 
   h1 {
-    font-family: "IBM Plex Serif", Georgia, serif;
+    font-family: Georgia, "Times New Roman", serif;
     font-weight: 600;
     font-size: clamp(30px, 4.6vw, 44px);
     line-height: 1.12;
@@ -151,6 +159,13 @@
 
   .resumo-texto {
     margin: 0;
+    /* Dois parágrafos seguidos precisam de respiro: sem isto eles se leem como
+       um bloco só, e o segundo é justamente o que dá o veredito do placar. */
+  }
+
+  .resumo-texto + .resumo-texto { margin-top: 14px; }
+
+  .resumo-texto {
     max-width: 66ch;
     color: var(--ink-soft);
     font-size: 15.5px;
@@ -175,7 +190,7 @@
   }
 
   .metrica .n {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
     font-size: 30px;
     font-weight: 600;
     line-height: 1;
@@ -211,7 +226,7 @@
   }
 
   .legenda .titulo-legenda {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
     font-size: 11px;
     letter-spacing: .12em;
     text-transform: uppercase;
@@ -233,7 +248,7 @@
   }
 
   .selo .glifo {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
     font-size: 11px;
     line-height: 1;
   }
@@ -258,7 +273,7 @@
   }
 
   .grupo-cabeca h2 {
-    font-family: "IBM Plex Serif", Georgia, serif;
+    font-family: Georgia, "Times New Roman", serif;
     font-size: 19px;
     font-weight: 600;
     margin: 0;
@@ -267,7 +282,7 @@
   }
 
   .grupo-cabeca .conta {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
     font-size: 12px;
     color: var(--ink-faint);
     font-variant-numeric: tabular-nums;
@@ -278,7 +293,7 @@
     grid-template-columns: 46px minmax(190px, 1.5fr) 132px 132px minmax(200px, 2fr);
     gap: 14px;
     padding: 10px 14px 8px;
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
     font-size: 10.5px;
     letter-spacing: .12em;
     text-transform: uppercase;
@@ -304,7 +319,7 @@
   }
 
   .num {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
     font-size: 13px;
     font-weight: 500;
     color: var(--ink-faint);
@@ -316,7 +331,7 @@
   .nota { font-size: 13px; color: var(--ink-soft); line-height: 1.45; }
 
   .nota code {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
     font-size: 12px;
     background: var(--surface-2);
     padding: 1px 5px;
@@ -336,7 +351,7 @@
   }
 
   .bloco h2 {
-    font-family: "IBM Plex Serif", Georgia, serif;
+    font-family: Georgia, "Times New Roman", serif;
     font-size: 22px;
     font-weight: 600;
     margin: 0 0 6px;
@@ -369,7 +384,7 @@
   .passo::before {
     counter-increment: passo;
     content: counter(passo);
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
     font-size: 12px;
     font-weight: 600;
     color: var(--accent-deep);
@@ -386,7 +401,7 @@
   .passo h3 { font-size: 15px; font-weight: 600; margin: 0 0 3px; }
   .passo p  { margin: 0; font-size: 13.5px; color: var(--ink-soft); }
   .passo .marca {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
     font-size: 11px;
     color: var(--ink-faint);
     letter-spacing: .06em;
@@ -414,7 +429,7 @@
   }
 
   .semdoc-lista .n {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
     font-size: 12px;
     color: var(--semdoc);
     font-weight: 600;
@@ -429,7 +444,7 @@
   }
 
   .rodape code {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
     font-size: 11.5px;
   }
 
@@ -456,7 +471,7 @@
 
     .rotulo-movel {
       display: inline;
-      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
       font-size: 10px;
       letter-spacing: .1em;
       text-transform: uppercase;
@@ -481,20 +496,24 @@
       <strong>tela</strong> que o operador usa. Um módulo com domínio pronto já funciona e já é
       testado; só ainda não tem interface própria.
     </p>
+    <p class="resumo-texto">
+      <strong>Todos os módulos com documentação escrita estão construídos.</strong> O único que
+      ainda conta como parcial é o de Inteligência Artificial: o Guardian determinístico está
+      ativo e o painel existe, mas o Copiloto continua em <code>stub</code> — e é assim de
+      propósito, porque o próprio módulo exige que o LAPATO funcione sem IA. Dos oito que
+      aguardam documentação, dois já têm a base pronta: a trilha de auditoria imutável (M22) e
+      a fila de notificações (M26).
+    </p>
   </header>
 
   <section class="placar" aria-label="Resumo do estado dos módulos">
     <div class="metrica is-pronto">
-      <span class="n">18</span>
+      <span class="n">17</span>
       <span class="r">Prontos de ponta a ponta</span>
     </div>
     <div class="metrica is-parcial">
-      <span class="n">0</span>
-      <span class="r">Domínio pronto, sem tela</span>
-    </div>
-    <div class="metrica is-ausente">
-      <span class="n">0</span>
-      <span class="r">Adiado por decisão</span>
+      <span class="n">1</span>
+      <span class="r">Parcial por decisão de fase</span>
     </div>
     <div class="metrica is-semdoc">
       <span class="n">8</span>
@@ -507,7 +526,6 @@
     <span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span>
     <span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Parcial</span>
     <span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciado</span>
-    <span class="selo selo-adiado"><span class="glifo" aria-hidden="true">—</span> Adiado</span>
     <span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span>
   </div>
 
@@ -807,14 +825,18 @@
   <section class="bloco">
     <h2>O que vem a seguir</h2>
     <p class="intro">
-      A fatia vertical está fechada: cadastro, recebimento, triagem, macroscopia,
-      processamento terceirizado, microscopia, laudo estruturado, assinatura, liberação e
-      agora o PDF com QR Code de validação pública — de ponta a ponta, com teste automatizado
-      cobrindo o caminho inteiro. A citologia entrou com bancada e workflow próprios, e o
-      laudo passou a sair ilustrado: as fotografias do caso agora vivem no acervo, não no
-      celular de quem as tirou. E o laudo chega ao cliente pelo Portal, sem ninguém
-      anexar PDF em mensagem. O que segue são as extensões que faltam para o dia a
-      dia do laboratório e para tirar a IA do modo stub.
+      <strong>Acabaram os módulos documentados.</strong> A fatia vertical fechou primeiro —
+      cadastro, recebimento, triagem, macroscopia, processamento terceirizado, microscopia,
+      laudo estruturado, assinatura, liberação e o PDF com QR Code de validação pública, com
+      teste automatizado cobrindo o caminho inteiro. Depois vieram as três modalidades
+      diagnósticas completas, o Portal do Cliente, o acervo de imagens, o controle de
+      cadáveres e a Bioteca, que fecha o ciclo do material: o que sai da macroscopia hoje
+      continua localizável daqui a dez anos.
+    </p>
+    <p class="intro">
+      O que resta são duas coisas de naturezas diferentes: trocar o provedor de IA, que é
+      trabalho de engenharia, e escrever a especificação dos oito módulos restantes, que é
+      trabalho de produto — e é o que destrava a próxima fase.
     </p>
 
     <ol class="passos">

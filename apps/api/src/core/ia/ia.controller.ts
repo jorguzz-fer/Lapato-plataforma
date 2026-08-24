@@ -1,10 +1,11 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
-import { MODULOS, type ContextoCopiloto } from '@lapato/shared';
+import { MODULOS, PERMISSOES, type ContextoCopiloto } from '@lapato/shared';
 import { CopilotoFactory } from './copiloto.provider.js';
 import { SugestoesService } from './sugestoes.service.js';
 import { validarCorpo } from '../http/validacao.js';
+import { ExigePermissao } from '../auth/guards.js';
 
 const sugerirSchema = z.object({
   modulo: z.string().min(1),
@@ -46,7 +47,15 @@ export class IaController {
     return { disponivel: provedor.disponivel(), provedor: provedor.nome };
   }
 
+  /**
+   * `ia:utilizar`, e nao sessao pura: as rotas de sugestao leem contexto de
+   * caso, e uma conta externa do Portal tem sessao valida. Com o Copiloto em
+   * stub nada vazava; com um LLM real lendo o caso, vazaria. O gate entra
+   * antes do provedor real. `status` fica sem permissao de proposito - so
+   * informa disponibilidade e o front chama antes de saber o perfil.
+   */
   @Post('sugerir')
+  @ExigePermissao(PERMISSOES.IA_UTILIZAR)
   @ApiOperation({
     summary: 'Cartões contextuais do LAPATO Copiloto',
     description:
@@ -81,6 +90,7 @@ export class IaController {
   }
 
   @Post('feedback')
+  @ExigePermissao(PERMISSOES.IA_UTILIZAR)
   @ApiOperation({
     summary: 'Registra o que o usuário fez com a sugestão',
     description:

@@ -78,6 +78,7 @@ export const PERFIS: Array<{
       PERMISSOES.CADAVER_VISUALIZAR,
       PERMISSOES.CADAVER_RECEBER,
       PERMISSOES.CADAVER_ENTREGAR,
+      PERMISSOES.IA_UTILIZAR,
     ],
   },
   {
@@ -115,6 +116,7 @@ export const PERFIS: Array<{
       PERMISSOES.IMAGEM_VISUALIZAR,
       PERMISSOES.IMAGEM_ENVIAR,
       PERMISSOES.IMAGEM_EDITAR,
+      PERMISSOES.IA_UTILIZAR,
     ],
   },
   {
@@ -185,6 +187,7 @@ export const PERFIS: Array<{
       PERMISSOES.BIOTECA_RESERVAR,
       PERMISSOES.CLIENTE_VISUALIZAR,
       PERMISSOES.VETERINARIO_VISUALIZAR,
+      PERMISSOES.IA_UTILIZAR,
     ],
   },
   {
@@ -217,6 +220,7 @@ export const PERFIS: Array<{
       // Elabora o laudo sob supervisao - e o laudo inclui escolher as imagens.
       PERMISSOES.IMAGEM_ENVIAR,
       PERMISSOES.IMAGEM_EDITAR,
+      PERMISSOES.IA_UTILIZAR,
     ],
   },
   {

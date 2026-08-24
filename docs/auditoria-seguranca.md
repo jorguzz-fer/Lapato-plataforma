@@ -176,3 +176,75 @@ sendo buscado.
 
 Foi assim que o Google Fonts apareceu: ele não estava no `index.html`, estava num `@import`
 de CSS, e nenhuma leitura de código o teria encontrado antes de o navegador reclamar.
+
+---
+
+# Segunda rodada — 24/08/2026
+
+Auditoria completa depois de os 18 módulos documentados ficarem prontos. O método
+foi varredura sistemática, não amostragem: as 178 rotas da API foram checadas por
+script contra a presença de `@ExigePermissao`/`@Publica`, todos os UPDATEs foram
+listados e conferidos contra o modelo de isolamento, e todos os `@Body` foram
+verificados quanto à validação por schema.
+
+**Resumo:** quatro achados, todos corrigidos nesta rodada. Nenhum explorável hoje —
+dois só se tornariam exploráveis com evoluções já planejadas (o Copiloto real e a
+linha 6 do react-router parada no tempo), e dois eram inconsistências que produziriam
+dado errado, não vazamento.
+
+## 2.1 🟡 As rotas de IA valiam para qualquer sessão — inclusive a do Portal
+
+`POST /ia/sugerir` e `POST /ia/feedback` exigiam apenas sessão válida, e a conta
+externa do Portal tem sessão válida. Com o Copiloto em stub, nada vazava — o provedor
+devolve zero cartões. Mas o contrato do M17 prevê o provedor real lendo contexto de
+caso, e aí uma conta de cliente poderia consultar a IA sobre casos que o Portal
+nunca mostraria.
+
+**Correção.** Permissão nova `ia:utilizar`, atribuída aos perfis internos (recepção,
+técnico, patologista, residente; o administrador herda por "todas"). As rotas de
+sugestão e feedback exigem a permissão; `GET /ia/status` continua aberta a qualquer
+sessão — só informa disponibilidade, e o front pergunta antes de saber o perfil.
+Teste de regressão: a conta do Portal recebe 403, a interna recebe 201.
+
+> **Ação de deploy:** rodar `sincronizar-perfis` (agora sem precisar do slug).
+
+## 2.2 🟡 react-router 6 com três CVEs moderados sem patch na linha 6
+
+`pnpm audit` apontava três avisos moderados no react-router 6 (open redirect via
+`Link`/`useNavigate`, constructor injection na hidratação SSR). Nenhum era explorável
+aqui — a SPA não usa SSR e nenhum `navigate()` recebe caminho controlado pelo
+usuário — mas a linha 6 não recebe correção: o patch existe só na 7.
+
+**Correção.** Upgrade para `react-router-dom@^7`. A superfície usada (BrowserRouter,
+Routes, Route, Navigate, useNavigate, useParams, Link) é idêntica nas duas linhas;
+as 9 rotas e a navegação programática foram verificadas no navegador após o upgrade,
+com 0 erros. `pnpm audit --prod`: **nenhuma vulnerabilidade conhecida**.
+
+## 2.3 🟢 Subconsulta correlacionada frágil no painel de cadáveres
+
+O mesmo padrão que produziu contagens zeradas silenciosas (ver PR #50): em consulta
+de tabela única, o drizzle emite a coluna externa sem qualificar e o Postgres a
+resolve no escopo interno. O `listar()` do M15 tinha a forma perigosa, funcionando
+por acaso — os joins da consulta faziam o drizzle qualificar. Normalizado para a
+coluna por extenso, a mesma forma usada em todos os outros lugares.
+
+## 2.4 🟢 "Vence hoje" contado como atrasado na Bioteca
+
+`atualizarAtrasos()` marcava `atrasado` com `prazo <= hoje`, enquanto o Guardian
+compara com `<`. Um empréstimo que vence hoje aparecia atrasado numa tela e no prazo
+na outra, durante o dia inteiro do vencimento. Normalizado para `<` nos dois.
+
+## 2.5 Verificado sem achado
+
+| Superfície | Método | Resultado |
+|---|---|---|
+| Autorização das rotas | Script sobre as 178 rotas | Todas com `@ExigePermissao` ou `@Publica` deliberado; as 7 exceções são autosserviço de conta (`@PermiteEstagio`) e IA (tratada em 2.1) |
+| Isolamento de tenant | 87 UPDATEs/DELETEs listados | Todos sob `db.executar` → `comTenant` → RLS com `FORCE`; o teste de RLS prova que tenant A não altera tenant B |
+| IDOR no Portal | Leitura do serviço | Todo filtro usa o `clienteId` **da conta**, nunca do request; testes de isolamento cobrem os dois clientes |
+| Validação de entrada | Script sobre todos os `@Body` | 100% via `validarCorpo` + zod |
+| Injeção de SQL | Varredura de `sql.raw` | 2 usos, ambos interpolando constantes de compilação (enums), nunca entrada |
+| Transações | eventos + auditoria | Sempre no mesmo `tx` da mudança de estado; nenhuma transação aninhada |
+| Numeração | Leitura de `proximo()` | `UPDATE ... SET x = x+1 ... RETURNING` atômico — sem duplicata sob concorrência |
+| Segredos | Grep por padrões + `git ls-files` | Nenhum segredo versionado; só `.env.example` |
+| XSS no front | Varredura | Sem `dangerouslySetInnerHTML`/`eval`; localStorage guarda só preferência de UI |
+| Upload | Releitura | `limits` do multer antes do buffer (corrigido na 1ª rodada, mantido) |

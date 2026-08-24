@@ -3233,3 +3233,32 @@ describe('bioteca e acervo biológico (M18)', () => {
     expect(retirada.status).toBe(403);
   });
 });
+
+describe('assistência de IA exige perfil interno (M17)', () => {
+  /**
+   * Achado da auditoria: as rotas de sugestao valiam para qualquer sessao, e a
+   * conta externa do Portal tem sessao valida. Com o Copiloto em stub nada
+   * vazava; com um LLM real lendo contexto de caso, vazaria. O gate entra
+   * antes do provedor real, e este teste garante que ele nao regrida.
+   */
+  test('a conta do Portal não consulta o Copiloto; a interna consulta', async () => {
+    await entrar('portal@clinicacentral.local');
+
+    const externo = await req('POST', '/ia/sugerir', { modulo: 'M11_LAUDOS' });
+    expect(externo.status, 'sessão externa não pede sugestão').toBe(403);
+    const feedback = await req('POST', '/ia/feedback', {
+      sugestaoId: '00000000-0000-0000-0000-000000000000',
+      acao: 'rejeitada',
+    });
+    expect(feedback.status).toBe(403);
+
+    // `status` continua aberto a qualquer sessão: só diz se a IA está de pé,
+    // e o front pergunta antes de saber o perfil.
+    const status = await req('GET', '/ia/status');
+    expect(status.status).toBe(200);
+
+    await entrar('patologista@lapato.local');
+    const interno = await req('POST', '/ia/sugerir', { modulo: 'M11_LAUDOS' });
+    expect(interno.status, JSON.stringify(interno.body)).toBe(201);
+  });
+});

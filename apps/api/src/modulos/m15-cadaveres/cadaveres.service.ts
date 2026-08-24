@@ -581,9 +581,16 @@ export class CadaveresService {
           foraDesde: cadaver.foraDesde,
           prazoGuardaAte: cadaver.prazoGuardaAte,
           destinacao: cadaver.destinacao,
+          /**
+           * Coluna externa por extenso, como em `verificarCadaveres`. Aqui a
+           * consulta tem joins e o drizzle qualificaria `${cadaver.id}` - mas
+           * bastaria alguem remover os joins para a correlacao quebrar em
+           * silencio. Mesma forma nos dois lugares, nenhuma armadilha.
+           */
           bloqueios: sql<number>`(
             select count(*) from ${bloqueioCadaver} b
-            where b.cadaver_id = ${cadaver.id} and b.resolvido_em is null
+            where b.cadaver_id = cadaver.id and b.tenant_id = cadaver.tenant_id
+              and b.resolvido_em is null
           )`,
         })
         .from(cadaver)

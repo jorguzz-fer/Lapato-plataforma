@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import {
   bloco,
   caso,
@@ -739,7 +739,13 @@ export class BiotecaService {
           and(
             eq(emprestimo.tenantId, ctx.tenantId),
             inArray(emprestimo.status, ['aberto', 'devolvido_parcial']),
-            lte(emprestimo.prazoDevolucao, hoje),
+            /**
+             * `<` e nao `<=`: quem vence HOJE ainda esta no prazo ate o fim do
+             * dia. O Guardian ja compara com `< current_date`; marcar atrasado
+             * aqui com `<=` faria as duas telas discordarem sobre o mesmo
+             * emprestimo durante o dia inteiro do vencimento.
+             */
+            lt(emprestimo.prazoDevolucao, hoje),
           ),
         )
         .returning({ id: emprestimo.id });

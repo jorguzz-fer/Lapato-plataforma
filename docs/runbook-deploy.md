@@ -254,21 +254,21 @@ destino ficou invisível dos dois lados — e não há tela que o corrija, porqu
 envio acontece uma vez.
 
 ```bash
-# 1. sem o slug, ele lista as instituições existentes
+# 1. confere o que faria, sem gravar
+VINCULO_SIMULAR=sim \
 node node_modules/@lapato/db/dist/cli/vincular-lotes.js
 
-# 2. confere o que faria, sem gravar
-VINCULO_TENANT_SLUG=lapato VINCULO_SIMULAR=sim \
+# 2. grava
 node node_modules/@lapato/db/dist/cli/vincular-lotes.js
 
-# 3. grava
+# com mais de uma instituição, o slug passa a ser obrigatório
 VINCULO_TENANT_SLUG=lapato \
 node node_modules/@lapato/db/dist/cli/vincular-lotes.js
 ```
 
 | Variável | Efeito |
 |---|---|
-| `VINCULO_TENANT_SLUG` | instituição; ausente, o comando lista as existentes |
+| `VINCULO_TENANT_SLUG` | instituição; ausente, usa a única que existir, ou lista as demais e para |
 | `VINCULO_LABORATORIO_ID` | destino, obrigatório quando há mais de um laboratório |
 | `VINCULO_SIMULAR=sim` | mostra o plano sem gravar |
 
@@ -290,14 +290,14 @@ patologista depois do provisionamento; sem a sincronização, o ciclo de revisã
 só existe para instituições novas.
 
 ```bash
-# sem o slug, lista as instituições
+# instalação de instituição única: o comando resolve sozinho e diz qual usou
 node node_modules/@lapato/db/dist/cli/sincronizar-perfis.js
 
-# confere o que faria
-SINCRONIZAR_TENANT_SLUG=lapato SINCRONIZAR_SIMULAR=sim \
+# confere o que faria, sem gravar
+SINCRONIZAR_SIMULAR=sim \
 node node_modules/@lapato/db/dist/cli/sincronizar-perfis.js
 
-# grava
+# com mais de uma instituição, o comando lista e para — aí o slug é obrigatório
 SINCRONIZAR_TENANT_SLUG=lapato \
 node node_modules/@lapato/db/dist/cli/sincronizar-perfis.js
 ```
@@ -335,11 +335,13 @@ MFA não é semeado: quem assina cadastra o próprio TOTP no primeiro acesso,
 guiado pelo funil de sessão.
 
 ```bash
-EQUIPE_TENANT_SLUG=lapato \
 EQUIPE_EMAIL_DOMINIO=minhaclinica.com.br \
 EQUIPE_CRMV="CRMV-CE 12345" \
 node node_modules/@lapato/db/dist/cli/popular-equipe.js
 ```
+
+Com mais de uma instituição no banco, acrescente `EQUIPE_TENANT_SLUG=lapato` —
+o comando lista as opções e para até você escolher.
 
 - `EQUIPE_EMAIL_DOMINIO` monta os e-mails (`recepcao@<domínio>`, ...).
 - `EQUIPE_CRMV` (opcional) registra a identificação profissional do
@@ -362,14 +364,14 @@ workflow dela. Sem isso, cadastrar um caso citológico devolve `400` com
 "Nenhum workflow ativo para a modalidade citopatologia".
 
 ```bash
-# sem o slug, lista as instituições
+# instalação de instituição única: o comando resolve sozinho e diz qual usou
 node node_modules/@lapato/db/dist/cli/sincronizar-workflows.js
 
-# confere o que faria
-SINCRONIZAR_TENANT_SLUG=lapato SINCRONIZAR_SIMULAR=sim \
+# confere o que faria, sem gravar
+SINCRONIZAR_SIMULAR=sim \
 node node_modules/@lapato/db/dist/cli/sincronizar-workflows.js
 
-# grava
+# com mais de uma instituição, o comando lista e para — aí o slug é obrigatório
 SINCRONIZAR_TENANT_SLUG=lapato \
 node node_modules/@lapato/db/dist/cli/sincronizar-workflows.js
 ```

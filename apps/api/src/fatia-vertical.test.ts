@@ -3234,6 +3234,96 @@ describe('bioteca e acervo biológico (M18)', () => {
   });
 });
 
+describe('painel de chegada (M07)', () => {
+  /**
+   * O painel roda DEPOIS dos outros blocos de proposito: a essa altura o banco
+   * ja tem casos em varias etapas, laudo liberado, pendencia e emprestimo. Um
+   * painel testado num banco vazio passaria com zeros em tudo - que e
+   * exatamente o modo de falhar mais provavel numa tela de agregacao.
+   */
+
+  test('a volumetria bate com o funil, e nada volta zerado por engano', async () => {
+    await entrar('admin@lapato.local');
+    const painel = await req('GET', '/painel');
+    expect(painel.status, JSON.stringify(painel.body)).toBe(200);
+
+    const { volumetria, funil } = painel.body;
+    expect(volumetria.emAndamento).toBeGreaterThan(0);
+    expect(volumetria.entraramHoje).toBeGreaterThan(0);
+
+    /**
+     * A invariante que pega agregacao quebrada: o funil e a MESMA populacao de
+     * `emAndamento`, so que fatiada. Se um dos dois filtros errar a etapa - ou
+     * se uma correlacao devolver zero em silencio - as duas contas divergem.
+     */
+    const somaDoFunil = funil.reduce(
+      (total: number, linha: { total: number }) => total + linha.total,
+      0,
+    );
+    expect(somaDoFunil).toBe(volumetria.emAndamento);
+
+    // Nenhuma etapa encerrada entra no funil.
+    for (const linha of funil) {
+      expect(['liberado', 'arquivado', 'cancelado']).not.toContain(linha.etapa);
+      expect(linha.rotulo).not.toContain('_');
+    }
+  });
+
+  test('todo número da faixa de atenção leva a uma tela onde dá para agir', async () => {
+    const painel = await req('GET', '/painel');
+
+    for (const item of painel.body.atencao) {
+      expect(item.total, `${item.chave} entrou na faixa com zero`).toBeGreaterThan(0);
+      expect(item.para, `${item.chave} sem rota`).toMatch(/^\//);
+      expect(['critico', 'atencao', 'informacao']).toContain(item.nivel);
+      expect(item.detalhe.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('a série cobre os últimos 14 dias, inclusive os dias parados', async () => {
+    const painel = await req('GET', '/painel');
+    const serie = painel.body.serie as { dia: string; entradas: number; liberacoes: number }[];
+
+    expect(serie).toHaveLength(14);
+    // Ordem crescente e sem buracos: um sabado sem movimento tem de aparecer
+    // como zero, nao sumir do eixo.
+    const dias = serie.map((d) => d.dia);
+    expect([...dias].sort()).toEqual(dias);
+    expect(new Set(dias).size).toBe(14);
+
+    const hoje = serie.at(-1)!;
+    expect(hoje.entradas).toBeGreaterThan(0);
+  });
+
+  /**
+   * M02: o painel nao pode virar um vazamento de volumetria por tabela lateral.
+   * A recepcao nao assina laudo nem entra na bioteca; mostrar "3 laudos
+   * aguardando assinatura" para ela nao ajuda ninguem e informa o que ela nao
+   * teria como consultar por outro caminho.
+   */
+  test('cada bloco respeita a permissão de quem está olhando', async () => {
+    await entrar('recepcao@lapato.local');
+    const daRecepcao = await req('GET', '/painel');
+    expect(daRecepcao.status).toBe(200);
+    const chaves = daRecepcao.body.atencao.map((i: { chave: string }) => i.chave);
+
+    // A recepcao nao assina, nao revisa e nao entra na bioteca.
+    expect(chaves).not.toContain('aguardando_assinatura');
+    expect(chaves).not.toContain('aguardando_revisao');
+    expect(chaves.some((c: string) => c.startsWith('emprestimos_'))).toBe(false);
+
+    // Mas enxerga cadaver e pendencia: o corte e por permissao, e nao um
+    // "esconde tudo para quem nao e patologista".
+    expect(chaves.some((c: string) => c.startsWith('cadaveres_'))).toBe(true);
+  });
+
+  test('o parceiro do laboratório de apoio não abre o painel', async () => {
+    await entrar('apoio@lapato.local');
+    const negado = await req('GET', '/painel');
+    expect(negado.status).toBe(403);
+  });
+});
+
 describe('assistência de IA exige perfil interno (M17)', () => {
   /**
    * Achado da auditoria: as rotas de sugestao valiam para qualquer sessao, e a

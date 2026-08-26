@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { iniciaisDe } from './pessoas.js';
+import { iniciaisDe, primeiroNome } from './pessoas.js';
 
 /**
  * Regressao de uma tela branca em producao.
@@ -27,5 +27,18 @@ describe('iniciaisDe', () => {
     expect(iniciaisDe(null)).toBe('');
     expect(iniciaisDe('')).toBe('');
     expect(iniciaisDe('   ')).toBe('');
+  });
+});
+
+describe('primeiro nome', () => {
+  test('devolve so o primeiro nome', () => {
+    expect(primeiroNome('Ana Beatriz Silva')).toBe('Ana');
+  });
+
+  test('aguenta nome unico, vazio e ausente', () => {
+    expect(primeiroNome('Ana')).toBe('Ana');
+    expect(primeiroNome('   ')).toBe('');
+    expect(primeiroNome(undefined)).toBe('');
+    expect(primeiroNome(null)).toBe('');
   });
 });

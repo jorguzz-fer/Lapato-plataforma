@@ -1720,6 +1720,41 @@ export class BiotecaService {
    * vencido, material sem localizacao, congelado em equipamento incompativel,
    * elegivel para descarte mas preso por processo ativo.
    */
+  /**
+   * Numeros do M18 para o painel de chegada.
+   *
+   * O atraso e recalculado na leitura em vez de confiar so no status gravado:
+   * `atualizarAtrasos()` roda por job, e um emprestimo que venceu depois da
+   * ultima passagem precisa aparecer atrasado mesmo assim - a mesma razao pela
+   * qual o M07 recalcula o alerta de prazo ao listar a fila.
+   */
+  async resumoPainel(): Promise<{ emprestimosAbertos: number; emprestimosAtrasados: number }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const [linha] = await tx
+        .select({
+          abertos: sql<number>`count(*)::int`,
+          atrasados: sql<number>`(count(*) filter (
+            where ${emprestimo.status} = 'atrasado'
+               or ${emprestimo.prazoDevolucao} < current_date
+          ))::int`,
+        })
+        .from(emprestimo)
+        .where(
+          and(
+            eq(emprestimo.tenantId, ctx.tenantId),
+            inArray(emprestimo.status, STATUS_EMPRESTIMO_ABERTOS),
+          ),
+        );
+
+      return {
+        emprestimosAbertos: linha?.abertos ?? 0,
+        emprestimosAtrasados: linha?.atrasados ?? 0,
+      };
+    });
+  }
+
   async conferencia() {
     await this.atualizarAtrasos();
     return this.db.executar((tx) => this.guardian.verificarBioteca(tx));

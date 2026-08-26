@@ -88,6 +88,7 @@ import {
   type AbaSolicitacoes,
 } from './m10-solicitacoes/solicitacoes.service.js';
 import { FluxoConsultaService } from './m07-fluxo/fluxo-consulta.service.js';
+import { PainelService } from './m07-fluxo/painel.service.js';
 import { DbService } from '../core/db/db.service.js';
 
 // ---------------------------------------------------------------------------
@@ -1308,6 +1309,25 @@ export class FluxoController {
       this.consulta.transicaoManual(tx, casoId, dados.etapa, dados.justificativa),
     );
     return { ok: true };
+  }
+}
+
+
+@ApiTags('M07 - Rastreamento e Gestão de Fluxo')
+@Controller('painel')
+export class PainelController {
+  constructor(private readonly painel: PainelService) {}
+
+  @Get()
+  @ExigePermissao(PERMISSOES.FLUXO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Painel de chegada',
+    description:
+      'Volumetria do dia, o que exige atenção agora e o funil por etapa. ' +
+      'Cada bloco respeita a permissão que permite agir sobre ele.',
+  })
+  async montar() {
+    return this.painel.montar();
   }
 }
 

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import Chip from '@mui/material/Chip';
 import MenuItem from '@mui/material/MenuItem';
 import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
@@ -19,7 +20,7 @@ import { useTheme } from '@mui/material/styles';
 import ChevronRight from '@mui/icons-material/ChevronRight';
 import BlockOutlined from '@mui/icons-material/BlockOutlined';
 import InboxOutlined from '@mui/icons-material/InboxOutlined';
-import { ETAPA } from '@lapato/shared';
+import { ETAPA, ETAPA_LABEL } from '@lapato/shared';
 import { IndicadorPrazo } from '@lapato/ui';
 import { api, type CasoNaFila } from '../api';
 
@@ -33,33 +34,51 @@ import { api, type CasoNaFila } from '../api';
  * nao dependa apenas de cor - a regra mora no componente, nao nesta tela.
  */
 
-const ETAPA_LABEL: Record<string, string> = {
-  aguardando_recebimento: 'Aguardando recebimento',
-  aguardando_triagem: 'Aguardando triagem',
-  aguardando_macroscopia: 'Aguardando macroscopia',
-  aguardando_processamento: 'Em processamento',
-  aguardando_microscopia: 'Aguardando microscopia',
-  aguardando_revisao: 'Aguardando revisão',
-  aguardando_assinatura: 'Aguardando assinatura',
-  liberado: 'Liberado',
-};
-
 const COLUNAS = ['Registro', 'Paciente', 'Cliente', 'Serviço', 'Etapa', 'Prazo'];
 
 export function CentralDeCasos() {
   const [casos, setCasos] = useState<CasoNaFila[]>([]);
-  const [etapa, setEtapa] = useState('');
   const [carregando, setCarregando] = useState(true);
   const tema = useTheme();
   const estreito = useMediaQuery(tema.breakpoints.down('md'));
 
+  /**
+   * O filtro mora na URL, e nao em `useState`.
+   *
+   * O painel manda para ca com a etapa ja escolhida (`/casos?etapa=...`); se o
+   * estado fosse interno, o link chegaria mostrando a fila inteira e o numero
+   * clicado nao bateria com a tela aberta. De quebra, o filtro passa a
+   * sobreviver ao botao voltar e a ser compartilhavel.
+   */
+  const [parametros, setParametros] = useSearchParams();
+  const etapa = parametros.get('etapa') ?? '';
+  const minhaFila = parametros.get('minhaFila') === 'true';
+
   useEffect(() => {
+    const busca = new URLSearchParams();
+    if (etapa) busca.set('etapa', etapa);
+    if (minhaFila) busca.set('minhaFila', 'true');
+    const consulta = busca.toString();
+
     setCarregando(true);
     api
-      .get<CasoNaFila[]>(`/fluxo/casos${etapa ? `?etapa=${etapa}` : ''}`)
+      .get<CasoNaFila[]>(`/fluxo/casos${consulta ? `?${consulta}` : ''}`)
       .then(setCasos)
       .finally(() => setCarregando(false));
-  }, [etapa]);
+  }, [etapa, minhaFila]);
+
+  const trocarEtapa = (valor: string) => {
+    const proximos = new URLSearchParams(parametros);
+    if (valor) proximos.set('etapa', valor);
+    else proximos.delete('etapa');
+    setParametros(proximos, { replace: true });
+  };
+
+  const limparMinhaFila = () => {
+    const proximos = new URLSearchParams(parametros);
+    proximos.delete('minhaFila');
+    setParametros(proximos, { replace: true });
+  };
 
   return (
     <Box component="section">
@@ -80,19 +99,29 @@ export function CentralDeCasos() {
               ? 'Carregando…'
               : `${casos.length} ${casos.length === 1 ? 'caso' : 'casos'}${etapa ? ' nesta etapa' : ''}`}
           </Typography>
+          {/* Filtro vindo por link precisa ser visivel e removivel: sem isto,
+              quem chega do painel ve uma lista curta sem saber por que. */}
+          {minhaFila && (
+            <Chip
+              size="small"
+              label="Somente casos sob sua responsabilidade"
+              onDelete={limparMinhaFila}
+              sx={{ mt: 1 }}
+            />
+          )}
         </Box>
 
         <TextField
           select
           label="Etapa"
           value={etapa}
-          onChange={(e) => setEtapa(e.target.value)}
+          onChange={(e) => trocarEtapa(e.target.value)}
           sx={{ minWidth: { sm: 230 }, width: { xs: '100%', sm: 'auto' } }}
         >
           <MenuItem value="">Todas</MenuItem>
           {ETAPA.map((e) => (
             <MenuItem key={e} value={e}>
-              {ETAPA_LABEL[e] ?? e}
+              {ETAPA_LABEL[e]}
             </MenuItem>
           ))}
         </TextField>
@@ -160,7 +189,7 @@ export function CentralDeCasos() {
                     {caso.cliente} · {caso.servico}
                   </Typography>
                   <Typography sx={{ fontSize: 12.5, mt: 0.75 }}>
-                    {ETAPA_LABEL[caso.etapa] ?? caso.etapa}
+                    {ETAPA_LABEL[caso.etapa]}
                   </Typography>
                 </Box>
               </Card>
@@ -228,7 +257,7 @@ export function CentralDeCasos() {
                       <TableCell>{caso.paciente}</TableCell>
                       <TableCell sx={{ color: 'text.secondary' }}>{caso.cliente}</TableCell>
                       <TableCell sx={{ color: 'text.secondary' }}>{caso.servico}</TableCell>
-                      <TableCell>{ETAPA_LABEL[caso.etapa] ?? caso.etapa}</TableCell>
+                      <TableCell>{ETAPA_LABEL[caso.etapa]}</TableCell>
                       <TableCell>
                         <IndicadorPrazo
                           estado={caso.alertaPrazo}

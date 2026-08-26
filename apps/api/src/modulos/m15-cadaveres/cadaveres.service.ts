@@ -738,6 +738,56 @@ export class CadaveresService {
    * continua ocupando posicao, liberado sem destinacao, liberado com bloqueio.
    * E trabalho pendente da operacao, e o painel mostra como tal.
    */
+  /**
+   * Numeros do M15 para o painel de chegada.
+   *
+   * `aguardandoLiberacao` e o unico que exige acao humana: o corpo ja terminou
+   * o exame e esta ocupando camara enquanto ninguem autoriza a saida (secao 43).
+   * Os outros dois sao volumetria - servem para dar tamanho ao primeiro.
+   */
+  async resumoPainel(): Promise<{
+    aguardandoLiberacao: number;
+    armazenados: number;
+    bloqueados: number;
+  }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const [linha] = await tx
+        .select({
+          aguardandoLiberacao: sql<number>`(count(*) filter (where ${cadaver.status} = 'aguardando_liberacao'))::int`,
+          armazenados: sql<number>`(count(*) filter (where ${inArray(
+            cadaver.status,
+            STATUS_QUE_OCUPAM_POSICAO,
+          )}))::int`,
+        })
+        .from(cadaver)
+        .where(eq(cadaver.tenantId, ctx.tenantId));
+
+      /**
+       * Bloqueio e ortogonal ao status (secao 31): nao da para derivar da
+       * coluna de status do cadaver, so da existencia de bloqueio nao resolvido.
+       * Contagem separada, e por cadaver distinto - um corpo pode acumular mais
+       * de um bloqueio e continuar sendo um corpo parado.
+       */
+      const [travados] = await tx
+        .select({ total: sql<number>`count(distinct ${bloqueioCadaver.cadaverId})::int` })
+        .from(bloqueioCadaver)
+        .where(
+          and(
+            eq(bloqueioCadaver.tenantId, ctx.tenantId),
+            isNull(bloqueioCadaver.resolvidoEm),
+          ),
+        );
+
+      return {
+        aguardandoLiberacao: linha?.aguardandoLiberacao ?? 0,
+        armazenados: linha?.armazenados ?? 0,
+        bloqueados: travados?.total ?? 0,
+      };
+    });
+  }
+
   async conferencia() {
     return this.db.executar((tx) => this.guardian.verificarCadaveres(tx));
   }

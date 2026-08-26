@@ -24,8 +24,9 @@ import LightMode from '@mui/icons-material/LightModeOutlined';
 import Logout from '@mui/icons-material/LogoutOutlined';
 import MenuIcon from '@mui/icons-material/MenuOutlined';
 import AddCircle from '@mui/icons-material/AddCircleOutlineOutlined';
+import SpaceDashboard from '@mui/icons-material/SpaceDashboardOutlined';
 import ManageSearch from '@mui/icons-material/ManageSearchOutlined';
-import LocalShipping from '@mui/icons-material/LocalShippingOutlined';
+import Colorize from '@mui/icons-material/ColorizeOutlined';
 import PendingActions from '@mui/icons-material/PendingActionsOutlined';
 import Science from '@mui/icons-material/ScienceOutlined';
 import Contacts from '@mui/icons-material/ContactsOutlined';
@@ -66,6 +67,15 @@ import { PainelCopiloto, type CartaoPainel } from './PainelCopiloto';
 
 const MENU = [
   {
+    /* A tela de chegada. Fica presa no topo do menu porque e para onde o
+       usuario volta quando perde o fio - e a mesma permissao do Rastreio, ja
+       que o painel e uma leitura do fluxo, nao um modulo novo. */
+    para: '/painel',
+    icone: <SpaceDashboard fontSize="small" />,
+    rotulo: 'Painel',
+    permissao: 'fluxo:visualizar',
+  },
+  {
     /**
      * Rotulos do menu sao curtos de proposito: eles competem por uma coluna
      * estreita, e o nome oficial do modulo ja aparece no cabecalho da tela.
@@ -84,9 +94,11 @@ const MENU = [
     permissao: 'caso:criar',
   },
   {
-    /* M09: o lote é do dia e atravessa casos, então não mora dentro de um. */
+    /* M09: o lote é do dia e atravessa casos, então não mora dentro de um.
+       A pipeta, e não o caminhão: o envio ao laboratório de apoio é o meio,
+       mas o que o módulo produz são blocos e lâminas coradas. */
     para: '/processamento',
-    icone: <LocalShipping fontSize="small" />,
+    icone: <Colorize fontSize="small" />,
     rotulo: 'Processamento',
     permissao: 'processamento:visualizar',
   },

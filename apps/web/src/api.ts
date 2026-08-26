@@ -1,4 +1,4 @@
-import type { AchadoGuardian, EstagioSessao, StatusExterno } from '@lapato/shared';
+import type { AchadoGuardian, EstagioSessao, Etapa, StatusExterno } from '@lapato/shared';
 
 /**
  * Cliente HTTP do front.
@@ -172,10 +172,36 @@ export interface CasoNaFila {
   cliente: string;
   servico: string;
   prioridade: string;
-  etapa: string;
+  etapa: Etapa;
   previsaoLiberacao: string | null;
   alertaPrazo: 'normal' | 'atencao' | 'critico' | 'atrasado';
   bloqueado: boolean;
+}
+
+/** Item da faixa "precisa de voce agora" do painel (M07). */
+export interface ItemDeAtencao {
+  chave: string;
+  rotulo: string;
+  detalhe: string;
+  total: number;
+  /** Rota que resolve o item - todo numero do painel leva a algum lugar. */
+  para: string;
+  nivel: 'critico' | 'atencao' | 'informacao';
+}
+
+export interface Painel {
+  geradoEm: string;
+  fuso: string;
+  volumetria: {
+    emAndamento: number;
+    entraramHoje: number;
+    liberadosHoje: number;
+    tempoMedioDias: number | null;
+    diasDaMedia: number;
+  };
+  atencao: ItemDeAtencao[];
+  funil: { etapa: string; rotulo: string; total: number }[];
+  serie: { dia: string; entradas: number; liberacoes: number }[];
 }
 
 export interface EventoTimeline {

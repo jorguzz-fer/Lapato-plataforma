@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { aliasedTable, and, asc, desc, eq, inArray, isNotNull, lt } from 'drizzle-orm';
+import { aliasedTable, and, asc, desc, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
 import {
   caso,
   mensagemSolicitacao,
@@ -524,6 +524,46 @@ export class SolicitacoesService {
         .orderBy(asc(pendencia.criadoEm))
         .limit(200),
     );
+  }
+
+  /**
+   * Numeros do M10 para o painel de chegada.
+   *
+   * O painel nao consulta `pendencia` por conta propria de proposito: quem
+   * decide o que conta como "aberta" e o modulo dono do dado (DIRETRIZES
+   * secao 8.10). Quando essa lista mudar, o painel acompanha sozinho.
+   */
+  async resumoPainel(): Promise<{
+    pendenciasAbertas: number;
+    pendenciasBloqueantes: number;
+    solicitacoesAbertas: number;
+  }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const [pendencias] = await tx
+        .select({
+          abertas: sql<number>`count(*)::int`,
+          bloqueantes: sql<number>`(count(*) filter (where ${pendencia.nivelBloqueio} <> 'nao'))::int`,
+        })
+        .from(pendencia)
+        .where(
+          and(eq(pendencia.tenantId, ctx.tenantId), inArray(pendencia.status, PENDENCIA_ABERTA)),
+        );
+
+      const [solicitacoes] = await tx
+        .select({ abertas: sql<number>`count(*)::int` })
+        .from(solicitacao)
+        .where(
+          and(eq(solicitacao.tenantId, ctx.tenantId), inArray(solicitacao.status, STATUS_ABERTOS)),
+        );
+
+      return {
+        pendenciasAbertas: pendencias?.abertas ?? 0,
+        pendenciasBloqueantes: pendencias?.bloqueantes ?? 0,
+        solicitacoesAbertas: solicitacoes?.abertas ?? 0,
+      };
+    });
   }
 
   /** Aba SOLICITACOES do dossie (secao 89): tudo do caso, aberto e encerrado. */

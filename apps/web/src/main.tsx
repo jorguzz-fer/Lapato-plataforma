@@ -12,6 +12,7 @@ import { Entrar } from './paginas/Entrar';
 import { SegundoFator } from './paginas/SegundoFator';
 import { TrocarSenha } from './paginas/TrocarSenha';
 import { CadastrarMfa } from './paginas/CadastrarMfa';
+import { Painel } from './paginas/Painel';
 import { CentralDeCasos } from './paginas/CentralDeCasos';
 import { NovoCaso } from './paginas/NovoCaso';
 import { Recebimento } from './paginas/Recebimento';
@@ -177,11 +178,21 @@ function App() {
    * mandar todo mundo para `/casos` faria a tela inicial dele ser um 403. A casa
    * de cada usuario e a primeira coisa que ele pode de fato ver.
    */
-  const inicio = sessao.laboratorioApoioId ? '/processamento' : '/casos';
+  const inicio = sessao.laboratorioApoioId ? '/processamento' : '/painel';
 
   return (
     <Routes>
       <Route path="/entrar" element={<Navigate to={inicio} replace />} />
+      {/* M07: a tela de chegada. O painel le o fluxo, entao mora no M07 - nao e
+          um modulo novo, e por isso divide a permissao com a Central. */}
+      <Route
+        path="/painel"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Rastreamento e Gestão de Fluxo">
+            <Painel nomeCompleto={sessao.nomeCompleto} />
+          </Shell>
+        }
+      />
       <Route
         path="/casos"
         element={

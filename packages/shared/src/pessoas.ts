@@ -31,3 +31,14 @@ export function iniciaisDe(nome: string | null | undefined): string {
 
   return (partes.length === 1 ? primeira : `${primeira}${ultima}`).toUpperCase();
 }
+
+/**
+ * Primeiro nome, para a saudacao do painel.
+ *
+ * Mesma tolerancia do `iniciaisDe`, e pela mesma razao: o painel e a primeira
+ * tela depois do login, e ela nao pode depender de a API ja ter subido com o
+ * campo novo.
+ */
+export function primeiroNome(nome: string | null | undefined): string {
+  return (nome ?? '').trim().split(/\s+/)[0] ?? '';
+}

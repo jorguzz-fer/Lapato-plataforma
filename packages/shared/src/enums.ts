@@ -69,6 +69,42 @@ export const ETAPA = [
 ] as const;
 export type Etapa = (typeof ETAPA)[number];
 
+export const ETAPA_LABEL: Record<Etapa, string> = {
+  aguardando_recebimento: 'Aguardando recebimento',
+  recebido: 'Recebido',
+  aguardando_triagem: 'Aguardando triagem',
+  em_triagem: 'Em triagem',
+  aguardando_macroscopia: 'Aguardando macroscopia',
+  em_macroscopia: 'Em macroscopia',
+  aguardando_processamento: 'Aguardando processamento',
+  em_processamento: 'Em processamento',
+  laminas_disponiveis: 'Lâminas disponíveis',
+  aguardando_microscopia: 'Aguardando microscopia',
+  em_microscopia: 'Em microscopia',
+  aguardando_complementar: 'Aguardando complementar',
+  aguardando_revisao: 'Aguardando revisão',
+  em_revisao: 'Em revisão',
+  aguardando_assinatura: 'Aguardando assinatura',
+  liberado: 'Liberado',
+  arquivado: 'Arquivado',
+  cancelado: 'Cancelado',
+};
+
+/**
+ * Etapas em que o caso saiu da producao.
+ *
+ * `cancelado` entra aqui junto com `liberado` e `arquivado` por um motivo de
+ * leitura, nao de sucesso: o painel conta "casos em andamento", e um caso
+ * cancelado nao esta em andamento nem esperando ninguem. O registro oficial
+ * dele continua existindo (M01: numeracao nunca e reutilizada).
+ */
+export const ETAPAS_ENCERRADAS: Etapa[] = ['liberado', 'arquivado', 'cancelado'];
+
+/** Ordem de producao das etapas ativas - e a ordem do funil no painel. */
+export const ETAPAS_EM_ANDAMENTO: Etapa[] = ETAPA.filter(
+  (etapa) => !ETAPAS_ENCERRADAS.includes(etapa),
+);
+
 /** M07: nivel de alerta de prazo. */
 export const ALERTA_PRAZO = ['normal', 'atencao', 'critico', 'atrasado'] as const;
 export type AlertaPrazo = (typeof ALERTA_PRAZO)[number];

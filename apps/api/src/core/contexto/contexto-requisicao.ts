@@ -14,6 +14,8 @@ export interface ContextoRequisicao {
   requestId: string;
   tenantId: string;
   usuarioId: string;
+  /** Nome de quem esta logado. Exibicao apenas - autorizacao nunca depende dele. */
+  nomeCompleto: string;
   /** Unidade ativa da sessao (M02 secao 15). */
   unidadeId: string | null;
   setorId: string | null;

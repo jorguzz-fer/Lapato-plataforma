@@ -33,9 +33,10 @@ import Inventory2 from '@mui/icons-material/Inventory2Outlined';
 import Settings from '@mui/icons-material/SettingsOutlined';
 import Group from '@mui/icons-material/GroupOutlined';
 import Password from '@mui/icons-material/PasswordOutlined';
+import PersonOutline from '@mui/icons-material/PersonOutlineOutlined';
 import Security from '@mui/icons-material/SecurityOutlined';
 import { shell } from '@lapato/design-tokens';
-import { MODULO_LABEL, MODULOS } from '@lapato/shared';
+import { MODULO_LABEL, MODULOS, iniciaisDe } from '@lapato/shared';
 import { useTema } from '@lapato/ui';
 import { api, type Sessao } from '../api';
 import { PainelCopiloto, type CartaoPainel } from './PainelCopiloto';
@@ -179,22 +180,9 @@ export function Shell({ sessao, aoSair, modulo, etapa, cartoes, children }: Prop
     aoSair();
   }
 
-  /**
-   * Iniciais do avatar: primeiro e ultimo nome.
-   *
-   * "Ana Beatriz Silva" vira "AS", e nao "AB" - o sobrenome distingue mais
-   * gente numa equipe do que o segundo nome.
-   */
-  const iniciais = sessao.nomeCompleto
-    .trim()
-    .split(/\s+/)
-    .filter((parte) => parte.length > 2 || /^[A-ZÀ-Ý]/.test(parte))
-    .reduce<string[]>((acc, parte, i, todas) => {
-      if (i === 0 || i === todas.length - 1) acc.push(parte[0]!.toUpperCase());
-      return acc;
-    }, [])
-    .join('')
-    .slice(0, 2);
+  const iniciais = iniciaisDe(sessao.nomeCompleto);
+  /** Sem nome (API mais antiga durante um deploy), o avatar cai no genérico. */
+  const nomeExibido = sessao.nomeCompleto?.trim() || 'Minha conta';
 
   const itemSx = {
     borderRadius: 1.5,
@@ -318,7 +306,7 @@ export function Shell({ sessao, aoSair, modulo, etapa, cartoes, children }: Prop
 
           {/* Conta: senha, segundo fator e saida moram aqui, no canto que todo
               sistema usa para isso - e nao no meio dos modulos. */}
-          <Tooltip title={sessao.nomeCompleto}>
+          <Tooltip title={nomeExibido}>
             <IconButton
               onClick={(e) => setMenuConta(e.currentTarget)}
               size="small"
@@ -336,7 +324,7 @@ export function Shell({ sessao, aoSair, modulo, etapa, cartoes, children }: Prop
                   bgcolor: 'primary.main',
                 }}
               >
-                {iniciais}
+                {iniciais || <PersonOutline sx={{ fontSize: 18 }} />}
               </Avatar>
             </IconButton>
           </Tooltip>
@@ -350,9 +338,7 @@ export function Shell({ sessao, aoSair, modulo, etapa, cartoes, children }: Prop
             slotProps={{ paper: { sx: { minWidth: 220 } } }}
           >
             <Box sx={{ px: 2, py: 1 }}>
-              <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
-                {sessao.nomeCompleto}
-              </Typography>
+              <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{nomeExibido}</Typography>
               <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
                 {sessao.exigeSupervisao ? 'Perfil sob supervisão' : 'Sessão ativa'}
               </Typography>

@@ -6,6 +6,7 @@ import Box from '@mui/material/Box';
 import type { EstagioSessao } from '@lapato/shared';
 import { ProvedorLapato } from '@lapato/ui';
 import { api, observarEstagio, type Sessao } from './api';
+import { BarreiraDeErro } from './componentes/BarreiraDeErro';
 import { Shell } from './componentes/Shell';
 import { Entrar } from './paginas/Entrar';
 import { SegundoFator } from './paginas/SegundoFator';
@@ -360,12 +361,16 @@ function Carregando() {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ProvedorLapato>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/validar/:tenantSlug/:codigo" element={<ValidarLaudo />} />
-          <Route path="*" element={<App />} />
-        </Routes>
-      </BrowserRouter>
+      {/* Dentro do provedor de tema: a tela de erro tambem precisa de tema, e
+          fora dele ela apareceria sem estilo nenhum. */}
+      <BarreiraDeErro>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/validar/:tenantSlug/:codigo" element={<ValidarLaudo />} />
+            <Route path="*" element={<App />} />
+          </Routes>
+        </BrowserRouter>
+      </BarreiraDeErro>
     </ProvedorLapato>
   </StrictMode>,
 );

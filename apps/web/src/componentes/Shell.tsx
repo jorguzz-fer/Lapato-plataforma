@@ -29,6 +29,7 @@ import LocalShipping from '@mui/icons-material/LocalShippingOutlined';
 import PendingActions from '@mui/icons-material/PendingActionsOutlined';
 import Science from '@mui/icons-material/ScienceOutlined';
 import Contacts from '@mui/icons-material/ContactsOutlined';
+import MedicalServices from '@mui/icons-material/MedicalServicesOutlined';
 import Inventory2 from '@mui/icons-material/Inventory2Outlined';
 import Settings from '@mui/icons-material/SettingsOutlined';
 import Group from '@mui/icons-material/GroupOutlined';
@@ -115,8 +116,18 @@ const MENU = [
     /* M03: fonte única dos dados cadastrais - o degrau zero de qualquer caso. */
     para: '/clientes',
     icone: <Contacts fontSize="small" />,
-    rotulo: 'Clientes e Veterinários',
+    rotulo: 'Clientes',
     permissao: 'cliente:visualizar',
+  },
+  {
+    /* M03 seção 12: o veterinário é uma pessoa com N vínculos, e não um campo
+       do cliente - o mesmo profissional atende por várias clínicas. Cadastro
+       próprio, com permissão própria: quem vê cliente não vê necessariamente
+       veterinário. */
+    para: '/veterinarios',
+    icone: <MedicalServices fontSize="small" />,
+    rotulo: 'Veterinários',
+    permissao: 'veterinario:visualizar',
   },
   {
     /* M01: o fluxo é configurado em dados - serviços, tabelas, calendário.

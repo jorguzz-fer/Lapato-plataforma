@@ -24,6 +24,7 @@ import { Cadaveres } from './paginas/Cadaveres';
 import { Bioteca } from './paginas/Bioteca';
 import { Necropsia } from './paginas/Necropsia';
 import { Clientes } from './paginas/Clientes';
+import { Veterinarios } from './paginas/Veterinarios';
 import { Administracao } from './paginas/Administracao';
 import { Usuarios } from './paginas/Usuarios';
 import { Dossie } from './paginas/Dossie';
@@ -228,8 +229,18 @@ function App() {
       <Route
         path="/clientes"
         element={
-          <Shell sessao={sessao} aoSair={sair} modulo="Cadastro de Clientes e Veterinários">
+          <Shell sessao={sessao} aoSair={sair} modulo="Cadastro de Clientes">
             <Clientes permissoes={sessao.permissoes} />
+          </Shell>
+        }
+      />
+      {/* M03 secao 12: o veterinario e pessoa unica com N vinculos, nao um
+          atributo do cliente - por isso tem cadastro proprio. */}
+      <Route
+        path="/veterinarios"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Cadastro de Veterinários">
+            <Veterinarios permissoes={sessao.permissoes} />
           </Shell>
         }
       />

@@ -14,39 +14,45 @@ import Divider from '@mui/material/Divider';
 import MenuItem from '@mui/material/MenuItem';
 import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
-import Tab from '@mui/material/Tab';
-import Tabs from '@mui/material/Tabs';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import AddOutlined from '@mui/icons-material/AddOutlined';
-import InboxOutlined from '@mui/icons-material/InboxOutlined';
-import SearchOutlined from '@mui/icons-material/SearchOutlined';
 import { TIPO_CLIENTE } from '@lapato/shared';
 import {
   api,
   ErroApi,
   type ClienteFicha,
   type ClienteLista,
-  type ClienteResumo,
   type DuplicidadeCadastral,
   type VeterinarioLista,
 } from '../api';
+import {
+  BotaoAtivacao,
+  CabecalhoCadastro,
+  CampoBusca,
+  MONO,
+  STATUS_LABEL,
+  Vazio,
+} from './cadastro/comum';
 
 /**
- * M03 - Cadastro de Clientes e Veterinarios.
+ * M03 - Cadastro de Clientes.
  *
  * Fonte unica de verdade cadastral (secao 1): o cliente e cadastrado uma vez e
  * reutilizado por todos os modulos. As regras que moldam a tela:
  *
  * - **Inativar, nunca excluir**: a ficha historica continua acessivel; inativo
  *   apenas some das opcoes de exame novo.
- * - **Veterinario e pessoa unica com N vinculos** (secoes 12-13): a duplicidade
- *   de CRMV oferece VINCULAR o existente, nunca recadastrar.
  * - **Duplicidade e conversa, nao muro** (secao 20): o 409 traz os candidatos;
  *   o usuario abre o existente ou confirma que e outro - e a confirmacao fica
  *   na auditoria.
  * - **O codigo compoe o registro do exame** (secao 6.2, `CV-000342/26`): por
  *   isso e exigido na criacao e nao aparece na edicao.
+ *
+ * O veterinario tem tela propria: e uma pessoa com N vinculos (secao 12), nao
+ * um atributo do cliente. O que pertence as duas telas e o **vinculo**, e ele
+ * mora aqui, na ficha do cliente - quem abre a ficha de uma clinica quer ver
+ * quem atende por ela.
  */
 
 const TIPO_LABEL: Record<string, string> = {
@@ -63,53 +69,34 @@ const TIPO_LABEL: Record<string, string> = {
   outro: 'Outro',
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  ativo: 'Ativo',
-  aguardando_aprovacao: 'Aguardando aprovação',
-  pendente_documentacao: 'Pendente de documentação',
-  suspenso: 'Suspenso',
-  inativo: 'Inativo',
-  bloqueado: 'Bloqueado',
-  encerrado: 'Encerrado',
-};
-
-const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
-
 interface Props {
   permissoes: string[];
 }
 
 export function Clientes({ permissoes }: Props) {
-  const [aba, setAba] = useState<'clientes' | 'veterinarios'>('clientes');
   const [busca, setBusca] = useState('');
   const [clientes, setClientes] = useState<ClienteLista[]>([]);
-  const [veterinarios, setVeterinarios] = useState<VeterinarioLista[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
-  const [criandoCliente, setCriandoCliente] = useState(false);
-  const [criandoVeterinario, setCriandoVeterinario] = useState(false);
+  const [criando, setCriando] = useState(false);
   const [fichaId, setFichaId] = useState<string | null>(null);
-  const [vetEmEdicao, setVetEmEdicao] = useState<VeterinarioLista | null>(null);
 
-  const podeCriarCliente = permissoes.includes('cliente:criar');
-  const podeEditarCliente = permissoes.includes('cliente:editar');
-  const podeCriarVet = permissoes.includes('veterinario:criar');
-  const podeEditarVet = permissoes.includes('veterinario:editar');
-  const veVeterinarios = permissoes.includes('veterinario:visualizar');
+  const podeCriar = permissoes.includes('cliente:criar');
+  const podeEditar = permissoes.includes('cliente:editar');
+  /** Editar vínculos na ficha exige a permissão do outro cadastro. */
+  const podeEditarVinculos = permissoes.includes('veterinario:editar');
 
   const recarregar = useCallback(() => {
     setCarregando(true);
     setErro(null);
     const q = busca.trim() ? `?q=${encodeURIComponent(busca.trim())}` : '';
-    const pedido =
-      aba === 'clientes'
-        ? api.get<ClienteLista[]>(`/clientes${q}`).then(setClientes)
-        : api.get<VeterinarioLista[]>(`/veterinarios${q}`).then(setVeterinarios);
-    pedido
-      .catch(() => setErro('Não foi possível carregar o cadastro.'))
+    api
+      .get<ClienteLista[]>(`/clientes${q}`)
+      .then(setClientes)
+      .catch(() => setErro('Não foi possível carregar os clientes.'))
       .finally(() => setCarregando(false));
-  }, [aba, busca]);
+  }, [busca]);
 
   /** Busca com pausa curta: cada tecla não vira uma consulta. */
   useEffect(() => {
@@ -119,65 +106,28 @@ export function Clientes({ permissoes }: Props) {
 
   return (
     <Box component="section" sx={{ maxWidth: 1080 }}>
-      <Stack
-        direction={{ xs: 'column', sm: 'row' }}
-        sx={{
-          mb: 1.5,
-          alignItems: { xs: 'stretch', sm: 'center' },
-          justifyContent: 'space-between',
-          gap: 1.5,
-        }}
-      >
-        <Box>
-          <Typography variant="h2">Clientes e Veterinários</Typography>
-          <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
-            Cadastrado uma vez, reutilizado em todos os módulos — nunca excluído, apenas inativado.
-          </Typography>
-        </Box>
-
-        <Stack direction="row" spacing={1}>
-          {aba === 'clientes' && podeCriarCliente && (
+      <CabecalhoCadastro
+        titulo="Clientes"
+        descricao="Cadastrado uma vez, reutilizado em todos os módulos — nunca excluído, apenas inativado."
+        acao={
+          podeCriar ? (
             <Button
               size="small"
               variant="contained"
               startIcon={<AddOutlined />}
-              onClick={() => setCriandoCliente(true)}
+              onClick={() => setCriando(true)}
             >
               Novo cliente
             </Button>
-          )}
-          {aba === 'veterinarios' && podeCriarVet && (
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={<AddOutlined />}
-              onClick={() => setCriandoVeterinario(true)}
-            >
-              Novo veterinário
-            </Button>
-          )}
-        </Stack>
-      </Stack>
+          ) : undefined
+        }
+      />
 
-      <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ mb: 2, gap: 1.5, alignItems: 'center' }}>
-        <Tabs value={aba} onChange={(_, v) => setAba(v)} sx={{ minHeight: 40 }}>
-          <Tab value="clientes" label="Clientes" />
-          {veVeterinarios && <Tab value="veterinarios" label="Veterinários" />}
-        </Tabs>
-
-        <TextField
-          size="small"
-          placeholder={aba === 'clientes' ? 'Nome, razão social, CNPJ/CPF ou código…' : 'Nome, CRMV ou e-mail…'}
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          sx={{ flex: 1, minWidth: { sm: 280 } }}
-          slotProps={{
-            input: {
-              startAdornment: <SearchOutlined sx={{ fontSize: 18, color: 'text.disabled', mr: 1 }} />,
-            },
-          }}
-        />
-      </Stack>
+      <CampoBusca
+        valor={busca}
+        aoMudar={setBusca}
+        placeholder="Nome, razão social, CNPJ/CPF ou código…"
+      />
 
       {erro && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -193,7 +143,7 @@ export function Clientes({ permissoes }: Props) {
         </Stack>
       )}
 
-      {!carregando && aba === 'clientes' && (
+      {!carregando && (
         <Stack spacing={1.5}>
           {clientes.length === 0 && <Vazio texto="Nenhum cliente encontrado." />}
           {clientes.map((c) => (
@@ -202,13 +152,20 @@ export function Clientes({ permissoes }: Props) {
               sx={{ p: 2, cursor: 'pointer', '&:hover': { borderColor: 'primary.main' } }}
               onClick={() => setFichaId(c.id)}
             >
-              <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+              <Stack
+                direction="row"
+                sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1 }}
+              >
                 <Box sx={{ minWidth: 0 }}>
                   <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Typography sx={{ ...MONO, fontSize: 13, fontWeight: 700, color: 'primary.main' }}>
+                    <Typography
+                      sx={{ ...MONO, fontSize: 13, fontWeight: 700, color: 'primary.main' }}
+                    >
                       {c.codigo}
                     </Typography>
-                    <Typography sx={{ fontSize: 14.5, fontWeight: 600 }}>{c.nomeFantasia}</Typography>
+                    <Typography sx={{ fontSize: 14.5, fontWeight: 600 }}>
+                      {c.nomeFantasia}
+                    </Typography>
                     <Chip size="small" variant="outlined" label={TIPO_LABEL[c.tipo] ?? c.tipo} />
                     {c.status !== 'ativo' && (
                       <Chip
@@ -229,69 +186,11 @@ export function Clientes({ permissoes }: Props) {
         </Stack>
       )}
 
-      {!carregando && aba === 'veterinarios' && (
-        <Stack spacing={1.5}>
-          {veterinarios.length === 0 && <Vazio texto="Nenhum veterinário encontrado." />}
-          {veterinarios.map((v) => (
-            <Card key={v.id} sx={{ p: 2 }}>
-              <Stack
-                direction={{ xs: 'column', sm: 'row' }}
-                sx={{ justifyContent: 'space-between', gap: 1 }}
-              >
-                <Box sx={{ minWidth: 0 }}>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Typography sx={{ fontSize: 14.5, fontWeight: 600 }}>{v.nome}</Typography>
-                    {v.crmv && (
-                      <Typography sx={{ ...MONO, fontSize: 12.5, color: 'text.secondary' }}>
-                        CRMV-{v.crmvUf} {v.crmv}
-                      </Typography>
-                    )}
-                    {v.especialidade && <Chip size="small" variant="outlined" label={v.especialidade} />}
-                    {v.inativadoEm && <Chip size="small" label="Inativo" />}
-                  </Stack>
-                  <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.25 }}>
-                    {v.vinculos ? `Vinculado a: ${v.vinculos}` : 'Sem vínculo vigente'}
-                    {v.email ? ` · ${v.email}` : ''}
-                  </Typography>
-                </Box>
-
-                {podeEditarVet && (
-                  <Stack direction="row" spacing={1} sx={{ flexShrink: 0, alignSelf: 'center' }}>
-                    <Button size="small" onClick={() => setVetEmEdicao(v)}>
-                      Editar
-                    </Button>
-                    <BotaoAtivacao
-                      inativo={v.inativadoEm !== null}
-                      caminho={`/veterinarios/${v.id}`}
-                      aoMudar={recarregar}
-                    />
-                  </Stack>
-                )}
-              </Stack>
-            </Card>
-          ))}
-        </Stack>
-      )}
-
       <DialogoNovoCliente
-        aberto={criandoCliente}
-        aoFechar={() => setCriandoCliente(false)}
+        aberto={criando}
+        aoFechar={() => setCriando(false)}
         aoCriar={() => {
-          setCriandoCliente(false);
-          recarregar();
-        }}
-      />
-
-      <DialogoVeterinario
-        aberto={criandoVeterinario || vetEmEdicao !== null}
-        veterinario={vetEmEdicao}
-        aoFechar={() => {
-          setCriandoVeterinario(false);
-          setVetEmEdicao(null);
-        }}
-        aoSalvar={() => {
-          setCriandoVeterinario(false);
-          setVetEmEdicao(null);
+          setCriando(false);
           recarregar();
         }}
       />
@@ -299,8 +198,8 @@ export function Clientes({ permissoes }: Props) {
       {fichaId && (
         <FichaCliente
           id={fichaId}
-          podeEditar={podeEditarCliente}
-          podeEditarVinculos={podeEditarVet}
+          podeEditar={podeEditar}
+          podeEditarVinculos={podeEditarVinculos}
           aoFechar={() => setFichaId(null)}
           aoMudar={recarregar}
         />
@@ -445,214 +344,6 @@ function DialogoNovoCliente({
             disabled={ocupado || !nomeFantasia.trim() || codigo.trim().length < 2}
           >
             {ocupado ? 'Criando…' : 'Criar'}
-          </Button>
-        )}
-      </DialogActions>
-    </Dialog>
-  );
-}
-
-// --- criação/edição de veterinário -------------------------------------------
-
-function DialogoVeterinario({
-  aberto,
-  veterinario,
-  aoFechar,
-  aoSalvar,
-}: {
-  aberto: boolean;
-  veterinario: VeterinarioLista | null;
-  aoFechar: () => void;
-  aoSalvar: () => void;
-}) {
-  const [nome, setNome] = useState('');
-  const [crmv, setCrmv] = useState('');
-  const [crmvUf, setCrmvUf] = useState('');
-  const [email, setEmail] = useState('');
-  const [telefone, setTelefone] = useState('');
-  const [especialidade, setEspecialidade] = useState('');
-  const [erro, setErro] = useState<string | null>(null);
-  const [duplicidades, setDuplicidades] = useState<DuplicidadeCadastral[] | null>(null);
-  const [ocupado, setOcupado] = useState(false);
-
-  /**
-   * M03 secoes 12-13: o veterinario e pessoa unica com N vinculos, e e o
-   * VINCULO que o habilita como solicitante de um cliente. Cadastrar sem
-   * vincular produz um veterinario que existe e nao serve para nada - foi
-   * exatamente o que aconteceu no primeiro uso real. O vinculo entra aqui
-   * porque e aqui que quem cadastra esta pensando "o fulano atende a clinica
-   * tal"; a ficha do cliente continua sendo o lugar de gerir os vinculos
-   * depois.
-   */
-  const [clientes, setClientes] = useState<ClienteResumo[]>([]);
-  const [clienteVinculo, setClienteVinculo] = useState('');
-
-  useEffect(() => {
-    setNome(veterinario?.nome ?? '');
-    setCrmv(veterinario?.crmv ?? '');
-    setCrmvUf(veterinario?.crmvUf ?? '');
-    setEmail(veterinario?.email ?? '');
-    setTelefone(veterinario?.telefone ?? '');
-    setEspecialidade(veterinario?.especialidade ?? '');
-    setClienteVinculo('');
-    setDuplicidades(null);
-    setErro(null);
-  }, [veterinario, aberto]);
-
-  useEffect(() => {
-    if (!aberto || veterinario) return;
-    api
-      .get<ClienteResumo[]>('/catalogo/clientes')
-      .then(setClientes)
-      .catch(() => setClientes([]));
-  }, [aberto, veterinario]);
-
-  async function salvar(ignorarDuplicidade = false) {
-    setOcupado(true);
-    setErro(null);
-    try {
-      const corpo = {
-        nome: nome.trim(),
-        crmv: crmv.trim(),
-        crmvUf: crmvUf.trim().toUpperCase(),
-        email: email.trim(),
-        telefone: telefone.trim(),
-        especialidade: especialidade.trim(),
-      };
-      if (veterinario) {
-        await api.post(`/veterinarios/${veterinario.id}`, corpo);
-      } else {
-        const novo = await api.post<{ id: string }>('/veterinarios', {
-          ...corpo,
-          ...(ignorarDuplicidade ? { ignorarDuplicidade: true } : {}),
-        });
-
-        if (clienteVinculo) {
-          await api.post(`/veterinarios/${novo.id}/vinculos`, {
-            clienteId: clienteVinculo,
-            principal: true,
-          });
-        }
-      }
-      aoSalvar();
-    } catch (err) {
-      if (err instanceof ErroApi && err.possivelDuplicidade) {
-        setDuplicidades(err.duplicidades!);
-      } else {
-        setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível salvar.');
-      }
-    } finally {
-      setOcupado(false);
-    }
-  }
-
-  return (
-    <Dialog open={aberto} onClose={aoFechar} fullWidth maxWidth="sm">
-      <DialogTitle>{veterinario ? 'Editar veterinário' : 'Novo veterinário'}</DialogTitle>
-      <DialogContent>
-        <Stack spacing={2} sx={{ mt: 1 }}>
-          <TextField
-            label="Nome completo"
-            value={nome}
-            onChange={(e) => setNome(e.target.value)}
-            required
-            autoFocus
-          />
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField
-              label="CRMV"
-              value={crmv}
-              onChange={(e) => setCrmv(e.target.value)}
-              sx={{ flex: 1 }}
-            />
-            <TextField
-              label="UF"
-              value={crmvUf}
-              onChange={(e) => setCrmvUf(e.target.value.toUpperCase())}
-              slotProps={{ htmlInput: { maxLength: 2, style: { textTransform: 'uppercase' } } }}
-              sx={{ width: 90 }}
-            />
-            <TextField
-              label="Especialidade"
-              value={especialidade}
-              onChange={(e) => setEspecialidade(e.target.value)}
-              sx={{ flex: 1 }}
-            />
-          </Stack>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField
-              label="E-mail"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              sx={{ flex: 1.4 }}
-            />
-            <TextField
-              label="Telefone"
-              value={telefone}
-              onChange={(e) => setTelefone(e.target.value)}
-              sx={{ flex: 1 }}
-            />
-          </Stack>
-
-          {/* Só na criação: depois, os vínculos se gerem na ficha do cliente,
-              onde a história completa (vigentes e encerrados) fica visível. */}
-          {!veterinario && (
-            <TextField
-              select
-              label="Vincular ao cliente"
-              value={clienteVinculo}
-              onChange={(e) => setClienteVinculo(e.target.value)}
-              helperText="Sem vínculo, ele não aparece como solicitante de nenhum cliente ao abrir um caso. Dá para vincular depois, na ficha do cliente."
-            >
-              <MenuItem value="">— vincular depois —</MenuItem>
-              {clientes.map((c) => (
-                <MenuItem key={c.id} value={c.id}>
-                  {c.nomeFantasia}
-                </MenuItem>
-              ))}
-            </TextField>
-          )}
-
-          {duplicidades && (
-            <Alert severity="warning">
-              <AlertTitle>Possível duplicidade</AlertTitle>
-              <Stack component="ul" sx={{ m: 0, pl: 2.5 }}>
-                {duplicidades.map((d) => (
-                  <li key={d.id}>
-                    <Typography sx={{ fontSize: 13 }}>
-                      {d.nome}
-                      {d.crmv ? ` · CRMV-${d.crmvUf} ${d.crmv}` : ''} ·{' '}
-                      {STATUS_LABEL[d.status] ?? d.status}
-                    </Typography>
-                  </li>
-                ))}
-              </Stack>
-              <Typography sx={{ fontSize: 12.5, mt: 1 }}>
-                O veterinário é pessoa única com N vínculos — se é o mesmo profissional, feche e
-                vincule o existente ao cliente em vez de recadastrar.
-              </Typography>
-            </Alert>
-          )}
-
-          {erro && <Alert severity="error">{erro}</Alert>}
-        </Stack>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={aoFechar} disabled={ocupado}>
-          Cancelar
-        </Button>
-        {duplicidades ? (
-          <Button variant="contained" color="warning" onClick={() => void salvar(true)} disabled={ocupado}>
-            É outro profissional — criar mesmo assim
-          </Button>
-        ) : (
-          <Button
-            variant="contained"
-            onClick={() => void salvar()}
-            disabled={ocupado || !nome.trim() || Boolean(crmv.trim()) !== Boolean(crmvUf.trim())}
-          >
-            {ocupado ? 'Salvando…' : 'Salvar'}
           </Button>
         )}
       </DialogActions>
@@ -1018,35 +709,6 @@ function DialogoVincular({
   );
 }
 
-// --- apoio -------------------------------------------------------------------
-
-function BotaoAtivacao({
-  inativo,
-  caminho,
-  aoMudar,
-}: {
-  inativo: boolean;
-  caminho: string;
-  aoMudar: () => void;
-}) {
-  const [ocupado, setOcupado] = useState(false);
-
-  async function alternar() {
-    setOcupado(true);
-    try {
-      await api.post(`${caminho}/${inativo ? 'reativacao' : 'inativacao'}`);
-      aoMudar();
-    } finally {
-      setOcupado(false);
-    }
-  }
-
-  return (
-    <Button size="small" color={inativo ? 'primary' : 'inherit'} onClick={() => void alternar()} disabled={ocupado}>
-      {inativo ? 'Reativar' : 'Inativar'}
-    </Button>
-  );
-}
 
 function Detalhe({ rotulo, valor }: { rotulo: string; valor: string }) {
   return (
@@ -1057,11 +719,3 @@ function Detalhe({ rotulo, valor }: { rotulo: string; valor: string }) {
   );
 }
 
-function Vazio({ texto }: { texto: string }) {
-  return (
-    <Box sx={{ py: 7, textAlign: 'center' }}>
-      <InboxOutlined sx={{ fontSize: 40, color: 'text.disabled', mb: 1 }} />
-      <Typography sx={{ fontSize: 13.5, color: 'text.secondary' }}>{texto}</Typography>
-    </Box>
-  );
-}

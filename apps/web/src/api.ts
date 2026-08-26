@@ -143,6 +143,8 @@ export async function baixarArquivo(caminho: string): Promise<Blob> {
 
 export interface Sessao {
   usuarioId: string;
+  /** Nome de quem esta logado - vira as iniciais do avatar na barra superior. */
+  nomeCompleto: string;
   tenantId: string;
   /**
    * M04: preenchido quando a conta é externa. É o que decide se o login cai no

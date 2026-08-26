@@ -48,6 +48,7 @@ export class ContextoMiddleware implements NestMiddleware {
       requestId,
       tenantId: sessao.tenantId,
       usuarioId: sessao.usuarioId,
+      nomeCompleto: sessao.nomeCompleto,
       unidadeId: sessao.unidadeId,
       setorId: sessao.setorId,
       clienteId: sessao.clienteId,

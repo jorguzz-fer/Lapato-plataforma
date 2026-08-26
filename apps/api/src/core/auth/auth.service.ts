@@ -32,6 +32,8 @@ export interface DadosSessao {
 export interface SessaoResolvida {
   tenantId: string;
   usuarioId: string;
+  /** Nome de quem esta logado - o front usa nas iniciais do avatar. */
+  nomeCompleto: string;
   unidadeId: string | null;
   setorId: string | null;
   clienteId: string | null;
@@ -394,6 +396,7 @@ export class AuthService {
       const [conta] = await tx
         .select({
           status: usuario.status,
+          nomeCompleto: usuario.nomeCompleto,
           unidadePrincipalId: usuario.unidadePrincipalId,
           setorPrincipalId: usuario.setorPrincipalId,
           clienteId: usuario.clienteId,
@@ -449,6 +452,7 @@ export class AuthService {
       return {
         tenantId: bruta.tenantId,
         usuarioId: bruta.usuarioId,
+        nomeCompleto: conta.nomeCompleto,
         unidadeId: unidadeAtiva,
         setorId: conta.setorPrincipalId,
         clienteId: conta.clienteId,

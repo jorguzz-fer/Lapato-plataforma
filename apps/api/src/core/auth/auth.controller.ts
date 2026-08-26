@@ -170,6 +170,7 @@ export class AuthController {
   eu(@Contexto() ctx: ContextoRequisicao) {
     return {
       usuarioId: ctx.usuarioId,
+      nomeCompleto: ctx.nomeCompleto,
       tenantId: ctx.tenantId,
       unidadeId: ctx.unidadeId,
       setorId: ctx.setorId,

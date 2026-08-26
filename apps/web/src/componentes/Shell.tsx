@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Alert from '@mui/material/Alert';
+import Avatar from '@mui/material/Avatar';
 import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
@@ -10,6 +11,8 @@ import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
@@ -21,13 +24,13 @@ import LightMode from '@mui/icons-material/LightModeOutlined';
 import Logout from '@mui/icons-material/LogoutOutlined';
 import MenuIcon from '@mui/icons-material/MenuOutlined';
 import AddCircle from '@mui/icons-material/AddCircleOutlineOutlined';
-import ViewList from '@mui/icons-material/ViewListOutlined';
+import ManageSearch from '@mui/icons-material/ManageSearchOutlined';
 import LocalShipping from '@mui/icons-material/LocalShippingOutlined';
 import PendingActions from '@mui/icons-material/PendingActionsOutlined';
 import Science from '@mui/icons-material/ScienceOutlined';
 import Contacts from '@mui/icons-material/ContactsOutlined';
 import Inventory2 from '@mui/icons-material/Inventory2Outlined';
-import Tune from '@mui/icons-material/TuneOutlined';
+import Settings from '@mui/icons-material/SettingsOutlined';
 import Group from '@mui/icons-material/GroupOutlined';
 import Password from '@mui/icons-material/PasswordOutlined';
 import Security from '@mui/icons-material/SecurityOutlined';
@@ -61,9 +64,15 @@ import { PainelCopiloto, type CartaoPainel } from './PainelCopiloto';
 
 const MENU = [
   {
+    /**
+     * Rotulos do menu sao curtos de proposito: eles competem por uma coluna
+     * estreita, e o nome oficial do modulo ja aparece no cabecalho da tela.
+     * "Rastreamento e Gestao de Fluxo" quebrava em tres linhas e empurrava o
+     * resto do menu para fora da dobra.
+     */
     para: '/casos',
-    icone: <ViewList fontSize="small" />,
-    rotulo: MODULO_LABEL[MODULOS.M07_RASTREAMENTO],
+    icone: <ManageSearch fontSize="small" />,
+    rotulo: 'Rastreio',
     permissao: 'fluxo:visualizar',
   },
   {
@@ -76,7 +85,7 @@ const MENU = [
     /* M09: o lote é do dia e atravessa casos, então não mora dentro de um. */
     para: '/processamento',
     icone: <LocalShipping fontSize="small" />,
-    rotulo: MODULO_LABEL[MODULOS.M09_PROCESSAMENTO],
+    rotulo: 'Processamento',
     permissao: 'processamento:visualizar',
   },
   {
@@ -98,7 +107,7 @@ const MENU = [
        dentro de um caso, mora no armário. */
     para: '/bioteca',
     icone: <Science fontSize="small" />,
-    rotulo: MODULO_LABEL[MODULOS.M18_BIOTECA],
+    rotulo: 'Bioteca',
     permissao: 'bioteca:visualizar',
   },
   {
@@ -109,10 +118,12 @@ const MENU = [
     permissao: 'cliente:visualizar',
   },
   {
-    /* M01: o fluxo é configurado em dados - serviços, tabelas, calendário. */
+    /* M01: o fluxo é configurado em dados - serviços, tabelas, calendário.
+       "Configurações" diz melhor o que se faz ali do que "Administração", que
+       se confundia com a gestão de contas logo abaixo. */
     para: '/administracao',
-    icone: <Tune fontSize="small" />,
-    rotulo: 'Administração',
+    icone: <Settings fontSize="small" />,
+    rotulo: 'Configurações',
     permissao: 'config:visualizar',
   },
   {
@@ -149,6 +160,7 @@ export function Shell({ sessao, aoSair, modulo, etapa, cartoes, children }: Prop
    * convite para abrir quando ha motivo.
    */
   const [copilotoAberto, setCopilotoAberto] = useState(false);
+  const [menuConta, setMenuConta] = useState<HTMLElement | null>(null);
 
   /** Ao estreitar a janela, a gaveta fecha em vez de cobrir o trabalho. */
   useEffect(() => {
@@ -166,6 +178,23 @@ export function Shell({ sessao, aoSair, modulo, etapa, cartoes, children }: Prop
     // Só depois de navegar: zerar o estágio antes desmontaria esta tela no meio.
     aoSair();
   }
+
+  /**
+   * Iniciais do avatar: primeiro e ultimo nome.
+   *
+   * "Ana Beatriz Silva" vira "AS", e nao "AB" - o sobrenome distingue mais
+   * gente numa equipe do que o segundo nome.
+   */
+  const iniciais = sessao.nomeCompleto
+    .trim()
+    .split(/\s+/)
+    .filter((parte) => parte.length > 2 || /^[A-ZÀ-Ý]/.test(parte))
+    .reduce<string[]>((acc, parte, i, todas) => {
+      if (i === 0 || i === todas.length - 1) acc.push(parte[0]!.toUpperCase());
+      return acc;
+    }, [])
+    .join('')
+    .slice(0, 2);
 
   const itemSx = {
     borderRadius: 1.5,
@@ -201,41 +230,9 @@ export function Shell({ sessao, aoSair, modulo, etapa, cartoes, children }: Prop
         ))}
       </List>
 
-      <Divider sx={{ my: 1.5 }} />
-
-      <Typography sx={{ px: 2, pb: 0.5, fontSize: 11, color: 'text.secondary', fontWeight: 600 }}>
-        CONTA
-      </Typography>
-
-      <List disablePadding>
-        <ListItemButton
-          component={Link}
-          to="/conta/senha"
-          selected={ativo('/conta/senha')}
-          sx={itemSx}
-        >
-          <ListItemIcon sx={{ minWidth: 34 }}>
-            <Password fontSize="small" />
-          </ListItemIcon>
-          <ListItemText primary="Trocar senha" />
-        </ListItemButton>
-
-        {!sessao.mfaAtivo && (
-          /* Blueprint seção 6: oferecer o segundo fator a quem ainda não tem,
-             mesmo quando o perfil não o torna obrigatório. */
-          <ListItemButton
-            component={Link}
-            to="/conta/mfa"
-            selected={ativo('/conta/mfa')}
-            sx={itemSx}
-          >
-            <ListItemIcon sx={{ minWidth: 34 }}>
-              <Security fontSize="small" />
-            </ListItemIcon>
-            <ListItemText primary="Ativar 2 etapas" />
-          </ListItemButton>
-        )}
-      </List>
+      {/* A conta saiu daqui para o avatar na barra superior: senha e segundo
+          fator sao ajustes de quem esta logado, nao lugares do sistema, e
+          misturados aos modulos disputavam a mesma leitura vertical. */}
 
       {sessao.exigeSupervisao && (
         /* M02/M11: o perfil em supervisão precisa saber disso o tempo todo. */
@@ -319,11 +316,93 @@ export function Shell({ sessao, aoSair, modulo, etapa, cartoes, children }: Prop
             </IconButton>
           </Tooltip>
 
-          <Tooltip title="Sair">
-            <IconButton onClick={sair} size="small" aria-label="Sair">
-              <Logout fontSize="small" />
+          {/* Conta: senha, segundo fator e saida moram aqui, no canto que todo
+              sistema usa para isso - e nao no meio dos modulos. */}
+          <Tooltip title={sessao.nomeCompleto}>
+            <IconButton
+              onClick={(e) => setMenuConta(e.currentTarget)}
+              size="small"
+              aria-label="Conta"
+              aria-haspopup="menu"
+              aria-expanded={Boolean(menuConta)}
+              sx={{ ml: 0.5 }}
+            >
+              <Avatar
+                sx={{
+                  width: 30,
+                  height: 30,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  bgcolor: 'primary.main',
+                }}
+              >
+                {iniciais}
+              </Avatar>
             </IconButton>
           </Tooltip>
+
+          <Menu
+            anchorEl={menuConta}
+            open={Boolean(menuConta)}
+            onClose={() => setMenuConta(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            slotProps={{ paper: { sx: { minWidth: 220 } } }}
+          >
+            <Box sx={{ px: 2, py: 1 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
+                {sessao.nomeCompleto}
+              </Typography>
+              <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
+                {sessao.exigeSupervisao ? 'Perfil sob supervisão' : 'Sessão ativa'}
+              </Typography>
+            </Box>
+
+            <Divider />
+
+            <MenuItem
+              component={Link}
+              to="/conta/senha"
+              onClick={() => setMenuConta(null)}
+              sx={{ fontSize: 13.5 }}
+            >
+              <ListItemIcon sx={{ minWidth: 32 }}>
+                <Password fontSize="small" />
+              </ListItemIcon>
+              Trocar senha
+            </MenuItem>
+
+            {!sessao.mfaAtivo && (
+              /* Blueprint seção 6: oferecer o segundo fator a quem ainda não
+                 tem, mesmo quando o perfil não o torna obrigatório. */
+              <MenuItem
+                component={Link}
+                to="/conta/mfa"
+                onClick={() => setMenuConta(null)}
+                sx={{ fontSize: 13.5 }}
+              >
+                <ListItemIcon sx={{ minWidth: 32 }}>
+                  <Security fontSize="small" />
+                </ListItemIcon>
+                Ativar 2 etapas
+              </MenuItem>
+            )}
+
+            <Divider />
+
+            <MenuItem
+              onClick={() => {
+                setMenuConta(null);
+                void sair();
+              }}
+              sx={{ fontSize: 13.5 }}
+            >
+              <ListItemIcon sx={{ minWidth: 32 }}>
+                <Logout fontSize="small" />
+              </ListItemIcon>
+              Sair
+            </MenuItem>
+          </Menu>
         </Stack>
       </Stack>
 

@@ -15,13 +15,27 @@ import { api, ErroApi } from '../api';
 /**
  * Login.
  *
- * A instituicao e pedida explicitamente porque o tenant e resolvido antes de
- * qualquer consulta a dado de dominio (ADR 0002) - o que dispensa uma funcao de
- * bypass da RLS no backend.
+ * A instituicao continua indo no corpo do login porque o tenant e resolvido
+ * antes de qualquer consulta a dado de dominio (ADR 0002) - o que dispensa uma
+ * funcao de bypass da RLS no backend. O que muda aqui e so quem digita o slug:
+ * enquanto houver um unico tenant, ele vem de `INSTITUICAO_PADRAO`.
  *
  * Aceitar a senha nao significa entrar: a resposta diz em que estagio a sessao
  * ficou, e quem decide a proxima tela e o `App`.
  */
+
+/**
+ * Slug usado quando o produto opera com uma instituicao so.
+ *
+ * Enquanto a homologacao nao libera novos tenants, pedir o slug no login e
+ * atrito puro: todo mundo que entra e da mesma instituicao, e um campo a mais
+ * so cria uma forma extra de errar o acesso. Com valor definido, o campo some
+ * da tela e o slug vai no corpo do login do mesmo jeito - o backend nao muda.
+ *
+ * Para trazer o campo de volta na abertura para novos tenants, basta publicar
+ * com `VITE_INSTITUICAO_PADRAO=""`. Nao ha codigo a reverter.
+ */
+const INSTITUICAO_PADRAO = import.meta.env.VITE_INSTITUICAO_PADRAO ?? 'lapato';
 
 const DESTAQUES = [
   {
@@ -42,7 +56,7 @@ const DESTAQUES = [
 ];
 
 export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => void }) {
-  const [instituicao, setInstituicao] = useState('');
+  const [instituicao, setInstituicao] = useState(INSTITUICAO_PADRAO);
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<string | null>(null);
@@ -90,16 +104,18 @@ export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => voi
     >
       <Box component="form" onSubmit={submeter} noValidate>
         <Stack spacing={2.5}>
-          <TextField
-            label="Instituição"
-            value={instituicao}
-            onChange={(e) => setInstituicao(e.target.value)}
-            required
-            fullWidth
-            autoFocus
-            autoComplete="organization"
-            helperText="O identificador curto da sua instituição."
-          />
+          {!INSTITUICAO_PADRAO && (
+            <TextField
+              label="Instituição"
+              value={instituicao}
+              onChange={(e) => setInstituicao(e.target.value)}
+              required
+              fullWidth
+              autoFocus
+              autoComplete="organization"
+              helperText="O identificador curto da sua instituição."
+            />
+          )}
 
           <TextField
             label="E-mail"
@@ -108,6 +124,7 @@ export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => voi
             onChange={(e) => setEmail(e.target.value)}
             required
             fullWidth
+            autoFocus={Boolean(INSTITUICAO_PADRAO)}
             autoComplete="username"
           />
 

@@ -338,6 +338,9 @@ function DialogoUsuario({
    * externo. A lista só é buscada quando o perfil escolhido é do Portal — quem
    * cria uma conta interna não deveria nem ver o campo.
    */
+  const emailMudou =
+    usuario !== null && email.trim().toLowerCase() !== usuario.email.trim().toLowerCase();
+
   const chavesPortal = new Set(['cliente', 'veterinario_solicitante']);
   const contaDoPortal = perfis
     .filter((p) => perfilIds.includes(p.id))
@@ -358,6 +361,7 @@ function DialogoUsuario({
       if (usuario) {
         await api.post(`/usuarios/${usuario.id}`, {
           nomeCompleto: nome.trim(),
+          email: email.trim(),
           perfilIds,
           ...(unidadeId ? { unidadePrincipalId: unidadeId } : {}),
         });
@@ -391,14 +395,24 @@ function DialogoUsuario({
             required
             autoFocus
           />
+          {/* O e-mail é editável, e não só no cadastro.
+              M02 seção 3 exige identidade INDIVIDUAL — uma pessoa, uma conta —
+              e não que o endereço seja para sempre o que alguém digitou com
+              pressa. Travar o campo obrigava a recriar a conta por causa de uma
+              letra, e o histórico ficava na conta velha. */}
           <TextField
             label="E-mail"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            disabled={usuario !== null}
-            helperText={usuario ? 'O e-mail identifica a pessoa - não se troca (M02 seção 3).' : ' '}
+            helperText={
+              usuario && emailMudou
+                ? 'É por este endereço que a pessoa passa a entrar. A troca fica na auditoria.'
+                : usuario
+                  ? 'É por ele que a pessoa entra no sistema.'
+                  : ' '
+            }
           />
 
           <Box>
@@ -479,7 +493,7 @@ function DialogoUsuario({
             ocupado ||
             !nome.trim() ||
             perfilIds.length === 0 ||
-            (!usuario && !email.trim()) ||
+            !email.trim() ||
             (contaDoPortal && !usuario && !clienteId)
           }
         >

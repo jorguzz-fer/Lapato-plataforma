@@ -54,31 +54,6 @@ export class AuthService {
   ) {}
 
   /**
-   * A instituicao a usar quando so existe uma.
-   *
-   * Enquanto o produto atende uma unica instituicao, pedir o slug na tela de
-   * login e uma pergunta cuja resposta e sempre a mesma - e uma forma barata de
-   * errar o login por digitacao. Esta rota deixa o front esconder o campo, e
-   * faz isso pelo estado real do banco: no dia em que a segunda instituicao for
-   * criada, o campo reaparece sozinho, sem ninguem precisar lembrar de reverter
-   * uma configuracao.
-   *
-   * Devolve `null` com duas ou mais instituicoes, e NUNCA uma lista - o
-   * chamador e anonimo, e enumerar clientes de um SaaS pela tela de entrada
-   * seria um brinde a quem esta so olhando (Blueprint secao 6). Com uma so, o
-   * unico slug possivel ja e o que todo mundo digita ali.
-   */
-  async instituicaoUnica(): Promise<{ slug: string; nome: string } | null> {
-    const ativas = await this.db.raw
-      .select({ slug: tenant.slug, nome: tenant.nomeFantasia })
-      .from(tenant)
-      .where(isNull(tenant.inativadoEm))
-      .limit(2);
-
-    return ativas.length === 1 ? ativas[0]! : null;
-  }
-
-  /**
    * Autentica por instituicao + e-mail + senha.
    *
    * O `slugTenant` e obrigatorio de proposito: resolver a instituicao ANTES de

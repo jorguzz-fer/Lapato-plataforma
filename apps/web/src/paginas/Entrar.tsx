@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
-import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import ArrowForward from '@mui/icons-material/ArrowForward';
@@ -17,19 +15,32 @@ import { api, ErroApi } from '../api';
 /**
  * Login.
  *
- * A instituicao continua sendo enviada sempre, porque o tenant e resolvido
- * antes de qualquer consulta a dado de dominio (ADR 0002) - e o que dispensa
- * uma funcao de bypass da RLS no backend. O que muda aqui e so quem digita.
- *
- * Enquanto existe uma instituicao so, `GET /auth/instituicao` devolve o slug e
- * o campo some: e uma pergunta cuja resposta e sempre a mesma, e uma forma
- * barata de errar o login por digitacao. A decisao vem do estado do banco, nao
- * de uma configuracao - no dia em que a segunda instituicao for criada, a rota
- * passa a devolver `null` e o campo reaparece sozinho.
+ * A instituicao continua indo no corpo do login porque o tenant e resolvido
+ * antes de qualquer consulta a dado de dominio (ADR 0002) - o que dispensa uma
+ * funcao de bypass da RLS no backend. O que muda aqui e so quem digita o slug:
+ * enquanto houver um unico tenant, ele vem de `INSTITUICAO_PADRAO`.
  *
  * Aceitar a senha nao significa entrar: a resposta diz em que estagio a sessao
  * ficou, e quem decide a proxima tela e o `App`.
  */
+
+/**
+ * Slug usado quando o produto opera com uma instituicao so.
+ *
+ * Enquanto a homologacao nao libera novos tenants, pedir o slug no login e
+ * atrito puro: todo mundo que entra e da mesma instituicao, e um campo a mais
+ * so cria uma forma extra de errar o acesso. Com valor definido, o campo some
+ * da tela e o slug vai no corpo do login do mesmo jeito - o backend nao muda.
+ *
+ * Para trazer o campo de volta na abertura para novos tenants, basta publicar
+ * com `VITE_INSTITUICAO_PADRAO=""`. Nao ha codigo a reverter.
+ *
+ * O padrao no codigo e `lapato` por decisao de produto: e a unica instituicao
+ * prevista por enquanto. A contrapartida esta registrada aqui para nao virar
+ * surpresa - uma instalacao nova que esqueca de definir a variavel vai assumir
+ * que a instituicao e a LAPATO, e o login la vai falhar sem dizer por que.
+ */
+const INSTITUICAO_PADRAO = import.meta.env.VITE_INSTITUICAO_PADRAO ?? 'lapato';
 
 const DESTAQUES = [
   {
@@ -49,42 +60,12 @@ const DESTAQUES = [
   },
 ];
 
-interface InstituicaoUnica {
-  slug: string;
-  nome: string;
-}
-
 export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => void }) {
-  const [instituicao, setInstituicao] = useState('');
+  const [instituicao, setInstituicao] = useState(INSTITUICAO_PADRAO);
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
-  const [unica, setUnica] = useState<InstituicaoUnica | null>(null);
-  const [resolvendo, setResolvendo] = useState(true);
-  const campoEmail = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    api
-      .get<InstituicaoUnica | null>('/auth/instituicao')
-      .then((resposta) => {
-        if (resposta?.slug) {
-          setUnica(resposta);
-          setInstituicao(resposta.slug);
-          /**
-           * Foco imperativo: `autoFocus` so vale na montagem, e nesse instante
-           * o campo de e-mail ainda nao era o primeiro da tela.
-           */
-          campoEmail.current?.focus();
-        }
-      })
-      /**
-       * Falhar aqui nao pode impedir ninguem de entrar: sem resposta, a tela
-       * volta a pedir o slug - o comportamento de sempre.
-       */
-      .catch(() => undefined)
-      .finally(() => setResolvendo(false));
-  }, []);
 
   async function submeter(e: FormEvent) {
     e.preventDefault();
@@ -128,11 +109,7 @@ export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => voi
     >
       <Box component="form" onSubmit={submeter} noValidate>
         <Stack spacing={2.5}>
-          {/* Enquanto a rota nao responde, um esqueleto no lugar do campo: piscar
-              o campo e depois some-lo faria a tela pular embaixo do cursor. */}
-          {resolvendo && <Skeleton variant="rounded" height={56} />}
-
-          {!resolvendo && !unica && (
+          {!INSTITUICAO_PADRAO && (
             <TextField
               label="Instituição"
               value={instituicao}
@@ -145,14 +122,6 @@ export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => voi
             />
           )}
 
-          {/* Some o campo, mas nao a informacao: quem entra continua vendo em
-              qual instituicao esta entrando. */}
-          {unica && (
-            <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
-              Entrando em <Box component="strong">{unica.nome}</Box>.
-            </Typography>
-          )}
-
           <TextField
             label="E-mail"
             type="email"
@@ -160,8 +129,8 @@ export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => voi
             onChange={(e) => setEmail(e.target.value)}
             required
             fullWidth
+            autoFocus={Boolean(INSTITUICAO_PADRAO)}
             autoComplete="username"
-            inputRef={campoEmail}
           />
 
           <CampoSenha
@@ -182,7 +151,7 @@ export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => voi
             variant="contained"
             size="large"
             fullWidth
-            disabled={enviando || resolvendo}
+            disabled={enviando}
             endIcon={enviando ? undefined : <ArrowForward />}
           >
             {enviando ? 'Entrando…' : 'Entrar'}

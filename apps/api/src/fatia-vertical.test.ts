@@ -4,8 +4,6 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import * as TOTP from 'otpauth';
-import { eq } from 'drizzle-orm';
-import { criarConexao, tenant } from '@lapato/db';
 import { AppModule } from './app.module.js';
 import { ProblemaFilter } from './core/http/problema.filter.js';
 
@@ -215,39 +213,27 @@ describe('autenticação e autorização', () => {
    * decisão vem daqui - do estado do banco, não de uma configuração que alguém
    * precisaria lembrar de reverter.
    */
-  test('a instituição única é oferecida ao login, e some quando aparece a segunda', async () => {
+  /**
+   * O campo Instituição some da tela quando o produto opera com um tenant só,
+   * mas isso é decisão de TELA: o slug continua obrigatório no corpo do login,
+   * e o tenant continua sendo resolvido antes de qualquer consulta a dado de
+   * domínio (ADR 0002). Sem este teste, esconder o campo poderia virar, sem
+   * ninguém perceber, afrouxar a regra.
+   */
+  test('esconder o campo não afrouxa a exigência do slug no login', async () => {
     cookie = '';
-    const sozinha = await req('GET', '/auth/instituicao');
-    expect(sozinha.status).toBe(200);
-    expect(sozinha.body?.slug).toBe('demo');
-    expect(sozinha.body?.nome).toBeTruthy();
-
-    const conexao = criarConexao({ url: process.env.DATABASE_URL! });
-    try {
-      await conexao.db
-        .insert(tenant)
-        .values({ slug: 'segunda-tmp', razaoSocial: 'Segunda', nomeFantasia: 'Segunda' });
-
-      /**
-       * Com duas instituicoes a resposta e `null`, e nunca uma lista: quem
-       * pergunta e anonimo, e enumerar a carteira de clientes pela tela de
-       * entrada seria um brinde a quem esta so olhando (Blueprint secao 6).
-       */
-      const comDuas = await req('GET', '/auth/instituicao');
-      expect(comDuas.status).toBe(200);
-      expect(comDuas.body).toBeNull();
-    } finally {
-      await conexao.db.delete(tenant).where(eq(tenant.slug, 'segunda-tmp'));
-      await conexao.encerrar();
-    }
-
-    // E o login continua exigindo o slug: esconder o campo e uma decisao de
-    // tela, nao um relaxamento do ADR 0002.
     const semInstituicao = await req('POST', '/auth/login', {
       email: 'admin@lapato.local',
       senha: 'lapato123',
     });
     expect(semInstituicao.status).toBe(400);
+
+    const comInstituicao = await req('POST', '/auth/login', {
+      instituicao: 'demo',
+      email: 'admin@lapato.local',
+      senha: 'lapato123',
+    });
+    expect(comInstituicao.status, JSON.stringify(comInstituicao.body)).toBe(200);
   });
 
   /**

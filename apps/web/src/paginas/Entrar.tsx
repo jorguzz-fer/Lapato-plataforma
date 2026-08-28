@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
-import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import ArrowForward from '@mui/icons-material/ArrowForward';
@@ -36,6 +34,11 @@ import { api, ErroApi } from '../api';
  *
  * Para trazer o campo de volta na abertura para novos tenants, basta publicar
  * com `VITE_INSTITUICAO_PADRAO=""`. Nao ha codigo a reverter.
+ *
+ * O padrao no codigo e `lapato` por decisao de produto: e a unica instituicao
+ * prevista por enquanto. A contrapartida esta registrada aqui para nao virar
+ * surpresa - uma instalacao nova que esqueca de definir a variavel vai assumir
+ * que a instituicao e a LAPATO, e o login la vai falhar sem dizer por que.
  */
 const INSTITUICAO_PADRAO = import.meta.env.VITE_INSTITUICAO_PADRAO ?? 'lapato';
 
@@ -57,42 +60,12 @@ const DESTAQUES = [
   },
 ];
 
-interface InstituicaoUnica {
-  slug: string;
-  nome: string;
-}
-
 export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => void }) {
   const [instituicao, setInstituicao] = useState(INSTITUICAO_PADRAO);
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
-  const [unica, setUnica] = useState<InstituicaoUnica | null>(null);
-  const [resolvendo, setResolvendo] = useState(true);
-  const campoEmail = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    api
-      .get<InstituicaoUnica | null>('/auth/instituicao')
-      .then((resposta) => {
-        if (resposta?.slug) {
-          setUnica(resposta);
-          setInstituicao(resposta.slug);
-          /**
-           * Foco imperativo: `autoFocus` so vale na montagem, e nesse instante
-           * o campo de e-mail ainda nao era o primeiro da tela.
-           */
-          campoEmail.current?.focus();
-        }
-      })
-      /**
-       * Falhar aqui nao pode impedir ninguem de entrar: sem resposta, a tela
-       * volta a pedir o slug - o comportamento de sempre.
-       */
-      .catch(() => undefined)
-      .finally(() => setResolvendo(false));
-  }, []);
 
   async function submeter(e: FormEvent) {
     e.preventDefault();
@@ -158,7 +131,6 @@ export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => voi
             fullWidth
             autoFocus={Boolean(INSTITUICAO_PADRAO)}
             autoComplete="username"
-            inputRef={campoEmail}
           />
 
           <CampoSenha
@@ -179,7 +151,7 @@ export function Entrar({ aoEntrar }: { aoEntrar: (estagio: EstagioSessao) => voi
             variant="contained"
             size="large"
             fullWidth
-            disabled={enviando || resolvendo}
+            disabled={enviando}
             endIcon={enviando ? undefined : <ArrowForward />}
           >
             {enviando ? 'Entrando…' : 'Entrar'}

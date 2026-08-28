@@ -69,30 +69,6 @@ export class AuthController {
   }
 
   /**
-   * Instituicao a preencher sozinha na tela de entrada.
-   *
-   * Publica porque e consultada antes de existir qualquer sessao. Devolve o
-   * unico slug ativo quando so ha um, e `null` a partir do segundo - nunca uma
-   * lista. Com uma instituicao so, o slug devolvido e exatamente o que todo
-   * usuario ja digita no formulario; com duas ou mais, responder seria entregar
-   * a carteira de clientes a um desconhecido.
-   *
-   * Leva o limite de entrada porque e anonima e toca o banco.
-   */
-  @Publica()
-  @LimiteEntrada()
-  @Get('instituicao')
-  @ApiOperation({
-    summary: 'Instituição única da instalação, quando houver apenas uma',
-    description:
-      'Permite que a tela de login esconda o campo enquanto o sistema atende ' +
-      'uma instituição só. Devolve null a partir da segunda.',
-  })
-  async instituicao(): Promise<{ slug: string; nome: string } | null> {
-    return this.auth.instituicaoUnica();
-  }
-
-  /**
    * Onde a sessao parou.
    *
    * Publica de proposito: e chamada antes de a sessao estar completa, inclusive

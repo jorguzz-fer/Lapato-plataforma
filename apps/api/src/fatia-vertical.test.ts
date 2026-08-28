@@ -1123,6 +1123,57 @@ describe('gestão de usuários (M02)', () => {
     const tentativa = await req('POST', `/usuarios/${usuarioId}/redefinicao-senha`);
     expect(tentativa.status).toBe(403);
   });
+
+  /**
+   * M02 seção 3 exige identidade INDIVIDUAL - uma pessoa, uma conta. Isso é
+   * sobre a quem a conta pertence, não sobre o endereço ser imutável: um erro
+   * de digitação no cadastro obrigava a recriar a conta, e o histórico e a
+   * assinatura ficariam presos na conta velha.
+   */
+  test('o e-mail é corrigível, e a correção muda por onde a pessoa entra', async () => {
+    await entrar('admin@lapato.local');
+
+    // Senha conhecida, para que o login prove qual endereço vale.
+    const reset = await req('POST', `/usuarios/${usuarioId}/redefinicao-senha`);
+    const senha = reset.body.senhaProvisoria as string;
+
+    const corrigido = `corrigido.${marca}@lapato.local`;
+    const edicao = await req('POST', `/usuarios/${usuarioId}`, { email: corrigido });
+    expect(edicao.status, JSON.stringify(edicao.body)).toBe(201);
+
+    const lista = await req('GET', '/usuarios');
+    const conta = lista.body.find((u: any) => u.id === usuarioId);
+    expect(conta.email).toBe(corrigido);
+
+    // O endereço antigo deixa de entrar - mesmo com a senha certa.
+    cookie = '';
+    const peloAntigo = await req('POST', '/auth/login', {
+      instituicao: 'demo',
+      email: emailNovo,
+      senha,
+    });
+    expect(peloAntigo.status).toBe(401);
+
+    const peloNovo = await req('POST', '/auth/login', {
+      instituicao: 'demo',
+      email: corrigido,
+      senha,
+    });
+    expect(peloNovo.status, JSON.stringify(peloNovo.body)).toBe(200);
+  });
+
+  test('corrigir para um e-mail que já existe é recusado', async () => {
+    await entrar('admin@lapato.local');
+
+    // Duas pessoas dividindo um endereço é exatamente o que a seção 3 proíbe.
+    const colisao = await req('POST', `/usuarios/${usuarioId}`, {
+      email: 'admin@lapato.local',
+    });
+    expect(colisao.status).toBe(400);
+
+    const malformado = await req('POST', `/usuarios/${usuarioId}`, { email: 'nao-e-email' });
+    expect(malformado.status).toBe(400);
+  });
 });
 
 describe('administração e configurações (M01)', () => {

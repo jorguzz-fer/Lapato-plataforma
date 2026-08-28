@@ -217,20 +217,59 @@ export class UsuariosService {
 
   async editar(
     id: string,
-    dados: { nomeCompleto?: string; perfilIds?: string[]; unidadePrincipalId?: string | null },
+    dados: {
+      nomeCompleto?: string;
+      email?: string;
+      perfilIds?: string[];
+      unidadePrincipalId?: string | null;
+    },
   ): Promise<void> {
     const ctx = exigirContexto();
 
     return this.db.executar(async (tx) => {
       const atual = await this.buscar(tx, id);
 
-      if (dados.nomeCompleto !== undefined || dados.unidadePrincipalId !== undefined) {
+      /**
+       * O e-mail e corrigivel.
+       *
+       * M02 secao 3 exige identidade INDIVIDUAL - uma pessoa, uma conta, nada
+       * de login compartilhado. Isso e sobre a quem a conta pertence, e nao
+       * sobre o endereco continuar para sempre o que alguem digitou na pressa
+       * do cadastro. Um erro de digitacao no e-mail hoje custava recriar a
+       * conta, e com ela o historico e a assinatura ficariam na conta velha.
+       *
+       * O que a regra exige de fato e que a mudanca seja rastreavel e que duas
+       * pessoas nunca dividam um endereco: as duas coisas continuam valendo
+       * abaixo.
+       */
+      const emailNovo = dados.email?.trim().toLowerCase();
+
+      if (emailNovo !== undefined && emailNovo !== atual.email) {
+        const [existente] = await tx
+          .select({ id: usuario.id })
+          .from(usuario)
+          .where(and(eq(usuario.tenantId, ctx.tenantId), eq(usuario.email, emailNovo)))
+          .limit(1);
+
+        if (existente) {
+          throw new BadRequestException(`Já existe uma conta com o e-mail ${emailNovo}.`);
+        }
+      }
+
+      const trocaEmail = emailNovo !== undefined && emailNovo !== atual.email;
+
+      if (
+        dados.nomeCompleto !== undefined ||
+        dados.unidadePrincipalId !== undefined ||
+        trocaEmail
+      ) {
         await tx
           .update(usuario)
           .set({
             ...(dados.nomeCompleto !== undefined
               ? { nomeCompleto: dados.nomeCompleto.trim() }
               : {}),
+            ...(trocaEmail ? { email: emailNovo } : {}),
             ...(dados.unidadePrincipalId !== undefined
               ? { unidadePrincipalId: dados.unidadePrincipalId }
               : {}),
@@ -263,13 +302,24 @@ export class UsuariosService {
         );
       }
 
+      /**
+       * A troca de e-mail entra na auditoria com os DOIS enderecos.
+       *
+       * E o dado pelo qual a pessoa faz login: sem o valor anterior no registro,
+       * uma conta que mudou de endereco fica impossivel de reconciliar depois
+       * com quem a usou antes.
+       */
       await this.auditoria.registrar(tx, {
         entidade: 'usuario',
         entidadeId: id,
         acao: 'editar',
-        valorAnterior: { nomeCompleto: atual.nomeCompleto },
+        valorAnterior: {
+          nomeCompleto: atual.nomeCompleto,
+          ...(trocaEmail ? { email: atual.email } : {}),
+        },
         valorNovo: {
           ...(dados.nomeCompleto !== undefined ? { nomeCompleto: dados.nomeCompleto } : {}),
+          ...(trocaEmail ? { email: emailNovo } : {}),
           ...(dados.perfilIds !== undefined ? { perfis: dados.perfilIds.length } : {}),
         },
       });

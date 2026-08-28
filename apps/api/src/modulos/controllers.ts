@@ -751,6 +751,8 @@ const novaAssinaturaSchema = z.object({
 
 const edicaoUsuarioSchema = z.object({
   nomeCompleto: z.string().min(1).optional(),
+  /** M02 secao 3: corrigivel, mas continua unico na instituicao. */
+  email: z.string().email('Informe um e-mail válido.').optional(),
   perfilIds: z.array(z.string().uuid()).min(1).optional(),
   unidadePrincipalId: z.string().uuid().nullish(),
 });
@@ -856,10 +858,11 @@ export class UsuariosController {
   @Post(':id')
   @ExigePermissao(PERMISSOES.USUARIO_EDITAR)
   @ApiOperation({
-    summary: 'Edita nome, perfis e unidade',
+    summary: 'Edita nome, e-mail, perfis e unidade',
     description:
       'A troca de perfis substitui o conjunto e vale na próxima sessão - reduzir ' +
-      'privilégio de sessão aberta exige bloquear.',
+      'privilégio de sessão aberta exige bloquear. A troca de e-mail muda o login ' +
+      'da pessoa e fica registrada na auditoria com o endereço anterior.',
   })
   async editar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
     await this.usuarios.editar(id, validarCorpo(edicaoUsuarioSchema, corpo));

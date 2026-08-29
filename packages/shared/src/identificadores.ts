@@ -167,3 +167,16 @@ export function identificadorInventario(ano: number, sequencial: number): string
 export function identificadorLoteDescarte(ano: number, sequencial: number): string {
   return `BIO-DESC-${ano}-${String(sequencial).padStart(5, '0')}`;
 }
+
+/**
+ * Solicitacao logistica: `LOG-2026-000842` (M19 secao 12).
+ *
+ * Serie propria, e nao o numero do caso: a coleta quase sempre acontece ANTES
+ * de o caso existir - o caso nasce no recebimento (M05). Amarrar a numeracao
+ * logistica ao caso tornaria impossivel identificar a operacao no momento em
+ * que ela mais precisa de identidade, que e quando o encarregado esta no
+ * balcao do cliente.
+ */
+export function identificadorColeta(ano: number, sequencial: number): string {
+  return `LOG-${ano}-${String(sequencial).padStart(6, '0')}`;
+}

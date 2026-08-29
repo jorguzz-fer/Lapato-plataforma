@@ -3403,6 +3403,309 @@ describe('painel de chegada (M07)', () => {
   });
 });
 
+describe('logística: da solicitação ao serviço com dono (M19)', () => {
+  /**
+   * A fatia estruturante do módulo. A seção 132 abre com duas regras que este
+   * bloco cobre inteiras: "toda solicitação logística deverá possuir número
+   * único" e "o aceite deverá ser registrado".
+   */
+  const marca = Date.now().toString().slice(-6);
+  let clienteId: string;
+  let solicitacaoId: string;
+  let identificador: string;
+  const encarregados: { id: string; cookie: string; email: string }[] = [];
+
+  /** `req` usa um cookie global; a corrida do §144 precisa de dois ao mesmo tempo. */
+  async function reqCom(
+    cookieProprio: string,
+    metodo: string,
+    caminho: string,
+    corpo?: unknown,
+  ): Promise<{ status: number; body: any }> {
+    const resposta = await fetch(`${servidor}${BASE}${caminho}`, {
+      method: metodo,
+      headers: { 'content-type': 'application/json', cookie: cookieProprio },
+      body: corpo === undefined ? undefined : JSON.stringify(corpo),
+    });
+    const texto = await resposta.text();
+    return { status: resposta.status, body: texto ? JSON.parse(texto) : null };
+  }
+
+  test('a equipe de campo entra pelo M02, sem cadastro paralelo de motorista', async () => {
+    await entrar('admin@lapato.local');
+
+    const perfis = await req('GET', '/usuarios/perfis');
+    const encarregado = perfis.body.find(
+      (p: any) => p.chave === 'encarregado_logistico',
+    );
+    /**
+     * §34: "o Módulo 19 não deverá criar cadastro paralelo de usuário". O perfil
+     * existir na base institucional é o que prova que a identidade do
+     * encarregado nasce no M02 como a de qualquer pessoa.
+     */
+    expect(encarregado, 'perfil encarregado_logistico não foi provisionado').toBeTruthy();
+
+    for (let i = 0; i < 2; i += 1) {
+      const email = `coletador${i}.${marca}@lapato.local`;
+      const criado = await req('POST', '/usuarios', {
+        nomeCompleto: `Coletador ${i} ${marca}`,
+        email,
+        perfilIds: [encarregado.id],
+      });
+      expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+
+      // Senha provisória prende na troca; atravessar o funil deixa a sessão ativa.
+      const guardado = cookie;
+      cookie = '';
+      const login = await req('POST', '/auth/login', {
+        instituicao: 'demo',
+        email,
+        senha: criado.body.senhaProvisoria,
+      });
+      expect(login.body.estagio).toBe('troca_senha_obrigatoria');
+      const troca = await req('POST', '/auth/senha', {
+        senhaAtual: criado.body.senhaProvisoria,
+        senhaNova: `Coletador!${marca}`,
+      });
+      expect(troca.status, JSON.stringify(troca.body)).toBe(200);
+      expect(troca.body.estagio).toBe('ativa');
+
+      encarregados.push({ id: criado.body.id, cookie, email });
+      cookie = guardado;
+    }
+
+    expect(encarregados).toHaveLength(2);
+  });
+
+  test('a solicitação nasce com número único, qualquer que seja o canal', async () => {
+    await entrar('recepcao@lapato.local');
+
+    const clientes = await req('GET', '/catalogo/clientes');
+    clienteId = clientes.body[0].id;
+
+    // §5: o cliente ligou. O pedido vira UM registro no LAPATO (§4).
+    const criada = await req('POST', '/logistica/solicitacoes', {
+      tipoServico: 'retirada',
+      tipoOperacao: 'coleta_amostras',
+      canalOrigem: 'telefone',
+      clienteId,
+      endereco: `Rua das Clínicas, ${marca} — sala 2`,
+      contatoNoLocal: 'Recepção da clínica',
+      telefoneContato: '(11) 90000-0000',
+      volumesEstimados: 3,
+      tipoMaterial: 'Frascos com biópsias',
+      conservacao: 'ambiente',
+      prioridade: 'urgente',
+      valorCentavos: 4500,
+    });
+    expect(criada.status, JSON.stringify(criada.body)).toBe(201);
+    expect(criada.body.identificador).toMatch(/^LOG-\d{4}-\d{6}$/);
+    solicitacaoId = criada.body.id;
+    identificador = criada.body.identificador;
+
+    const ficha = await req('GET', `/logistica/solicitacoes/${solicitacaoId}`);
+    expect(ficha.status).toBe(200);
+    expect(ficha.body.status).toBe('recebida');
+    // §27: a tradução para o cliente sai do M19, não do Portal.
+    expect(ficha.body.statusExterno).toBe('solicitada');
+    // §13: o endereço fica COPIADO - corrigir o cadastro do cliente amanhã não
+    // pode mudar onde o encarregado esteve hoje.
+    expect(ficha.body.endereco).toContain(marca);
+  });
+
+  test('a oferta vai para vários encarregados ao mesmo tempo', async () => {
+    const oferta = await req('POST', `/logistica/solicitacoes/${solicitacaoId}/oferta`, {
+      encarregadoIds: encarregados.map((e) => e.id),
+    });
+    expect(oferta.status, JSON.stringify(oferta.body)).toBe(201);
+    expect(oferta.body.ofertas).toBe(2);
+
+    const ficha = await req('GET', `/logistica/solicitacoes/${solicitacaoId}`);
+    expect(ficha.body.status).toBe('aguardando_aceite');
+    expect(ficha.body.statusExterno).toBe('aguardando_confirmacao');
+    expect(ficha.body.ofertas).toHaveLength(2);
+
+    expect(oferta.body.novas).toBe(2);
+
+    /**
+     * Reenviar não duplica a linha - e diz a verdade sobre o que fez. §146: sem
+     * aceite, a oferta expira; apertar o botão de novo tem de RENOVAR o prazo,
+     * ou o operador fica olhando um botão que parece funcionar e não funciona.
+     */
+    const denovo = await req('POST', `/logistica/solicitacoes/${solicitacaoId}/oferta`, {
+      encarregadoIds: encarregados.map((e) => e.id),
+    });
+    expect(denovo.status).toBe(201);
+    expect(denovo.body.novas).toBe(0);
+    expect(denovo.body.renovadas).toBe(2);
+
+    const conferencia = await req('GET', `/logistica/solicitacoes/${solicitacaoId}`);
+    expect(conferencia.body.ofertas).toHaveLength(2);
+    // O prazo andou para frente nas duas.
+    for (const o of conferencia.body.ofertas) {
+      expect(new Date(o.expiraEm).getTime()).toBeGreaterThan(Date.now());
+    }
+  });
+
+  test('o encarregado vê na caixa dele só o que lhe foi ofertado', async () => {
+    const minhas = await reqCom(
+      encarregados[0]!.cookie,
+      'GET',
+      '/logistica/solicitacoes?minhasOfertas=true',
+    );
+    expect(minhas.status, JSON.stringify(minhas.body)).toBe(200);
+    expect(minhas.body.map((s: any) => s.id)).toContain(solicitacaoId);
+  });
+
+  /**
+   * O coração desta fatia. §144: "a operação deverá ser transacional para
+   * impedir aceite simultâneo por dois encarregados". Os dois clicam ao mesmo
+   * tempo; um leva o serviço, o outro recebe a mensagem da §145 - e nunca um
+   * erro técnico nem, pior, os dois saindo para a rua.
+   */
+  test('dois encarregados aceitando ao mesmo tempo: um leva, o outro é avisado', async () => {
+    const [a, b] = await Promise.all([
+      reqCom(encarregados[0]!.cookie, 'POST', `/logistica/solicitacoes/${solicitacaoId}/aceite`),
+      reqCom(encarregados[1]!.cookie, 'POST', `/logistica/solicitacoes/${solicitacaoId}/aceite`),
+    ]);
+
+    const respostas = [a!, b!];
+    const vitoriosas = respostas.filter((r) => r.status === 201);
+    const perdedoras = respostas.filter((r) => r.status !== 201);
+
+    expect(vitoriosas, 'exatamente um aceite deveria vencer').toHaveLength(1);
+    expect(perdedoras).toHaveLength(1);
+    expect(vitoriosas[0]!.body.identificador).toBe(identificador);
+    expect(perdedoras[0]!.status).toBe(400);
+    expect(perdedoras[0]!.body.detail).toContain('já assumida');
+
+    await entrar('admin@lapato.local');
+    const ficha = await req('GET', `/logistica/solicitacoes/${solicitacaoId}`);
+    expect(ficha.body.status).toBe('aceita');
+    expect(ficha.body.encarregadoId).toBeTruthy();
+    expect(ficha.body.statusExterno).toBe('agendada');
+
+    // §145: as demais ofertas são encerradas na hora.
+    const porStatus = ficha.body.ofertas.map((o: any) => o.status).sort();
+    expect(porStatus).toEqual(['aceita', 'encerrada']);
+
+    // §88: a timeline reconstrói como a operação chegou até aqui.
+    const tipos = ficha.body.timeline.map((m: any) => m.tipo);
+    expect(tipos).toEqual(['criada', 'oferta_enviada', 'oferta_renovada', 'aceita']);
+  });
+
+  test('quem perdeu a corrida não consegue aceitar depois', async () => {
+    const ficha = await req('GET', `/logistica/solicitacoes/${solicitacaoId}`);
+    const perdedor = encarregados.find((e) => e.id !== ficha.body.encarregadoId)!;
+
+    const tardio = await reqCom(
+      perdedor.cookie,
+      'POST',
+      `/logistica/solicitacoes/${solicitacaoId}/aceite`,
+    );
+    expect(tardio.status).toBe(400);
+    expect(tardio.body.detail).toContain('já assumida');
+  });
+
+  test('recusar não impede os demais, e ofertar de novo exige reatribuição', async () => {
+    await entrar('recepcao@lapato.local');
+
+    const outra = await req('POST', '/logistica/solicitacoes', {
+      tipoServico: 'entrega',
+      tipoOperacao: 'devolucao_material',
+      canalOrigem: 'whatsapp',
+      clienteId,
+      endereco: `Avenida Central, ${marca}`,
+    });
+    const outraId = outra.body.id as string;
+
+    await req('POST', `/logistica/solicitacoes/${outraId}/oferta`, {
+      encarregadoIds: encarregados.map((e) => e.id),
+    });
+
+    // §147: a recusa mexe só na linha de quem recusou.
+    const recusa = await reqCom(
+      encarregados[0]!.cookie,
+      'POST',
+      `/logistica/solicitacoes/${outraId}/recusa`,
+      { motivo: 'Já estou na zona norte.' },
+    );
+    expect(recusa.status, JSON.stringify(recusa.body)).toBe(201);
+
+    const aceite = await reqCom(
+      encarregados[1]!.cookie,
+      'POST',
+      `/logistica/solicitacoes/${outraId}/aceite`,
+    );
+    expect(aceite.status, JSON.stringify(aceite.body)).toBe(201);
+
+    // Com dono, a solicitação não volta para a fila de ofertas por engano.
+    await entrar('recepcao@lapato.local');
+    const reoferta = await req('POST', `/logistica/solicitacoes/${outraId}/oferta`, {
+      encarregadoIds: [encarregados[0]!.id],
+    });
+    expect(reoferta.status).toBe(400);
+    expect(reoferta.body.detail).toContain('já foi assumida');
+  });
+
+  test('cancelar exige motivo e derruba as ofertas em aberto', async () => {
+    await entrar('recepcao@lapato.local');
+    const nova = await req('POST', '/logistica/solicitacoes', {
+      tipoServico: 'retirada',
+      tipoOperacao: 'retirada_cadaver',
+      canalOrigem: 'portal',
+      clienteId,
+      endereco: `Rua do Cancelamento, ${marca}`,
+      requisitosEspeciais: ['cadaver', 'refrigeracao'],
+    });
+    const novaId = nova.body.id as string;
+    await req('POST', `/logistica/solicitacoes/${novaId}/oferta`, {
+      encarregadoIds: [encarregados[0]!.id],
+    });
+
+    // §86: cancelamento é decisão com responsável e motivo - a recepção não tem.
+    const semPermissao = await req('POST', `/logistica/solicitacoes/${novaId}/cancelamento`, {
+      motivo: 'O cliente desistiu.',
+    });
+    expect(semPermissao.status).toBe(403);
+
+    await entrar('admin@lapato.local');
+    const semMotivo = await req('POST', `/logistica/solicitacoes/${novaId}/cancelamento`, {});
+    expect(semMotivo.status).toBe(400);
+
+    const cancelada = await req('POST', `/logistica/solicitacoes/${novaId}/cancelamento`, {
+      motivo: 'O cliente desistiu da coleta.',
+    });
+    expect(cancelada.status, JSON.stringify(cancelada.body)).toBe(201);
+
+    const ficha = await req('GET', `/logistica/solicitacoes/${novaId}`);
+    expect(ficha.body.status).toBe('cancelada');
+    expect(ficha.body.statusExterno).toBe('cancelada');
+    // Ninguém pode aceitar um serviço cancelado e sair para a rua.
+    expect(ficha.body.ofertas.every((o: any) => o.status === 'encerrada')).toBe(true);
+
+    const tardio = await reqCom(
+      encarregados[0]!.cookie,
+      'POST',
+      `/logistica/solicitacoes/${novaId}/aceite`,
+    );
+    expect(tardio.status).toBe(400);
+  });
+
+  /**
+   * §115: "dados clínicos ou diagnósticos não deverão ser expostos sem
+   * necessidade". O encarregado precisa de endereço e janela de horário; não
+   * precisa saber que exame o material vai virar.
+   */
+  test('o encarregado não alcança dado clínico', async () => {
+    const casos = await reqCom(encarregados[0]!.cookie, 'GET', '/fluxo/casos');
+    expect(casos.status).toBe(403);
+
+    const catalogo = await reqCom(encarregados[0]!.cookie, 'GET', '/catalogo/servicos');
+    expect(catalogo.status).toBe(403);
+  });
+});
+
 describe('assistência de IA exige perfil interno (M17)', () => {
   /**
    * Achado da auditoria: as rotas de sugestao valiam para qualquer sessao, e a

@@ -30,12 +30,12 @@ Todo código, nome de módulo, evento e ADR deste repositório usa a numeração
 | 16 | Imagens e Scanner de Lâminas | Materiais e imagens | Implementado (WSI fora do v1, ADR-0004) |
 | 17 | Inteligência Artificial | Conhecimento | Implementado (Copiloto real opcional, ADR-0007) |
 | 18 | Bioteca e Gestão de Acervo Biológico | Materiais e imagens | Implementado |
-| 19 | Logística | Relacionamento e entrada | Sem documentação |
+| 19 | Logística | Relacionamento e entrada | Documentado — a implementar |
 | 20 | Financeiro | Gestão institucional | Sem documentação |
-| 21 | Biblioteca | Gestão institucional | Sem documentação |
-| 22 | Qualidade e Auditoria | Governança | Auditoria base implementada |
-| 23 | Ensino e Pesquisa | Conhecimento | Sem documentação |
-| 24 | Perícia e Patologia Forense | Conhecimento | Sem documentação |
+| 21 | Biblioteca | Gestão institucional | Documentado — a implementar |
+| 22 | Qualidade e Auditoria | Governança | Documentado — auditoria base implementada |
+| 23 | Ensino e Pesquisa | Conhecimento | Documentado — a implementar |
+| 24 | Perícia e Patologia Forense | Conhecimento | Documentado — a implementar |
 | 25 | Relatórios e Indicadores | Gestão institucional | Sem documentação |
 | 26 | Integrações e Notificações | Comunicação | Outbox implementado |
 
@@ -64,9 +64,35 @@ numeração fica deslocada em **−1** em relação à oficial.
 | MÓDULO 15 Imagens e acervo digital | **16** | Deslocado; ver ADR-0004 |
 | MÓDULO 16 Inteligência artificial | **17** | Deslocado |
 | MÓDULO 17 Bioteca | **18** | Deslocado |
+| MÓDULO 19 Logística | **19** | Coincide de novo |
+| MÓDULO 20 Biblioteca | **21** | Deslocado; a numeração do autor pula o Financeiro |
+| MÓDULO 21 Qualidade e auditoria | **22** | Deslocado |
+| MÓDULO 22 Ensino e pesquisa | **23** | Deslocado |
+| MÓDULO 23 Perícia e patologia forense | **24** | Deslocado |
 
 > **Atenção ao ler os `.docx`:** as referências cruzadas *dentro* dos arquivos 05 a 17 usam
 > a numeração antiga. Ao ler "o Módulo 15 armazena as imagens", entenda "Módulo 16".
+
+### Por que o deslocamento some no 19 e volta no 20
+
+O arquivo `MÓDULO 19 Logística` volta a coincidir com a numeração oficial, e os seguintes
+tornam a se deslocar. A causa é única: **a numeração do autor pula o Financeiro** (oficial
+20). A partir da Biblioteca, tudo anda uma casa para trás outra vez.
+
+### Os arquivos 19 a 23 não concordam entre si
+
+Pior que o deslocamento: **as referências cruzadas desses cinco arquivos se contradizem.**
+
+- `MÓDULO 19 Logística` usa a numeração **oficial** em todas as referências — chama a
+  Biblioteca de 21, o Financeiro de 20, a Qualidade de 22, as Integrações de 26.
+- Os outros quatro usam a numeração **antiga** — Logística 18, Financeiro 19,
+  Biblioteca 20, Qualidade 21, Relatórios 24, Integrações 25.
+
+O resultado é que **dois módulos diferentes aparecem como "Módulo 18"**: `Biblioteca §122`
+chama a **Logística** de 18, e `Ensino §180` chama a **Bioteca** de 18.
+
+**Regra prática, sem exceção: leia referência cruzada pelo NOME do módulo, nunca pelo
+número.** O número dentro dos `.docx` não é confiável; esta tabela é.
 
 ## Nota sobre a fusão Cadastro × Triagem
 
@@ -85,15 +111,30 @@ modelo de dados.
 
 ## Módulos sem documentação
 
-Os módulos **19, 20, 21, 22, 23, 24, 25 e 26** ainda não têm arquivo `.docx`. Financeiro
-(20), Qualidade e Auditoria (22) e Integrações e Notificações (26) são citados por quase
-todos os módulos documentados.
+Faltam três: **20 Financeiro**, **25 Relatórios e Indicadores** e **26 Integrações e
+Notificações**.
 
-Nesta fase são implementados apenas os **pontos de extensão** que os demais módulos
-precisam para não criar sistemas paralelos, conforme DIRETRIZES §18:
+### O Financeiro é o que mais falta
+
+Ele não é apenas mais um pendente: é o módulo que os cinco documentos recém-recebidos mais
+citam, e cada um deles tem uma ponta que fica sem dono enquanto ele não existir.
+
+| Módulo | O que depende do Financeiro |
+|---|---|
+| 19 Logística | valor do serviço mostrado ao encarregado antes do aceite (§148), item de produção, fechamento e pagamento (§159–164) |
+| 24 Perícia | honorários, adiantamentos e despesas periciais (§158) |
+| 23 Ensino e Pesquisa | custos de projeto e centro de custo (§143) |
+| 22 Qualidade | indicadores financeiros e eventos auditáveis de estorno e desconto (§111, §178) |
+
+Enquanto ele não chega, a regra é a de sempre: o módulo dono **gera o evento** de produção
+ou custo e **não calcula regra financeira própria** (Logística §102 é explícito). O evento
+fica pronto para o 20 consumir.
+
+### Pontos de extensão já implementados
+
+Conforme DIRETRIZES §18, os demais módulos já contam com o que precisam para não criar
+sistemas paralelos:
 
 - eventos de domínio emitidos e persistidos (consumíveis pelo 22 e pelo 25);
 - trilha de auditoria imutável (base do 22);
 - outbox de notificações (base do 26).
-
-A implementação desses módulos depende da documentação correspondente.

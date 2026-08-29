@@ -164,6 +164,27 @@ export const PERMISSOES = {
   PORTAL_HISTORICO_COMPLEMENTAR: 'portal:historico_complementar',
   PORTAL_SOLICITAR: 'portal:solicitar',
 
+  // M19 Logistica
+  LOGISTICA_VISUALIZAR: 'logistica:visualizar',
+  LOGISTICA_SOLICITAR: 'logistica:solicitar',
+  /**
+   * Escolher quem recebe a oferta e disparar (secoes 140-141).
+   *
+   * Separada de `solicitar` porque sao papeis diferentes na pratica: a recepcao
+   * abre o pedido quando o cliente liga; quem decide a quais encarregados ele
+   * vai, e por qual valor, e a logistica.
+   */
+  LOGISTICA_OFERTAR: 'logistica:ofertar',
+  /**
+   * Aceitar a oferta. E a permissao do ENCARREGADO - a unica do modulo que um
+   * perfil de campo precisa ter para comecar a trabalhar (secao 144).
+   */
+  LOGISTICA_EXECUTAR: 'logistica:executar',
+  /** Atribuir direto, reatribuir e alterar rota, sem passar pela oferta (secoes 32-33). */
+  LOGISTICA_ATRIBUIR: 'logistica:atribuir',
+  /** Cancelar operacao, que a secao 86 exige registrar com responsavel e motivo. */
+  LOGISTICA_CANCELAR: 'logistica:cancelar',
+
   // M22 Qualidade e auditoria
   AUDITORIA_VISUALIZAR: 'auditoria:visualizar',
 } as const;
@@ -202,6 +223,16 @@ export const PERFIS_PADRAO = {
   LABORATORIO_APOIO: 'laboratorio_apoio',
   /** M18 secao 84: administra o acervo - inventaria, empresta e descarta. */
   CURADOR_BIOTECA: 'curador_bioteca',
+  /**
+   * M19 secao 34: motorista, coletador ou transportador.
+   *
+   * Perfil de campo, e o mais estreito do sistema: ele executa o servico que
+   * aceitou e nao enxerga dado clinico. A secao 115 e explicita - "dados
+   * clinicos ou diagnosticos nao deverao ser expostos sem necessidade" - e a
+   * secao 116 lembra por que: este e o perfil que trabalha num celular que pode
+   * ser perdido na rua.
+   */
+  ENCARREGADO_LOGISTICO: 'encarregado_logistico',
   QUALIDADE: 'qualidade',
   CLIENTE: 'cliente',
   VETERINARIO_SOLICITANTE: 'veterinario_solicitante',

@@ -5,6 +5,7 @@ import {
   MASCARA_CASO_PADRAO,
   formatarIdentificadorCaso,
   identificadorCadaver,
+  identificadorColeta,
   identificadorEmprestimo,
   identificadorInventario,
   identificadorLoteDescarte,
@@ -125,6 +126,10 @@ export class NumeracaoService {
 
   async proximoLoteDescarte(tx: Transacao, ano: number): Promise<string> {
     return identificadorLoteDescarte(ano, await this.proximo(tx, 'lote_descarte', ano));
+  }
+
+  async proximaColeta(tx: Transacao, ano: number): Promise<string> {
+    return identificadorColeta(ano, await this.proximo(tx, 'coleta', ano));
   }
 
   /** Lote de envio ao laboratorio de apoio (M09), identificado pela data. */

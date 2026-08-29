@@ -17,6 +17,13 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import {
   ADEQUACAO_CITOLOGICA,
+  CANAL_ORIGEM_LOGISTICO,
+  CONSERVACAO_LOGISTICA,
+  PRIORIDADE_LOGISTICA,
+  REQUISITO_ESPECIAL_LOGISTICO,
+  TIPO_OPERACAO_LOGISTICA,
+  TIPO_SERVICO_LOGISTICO,
+  type StatusSolicitacaoLogistica,
   CONDICAO_OBJETO,
   FINALIDADE_USO,
   METODO_DESCARTE,
@@ -89,6 +96,7 @@ import {
 } from './m10-solicitacoes/solicitacoes.service.js';
 import { FluxoConsultaService } from './m07-fluxo/fluxo-consulta.service.js';
 import { PainelService } from './m07-fluxo/painel.service.js';
+import { LogisticaService } from './m19-logistica/logistica.service.js';
 import { DbService } from '../core/db/db.service.js';
 
 // ---------------------------------------------------------------------------
@@ -1331,6 +1339,144 @@ export class PainelController {
   })
   async montar() {
     return this.painel.montar();
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// M19 - Logística
+// ---------------------------------------------------------------------------
+
+const solicitacaoLogisticaSchema = z.object({
+  tipoServico: z.enum(TIPO_SERVICO_LOGISTICO),
+  tipoOperacao: z.enum(TIPO_OPERACAO_LOGISTICA),
+  canalOrigem: z.enum(CANAL_ORIGEM_LOGISTICO),
+  clienteId: z.string().uuid(),
+  unidadeId: z.string().uuid().nullish(),
+  casoId: z.string().uuid().nullish(),
+  /** Seção 13: sem endereço não existe operação - é para onde alguém vai. */
+  endereco: z.string().min(1, 'Informe o endereço da operação.'),
+  pontoReferencia: z.string().nullish(),
+  latitude: z.string().nullish(),
+  longitude: z.string().nullish(),
+  contatoNoLocal: z.string().nullish(),
+  telefoneContato: z.string().nullish(),
+  dataDesejada: z.string().datetime().nullish(),
+  janelaInicio: z.string().nullish(),
+  janelaFim: z.string().nullish(),
+  volumesEstimados: z.number().int().positive().nullish(),
+  tipoMaterial: z.string().nullish(),
+  conservacao: z.enum(CONSERVACAO_LOGISTICA).nullish(),
+  requisitosEspeciais: z.array(z.enum(REQUISITO_ESPECIAL_LOGISTICO)).optional(),
+  prioridade: z.enum(PRIORIDADE_LOGISTICA).optional(),
+  observacoes: z.string().nullish(),
+  /** Seção 148: valor APLICADO, não calculado - a regra é do M20. Em centavos. */
+  valorCentavos: z.number().int().nonnegative().nullish(),
+});
+
+const ofertaSchema = z.object({
+  encarregadoIds: z.array(z.string().uuid()).min(1, 'Escolha ao menos um encarregado.'),
+  minutosValidade: z.number().int().positive().max(1440).optional(),
+});
+
+@ApiTags('M19 - Logística')
+@Controller('logistica')
+export class LogisticaController {
+  constructor(private readonly logistica: LogisticaService) {}
+
+  @Get('solicitacoes')
+  @ExigePermissao(PERMISSOES.LOGISTICA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Fila logística',
+    description:
+      'Com `minhasOfertas=true` devolve a caixa do encarregado: o que foi ofertado ' +
+      'a ele e ainda está aberto, mais o que ele já assumiu.',
+  })
+  async listar(
+    @Query('status') status?: string,
+    @Query('abertas') abertas?: string,
+    @Query('minhasOfertas') minhasOfertas?: string,
+  ) {
+    return this.logistica.listar({
+      status: status as StatusSolicitacaoLogistica | undefined,
+      apenasAbertas: abertas === 'true',
+      minhasOfertas: minhasOfertas === 'true',
+    });
+  }
+
+  @Get('solicitacoes/:id')
+  @ExigePermissao(PERMISSOES.LOGISTICA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Ficha da operação, com ofertas e linha do tempo',
+    description: 'A tradução para o status externo do Portal sai daqui (M19 §27).',
+  })
+  async ficha(@Param('id', ParseUUIDPipe) id: string) {
+    return this.logistica.ficha(id);
+  }
+
+  @Post('solicitacoes')
+  @ExigePermissao(PERMISSOES.LOGISTICA_SOLICITAR)
+  @ApiOperation({
+    summary: 'Abre uma solicitação de retirada ou entrega',
+    description:
+      'Qualquer que seja o canal de origem, o pedido vira UM registro no LAPATO ' +
+      '(M19 §4). O número é único e acompanha a operação até o encerramento.',
+  })
+  async criar(@Body() corpo: unknown) {
+    return this.logistica.criar(validarCorpo(solicitacaoLogisticaSchema, corpo));
+  }
+
+  @Post('solicitacoes/:id/oferta')
+  @ExigePermissao(PERMISSOES.LOGISTICA_OFERTAR)
+  @ApiOperation({
+    summary: 'Oferta o serviço a vários encarregados de uma vez',
+    description:
+      'O primeiro aceite válido leva (M19 §144). O envio da mensagem é do M26; ' +
+      'aqui se publica o evento.',
+  })
+  async ofertar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(ofertaSchema, corpo);
+    return this.logistica.ofertar(id, dados.encarregadoIds, dados.minutosValidade);
+  }
+
+  @Post('solicitacoes/:id/aceite')
+  @ExigePermissao(PERMISSOES.LOGISTICA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Aceita o serviço ofertado',
+    description:
+      'Aceite competitivo e transacional: dois encarregados clicando ao mesmo ' +
+      'tempo disputam a mesma linha, e o segundo recebe "já assumida por outro" ' +
+      'em vez de erro (M19 §144-145).',
+  })
+  async aceitar(@Param('id', ParseUUIDPipe) id: string) {
+    return this.logistica.aceitar(id);
+  }
+
+  @Post('solicitacoes/:id/recusa')
+  @ExigePermissao(PERMISSOES.LOGISTICA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Recusa a oferta',
+    description: 'Não impede os demais encarregados de aceitar (M19 §147).',
+  })
+  async recusar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(z.object({ motivo: z.string().optional() }), corpo);
+    await this.logistica.recusar(id, dados.motivo);
+    return { ok: true };
+  }
+
+  @Post('solicitacoes/:id/cancelamento')
+  @ExigePermissao(PERMISSOES.LOGISTICA_CANCELAR)
+  @ApiOperation({
+    summary: 'Cancela a operação',
+    description: 'Exige motivo: §86 registra quem pediu, por quê, quando.',
+  })
+  async cancelar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({ motivo: z.string().min(1, 'O cancelamento exige motivo (M19 §86).') }),
+      corpo,
+    );
+    await this.logistica.cancelar(id, dados.motivo);
+    return { ok: true };
   }
 }
 

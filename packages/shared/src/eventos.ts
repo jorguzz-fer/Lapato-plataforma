@@ -74,6 +74,11 @@ export const TIPO_EVENTO = [
   'cadaver.retirado',
 
   // M18 Bioteca e Gestao de Acervo Biologico
+  'logistica.solicitacao_criada',
+  'logistica.oferta_enviada',
+  'logistica.servico_aceito',
+  'logistica.oferta_recusada',
+  'logistica.solicitacao_cancelada',
   'bioteca.objeto_arquivado',
   'bioteca.material_esgotado',
   'bioteca.material_emprestado',
@@ -175,6 +180,11 @@ export const EVENTO_LABEL: Record<TipoEvento, string> = {
   'cadaver.recebido': 'Cadáver recebido',
   'cadaver.liberado': 'Cadáver liberado para retirada',
   'cadaver.retirado': 'Cadáver retirado do laboratório',
+  'logistica.solicitacao_criada': 'Solicitação de coleta ou entrega registrada',
+  'logistica.oferta_enviada': 'Serviço ofertado aos encarregados',
+  'logistica.servico_aceito': 'Serviço assumido por um encarregado',
+  'logistica.oferta_recusada': 'Encarregado recusou o serviço',
+  'logistica.solicitacao_cancelada': 'Operação logística cancelada',
   'bioteca.objeto_arquivado': 'Material arquivado no acervo biológico',
   'bioteca.material_esgotado': 'Material esgotado — não há mais tecido útil',
   'bioteca.material_emprestado': 'Material emprestado',

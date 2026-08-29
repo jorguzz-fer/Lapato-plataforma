@@ -21,6 +21,7 @@ import { TriagemService } from './modulos/m06-triagem/triagem.service.js';
 import { FluxoService } from './modulos/m07-fluxo/fluxo.service.js';
 import { FluxoConsultaService } from './modulos/m07-fluxo/fluxo-consulta.service.js';
 import { PainelService } from './modulos/m07-fluxo/painel.service.js';
+import { LogisticaService } from './modulos/m19-logistica/logistica.service.js';
 import { MacroscopiaService } from './modulos/m08-macroscopia/macroscopia.service.js';
 import { ProcessamentoService } from './modulos/m09-processamento/processamento.service.js';
 import { LaudosService } from './modulos/m11-laudos/laudos.service.js';
@@ -40,6 +41,7 @@ import {
   ClientesController,
   FluxoController,
   PainelController,
+  LogisticaController,
   CitopatologiaController,
   NecropsiaController,
   BiotecaController,
@@ -113,6 +115,7 @@ import {
     SolicitacoesController,
     FluxoController,
     PainelController,
+    LogisticaController,
   ],
   providers: [
     AuthService,
@@ -126,6 +129,7 @@ import {
     FluxoService,
     FluxoConsultaService,
     PainelService,
+    LogisticaService,
     MacroscopiaService,
     ProcessamentoService,
     LaudosService,

@@ -1,6 +1,15 @@
 import { pgEnum, timestamp, uuid } from 'drizzle-orm/pg-core';
 import {
   ADEQUACAO_CITOLOGICA,
+  CANAL_ORIGEM_LOGISTICO,
+  CONSERVACAO_LOGISTICA,
+  MOTIVO_NAO_REALIZACAO,
+  PRIORIDADE_LOGISTICA,
+  REQUISITO_ESPECIAL_LOGISTICO,
+  STATUS_OFERTA,
+  STATUS_SOLICITACAO_LOGISTICA,
+  TIPO_OPERACAO_LOGISTICA,
+  TIPO_SERVICO_LOGISTICO,
   CONDICAO_OBJETO,
   DIVERGENCIA_INVENTARIO,
   FINALIDADE_USO,
@@ -174,4 +183,47 @@ export const metodoDescarteEnum = pgEnum('metodo_descarte', METODO_DESCARTE);
 export const motivoRetencaoAmpliadaEnum = pgEnum(
   'motivo_retencao_ampliada',
   MOTIVO_RETENCAO_AMPLIADA,
+);
+
+// --- M19 Logistica ---------------------------------------------------------
+
+export const tipoServicoLogisticoEnum = pgEnum(
+  'tipo_servico_logistico',
+  TIPO_SERVICO_LOGISTICO,
+);
+export const canalOrigemLogisticoEnum = pgEnum(
+  'canal_origem_logistico',
+  CANAL_ORIGEM_LOGISTICO,
+);
+export const tipoOperacaoLogisticaEnum = pgEnum(
+  'tipo_operacao_logistica',
+  TIPO_OPERACAO_LOGISTICA,
+);
+/**
+ * Enum proprio, e nao o `prioridade` do caso.
+ *
+ * M19 secao 11: a prioridade logistica "nao devera ser confundida
+ * automaticamente com prioridade diagnostica do exame". Reusar o tipo do
+ * Postgres convidaria justamente essa confusao no primeiro `JOIN`.
+ */
+export const prioridadeLogisticaEnum = pgEnum(
+  'prioridade_logistica',
+  PRIORIDADE_LOGISTICA,
+);
+export const conservacaoLogisticaEnum = pgEnum(
+  'conservacao_logistica',
+  CONSERVACAO_LOGISTICA,
+);
+export const requisitoEspecialLogisticoEnum = pgEnum(
+  'requisito_especial_logistico',
+  REQUISITO_ESPECIAL_LOGISTICO,
+);
+export const statusSolicitacaoLogisticaEnum = pgEnum(
+  'status_solicitacao_logistica',
+  STATUS_SOLICITACAO_LOGISTICA,
+);
+export const statusOfertaEnum = pgEnum('status_oferta', STATUS_OFERTA);
+export const motivoNaoRealizacaoEnum = pgEnum(
+  'motivo_nao_realizacao',
+  MOTIVO_NAO_REALIZACAO,
 );

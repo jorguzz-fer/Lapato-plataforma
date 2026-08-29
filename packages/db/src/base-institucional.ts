@@ -78,6 +78,15 @@ export const PERFIS: Array<{
       PERMISSOES.CADAVER_VISUALIZAR,
       PERMISSOES.CADAVER_RECEBER,
       PERMISSOES.CADAVER_ENTREGAR,
+      /**
+       * M19 secoes 5 e 140: e a recepcao que atende o telefone e o WhatsApp,
+       * abre o pedido e escolhe quais encarregados recebem a oferta. Cancelar
+       * fica de fora - a secao 86 trata cancelamento como decisao com
+       * responsavel e motivo, nao como desfazer um cadastro.
+       */
+      PERMISSOES.LOGISTICA_VISUALIZAR,
+      PERMISSOES.LOGISTICA_SOLICITAR,
+      PERMISSOES.LOGISTICA_OFERTAR,
       PERMISSOES.IA_UTILIZAR,
     ],
   },
@@ -259,6 +268,20 @@ export const PERFIS: Array<{
       PERMISSOES.SOLICITACAO_VISUALIZAR,
       PERMISSOES.FLUXO_VISUALIZAR,
     ],
+  },
+  /**
+   * M19 secao 34: o encarregado nao ganha "cadastro de motorista" proprio.
+   *
+   * A identidade vem daqui, do M02, como a de qualquer pessoa. O que este
+   * perfil carrega e o minimo para trabalhar: ver o que lhe foi ofertado,
+   * aceitar e executar. Sem `caso:visualizar` de proposito - a secao 115 diz
+   * que ele so deve ver o necessario a operacao, e um endereco e uma janela de
+   * horario nao exigem saber que exame o material vai virar.
+   */
+  {
+    chave: PERFIS_PADRAO.ENCARREGADO_LOGISTICO,
+    nome: 'Encarregado de coleta e entrega',
+    permissoes: [PERMISSOES.LOGISTICA_VISUALIZAR, PERMISSOES.LOGISTICA_EXECUTAR],
   },
   /**
    * M04 - usuarios EXTERNOS. Nao veem o sistema interno: as rotas do Portal

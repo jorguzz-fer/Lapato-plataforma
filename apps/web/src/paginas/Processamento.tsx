@@ -18,12 +18,14 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
+import PrintOutlined from '@mui/icons-material/PrintOutlined';
 import DeleteOutline from '@mui/icons-material/DeleteOutlined';
 import InboxOutlined from '@mui/icons-material/InboxOutlined';
 import LocalShippingOutlined from '@mui/icons-material/LocalShippingOutlined';
 import {
   api,
   ErroApi,
+  urlArquivo,
   type CassetePendente,
   type LaboratorioApoio,
   type LoteDetalhe,
@@ -522,6 +524,22 @@ function DetalheLote({
             label={status.rotulo}
             sx={{ ml: { sm: 'auto' } }}
           />
+          {/**
+            * M09 (review): o parceiro imprime as NOSSAS etiquetas de lâmina na
+            * impressora dele — identificador + código de barras, no tamanho do
+            * modelo do M01. Abre em outra aba: é um PDF pronto para a térmica.
+            */}
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<PrintOutlined />}
+            component="a"
+            href={urlArquivo(`/processamento/lotes/${lote.id}/etiquetas`)}
+            target="_blank"
+            rel="noopener"
+          >
+            Etiquetas de lâmina
+          </Button>
         </Stack>
       </Card>
 

@@ -22,6 +22,7 @@ import AddOutlined from '@mui/icons-material/AddOutlined';
 import DeleteOutline from '@mui/icons-material/DeleteOutlined';
 import ScienceOutlined from '@mui/icons-material/ScienceOutlined';
 import {
+  GRUPOS_DESCRITORES_MACRO,
   LATERALIDADE,
   METODO_AMOSTRAGEM,
   type Lateralidade,
@@ -130,6 +131,9 @@ export function Macroscopia({ exigeSupervisao }: Props) {
   const [carregandoFicha, setCarregandoFicha] = useState(false);
 
   const [descricaoTexto, setDescricaoTexto] = useState('');
+  const [selecoes, setSelecoes] = useState<Record<string, string[]>>({});
+  const [outroPorGrupo, setOutroPorGrupo] = useState<Record<string, string>>({});
+  const [compondo, setCompondo] = useState(false);
   const [comprimento, setComprimento] = useState('');
   const [largura, setLargura] = useState('');
   const [altura, setAltura] = useState('');
@@ -160,6 +164,8 @@ export function Macroscopia({ exigeSupervisao }: Props) {
   const carregar = useCallback((dados: FichaMacroscopia | null) => {
     setFicha(dados);
     setDescricaoTexto(dados?.descricaoTexto ?? '');
+    setSelecoes({});
+    setOutroPorGrupo({});
     setComprimento(dados?.comprimentoCm ?? '');
     setLargura(dados?.larguraCm ?? '');
     setAltura(dados?.alturaCm ?? '');
@@ -229,6 +235,31 @@ export function Macroscopia({ exigeSupervisao }: Props) {
       setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível iniciar a macroscopia.');
     } finally {
       setOcupado(false);
+    }
+  }
+
+  /**
+   * Compoe o texto no servidor: a base deterministica sempre responde; o
+   * Copiloto lapida quando ha provedor. O resultado ENTRA NO CAMPO, editavel -
+   * quem assina e o profissional, nao o compositor.
+   */
+  async function compor() {
+    if (!ficha) return;
+    setCompondo(true);
+    setErro(null);
+    try {
+      const r = await api.post<{ texto: string; origem: 'ia' | 'padrao' }>(
+        `/macroscopia/${ficha.id}/composicao`,
+        { selecoes },
+      );
+      setDescricaoTexto((atual) => (atual.trim() ? `${atual.trim()}\n\n${r.texto}` : r.texto));
+      if (r.origem === 'padrao') {
+        setAviso('Texto composto no modo padrão (IA indisponível) — revise e ajuste à vontade.');
+      }
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível compor a descrição.');
+    } finally {
+      setCompondo(false);
     }
   }
 
@@ -788,6 +819,84 @@ export function Macroscopia({ exigeSupervisao }: Props) {
                 </Typography>
               )}
             </Secao>
+
+            {!concluida && (
+              <Secao
+                titulo="Descrição rápida"
+                descricao="Marque os bloquinhos e componha o texto — a IA lapida quando disponível; sem ela, a frase padrão já sai pronta."
+              >
+                <Stack spacing={1.25}>
+                  {GRUPOS_DESCRITORES_MACRO.map((grupo) => {
+                    const marcados = selecoes[grupo.chave] ?? [];
+                    const extras = marcados.filter((m) => !grupo.opcoes.includes(m));
+                    return (
+                      <Box key={grupo.chave}>
+                        <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mb: 0.5 }}>
+                          {grupo.rotulo}
+                        </Typography>
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                          {[...grupo.opcoes, ...extras].map((opcao) => {
+                            const ativo = marcados.includes(opcao);
+                            return (
+                              <Chip
+                                key={opcao}
+                                size="small"
+                                label={opcao}
+                                color={ativo ? 'primary' : 'default'}
+                                variant={ativo ? 'filled' : 'outlined'}
+                                onClick={() =>
+                                  setSelecoes((a) => ({
+                                    ...a,
+                                    [grupo.chave]: ativo
+                                      ? marcados.filter((m) => m !== opcao)
+                                      : [...marcados, opcao],
+                                  }))
+                                }
+                              />
+                            );
+                          })}
+                          {/* "Caso não tenha, se adiciona na hora" (review). */}
+                          <TextField
+                            size="small"
+                            variant="standard"
+                            placeholder="outro…"
+                            value={outroPorGrupo[grupo.chave] ?? ''}
+                            onChange={(e) =>
+                              setOutroPorGrupo((a) => ({ ...a, [grupo.chave]: e.target.value }))
+                            }
+                            onKeyDown={(e) => {
+                              const texto = (outroPorGrupo[grupo.chave] ?? '').trim();
+                              if (e.key === 'Enter' && texto) {
+                                setSelecoes((a) => ({
+                                  ...a,
+                                  [grupo.chave]: [...(a[grupo.chave] ?? []), texto],
+                                }));
+                                setOutroPorGrupo((a) => ({ ...a, [grupo.chave]: '' }));
+                              }
+                            }}
+                            sx={{ width: 110, '& input': { fontSize: 12.5, py: 0.4 } }}
+                          />
+                        </Stack>
+                      </Box>
+                    );
+                  })}
+
+                  <Button
+                    size="small"
+                    variant="contained"
+                    disabled={
+                      compondo ||
+                      !ficha ||
+                      Object.values(selecoes).every((v) => v.length === 0)
+                    }
+                    onClick={() => void compor()}
+                    sx={{ alignSelf: 'flex-start' }}
+                  >
+                    {compondo ? 'Compondo…' : 'Compor descrição'}
+                  </Button>
+                </Stack>
+              </Secao>
+            )}
 
             <Secao
               titulo="Descrição macroscópica"

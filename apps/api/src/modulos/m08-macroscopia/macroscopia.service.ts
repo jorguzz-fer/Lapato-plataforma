@@ -16,10 +16,12 @@ import {
   motivoBancadaBloqueada,
   type Lateralidade,
   type MetodoAmostragem,
+  comporDescricaoMacro,
 } from '@lapato/shared';
 import { DbService } from '../../core/db/db.service.js';
 import { EventosService } from '../../core/eventos/eventos.service.js';
 import { GuardianService } from '../../core/guardian/guardian.service.js';
+import { CopilotoFactory } from '../../core/ia/copiloto.provider.js';
 import { SugestoesService } from '../../core/ia/sugestoes.service.js';
 import { FluxoService } from '../m07-fluxo/fluxo.service.js';
 import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
@@ -71,6 +73,7 @@ export class MacroscopiaService {
     private readonly fluxo: FluxoService,
     private readonly guardian: GuardianService,
     private readonly sugestoes: SugestoesService,
+    private readonly copiloto: CopilotoFactory,
   ) {}
 
   async iniciar(amostraId: string): Promise<{ id: string }> {
@@ -453,6 +456,47 @@ export class MacroscopiaService {
    * amostra por vez, e uma amostra bloqueada nao entra mesmo que o caso tenha
    * sido liberado no agregado (M06 secao 41).
    */
+  /**
+   * Compoe o texto corrido a partir dos bloquinhos marcados (review: "as
+   * opcoes ja carregadas como botoes... e a IA faz o texto corrido no final").
+   *
+   * A base deterministica vem do shared e ja e publicavel; o Copiloto, quando
+   * ha provedor com `redigir`, apenas lapida. Qualquer falha da IA devolve a
+   * base - a bancada nunca espera (M17 secao 110).
+   */
+  async comporDescricao(
+    macroscopiaId: string,
+    selecoes: Record<string, string[]>,
+  ): Promise<{ texto: string; origem: 'ia' | 'padrao' }> {
+    // Medidas sozinhas nao sao descricao: exige ao menos um bloquinho marcado.
+    if (Object.values(selecoes).every((v) => v.filter((s) => s.trim()).length === 0)) {
+      throw new BadRequestException('Marque ao menos um descritor para compor a descrição.');
+    }
+
+    const registro = await this.db.executar((tx) => this.buscarMacroscopia(tx, macroscopiaId));
+
+    const base = comporDescricaoMacro(selecoes, {
+      comprimentoCm: registro.comprimentoCm ? Number(registro.comprimentoCm) : undefined,
+      larguraCm: registro.larguraCm ? Number(registro.larguraCm) : undefined,
+      alturaCm: registro.alturaCm ? Number(registro.alturaCm) : undefined,
+      pesoG: registro.pesoG ? Number(registro.pesoG) : undefined,
+    });
+    if (!base) {
+      throw new BadRequestException('Marque ao menos um descritor para compor a descrição.');
+    }
+
+    const provedor = this.copiloto.criar();
+    const lapidado = provedor.redigir
+      ? await provedor.redigir(
+          'Reescreva a base como uma descrição macroscópica corrida, fluida e concisa, ' +
+            'mantendo todos os achados e medidas exatamente como estão.',
+          base,
+        )
+      : null;
+
+    return lapidado ? { texto: lapidado, origem: 'ia' } : { texto: base, origem: 'padrao' };
+  }
+
   private async estadoPreAnalitico(
     tx: Transacao,
     casoId: string,

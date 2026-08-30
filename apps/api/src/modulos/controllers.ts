@@ -101,6 +101,7 @@ import { FluxoConsultaService } from './m07-fluxo/fluxo-consulta.service.js';
 import { PainelService } from './m07-fluxo/painel.service.js';
 import { LogisticaService } from './m19-logistica/logistica.service.js';
 import { OrdensService } from './m20-ordens/ordens.service.js';
+import { EtiquetasService } from './m09-processamento/etiquetas.service.js';
 import { FinanceiroService } from './m20-ordens/financeiro.service.js';
 import { DbService } from '../core/db/db.service.js';
 
@@ -360,6 +361,23 @@ export class MacroscopiaController {
     return { ok: true };
   }
 
+  @Post(':id/composicao')
+  @ExigePermissao(PERMISSOES.MACROSCOPIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Compõe o texto corrido a partir dos bloquinhos marcados',
+    description:
+      'A base determinística funciona sem IA (M17 §110); o Copiloto, quando ' +
+      'disponível, apenas lapida. O texto volta para a tela e é editável — ' +
+      'nada é gravado por esta rota.',
+  })
+  async comporDescricao(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({ selecoes: z.record(z.string(), z.array(z.string().min(1).max(80)).max(12)) }),
+      corpo,
+    );
+    return this.macro.comporDescricao(id, dados.selecoes);
+  }
+
   @Post(':id/conclusao')
   @ExigePermissao(PERMISSOES.MACROSCOPIA_CONCLUIR)
   @ApiOperation({
@@ -416,7 +434,9 @@ const laminasSchema = z.object({
 @ApiTags('M09 - Processamento e Colorações')
 @Controller('processamento')
 export class ProcessamentoController {
-  constructor(private readonly processamento: ProcessamentoService) {}
+  constructor(private readonly processamento: ProcessamentoService,
+    private readonly etiquetas: EtiquetasService,
+  ) {}
 
   @Get('cassetes-pendentes')
   @ExigePermissao(PERMISSOES.PROCESSAMENTO_VISUALIZAR)
@@ -458,6 +478,23 @@ export class ProcessamentoController {
   async enviarLote(@Body() corpo: unknown) {
     const dados = validarCorpo(loteSchema, corpo);
     return this.processamento.enviarLote(dados.casseteIds, dados.laboratorioApoioId);
+  }
+
+  @Get('lotes/:id/etiquetas')
+  @ExigePermissao(PERMISSOES.ETIQUETA_IMPRIMIR)
+  @Header('Content-Type', 'application/pdf')
+  @ApiOperation({
+    summary: 'PDF de etiquetas de lâmina do lote',
+    description:
+      'Uma página por etiqueta, no tamanho do modelo do M01, com identificador ' +
+      'e Code 128 — o parceiro imprime as NOSSAS etiquetas na impressora dele ' +
+      '(M09). A lâmina herda o identificador do cassete, então bipar resolve a cadeia.',
+  })
+  async etiquetasDoLote(@Param('id', ParseUUIDPipe) id: string) {
+    const { bytes, nomeArquivo } = await this.etiquetas.etiquetasDoLote(id);
+    return new StreamableFile(bytes, {
+      disposition: `inline; filename="${nomeParaCabecalho(nomeArquivo)}"`,
+    });
   }
 
   @Post('lotes/:id/conferencia')

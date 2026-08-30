@@ -23,6 +23,7 @@ import { EventosService } from '../../core/eventos/eventos.service.js';
 import { AuditoriaService } from '../../core/auditoria/auditoria.service.js';
 import { NumeracaoService } from '../m01-administracao/numeracao.service.js';
 import { FluxoService } from '../m07-fluxo/fluxo.service.js';
+import { OrdensService } from '../m20-ordens/ordens.service.js';
 import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
 
 export interface DadosNovoCaso {
@@ -72,6 +73,7 @@ export class CasosService {
     private readonly auditoria: AuditoriaService,
     private readonly numeracao: NumeracaoService,
     private readonly fluxo: FluxoService,
+    private readonly ordens: OrdensService,
   ) {}
 
   async criar(dados: DadosNovoCaso): Promise<{ id: string; identificador: string }> {
@@ -245,6 +247,13 @@ export class CasosService {
 
       // O M07 decide a transicao; o M05 apenas informa que o fato aconteceu.
       await this.fluxo.processarEvento(tx, casoId, 'material.recebido');
+
+      /**
+       * Review com o laboratorio: "a OS e criada a partir do momento que
+       * chegou a amostra e alguem conferiu". Na MESMA transacao: material
+       * conferido sem ordem de cobranca e vazamento de receita.
+       */
+      await this.ordens.criarParaCaso(tx, casoId);
 
       return { divergencias };
     });

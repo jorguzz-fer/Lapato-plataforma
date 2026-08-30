@@ -11,6 +11,7 @@ import {
   identificadorLoteDescarte,
   identificadorObjetoBiologico,
   identificadorImagem,
+  identificadorOrdemServico,
   identificadorRemessa,
   identificadorSolicitacao,
   type MascaraCaso,
@@ -98,6 +99,10 @@ export class NumeracaoService {
 
   async proximaSolicitacao(tx: Transacao, ano: number): Promise<string> {
     return identificadorSolicitacao(ano, await this.proximo(tx, 'solicitacao', ano));
+  }
+
+  async proximaOrdemServico(tx: Transacao, ano: number): Promise<string> {
+    return identificadorOrdemServico(ano, await this.proximo(tx, 'ordem_servico', ano));
   }
 
   async proximaImagem(tx: Transacao, ano: number): Promise<string> {

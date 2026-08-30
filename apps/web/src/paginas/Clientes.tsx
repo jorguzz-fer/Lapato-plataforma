@@ -17,7 +17,7 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import AddOutlined from '@mui/icons-material/AddOutlined';
-import { TIPO_CLIENTE } from '@lapato/shared';
+import { TIPO_CLIENTE, formatarReais } from '@lapato/shared';
 import {
   api,
   ErroApi,
@@ -200,6 +200,7 @@ export function Clientes({ permissoes }: Props) {
           id={fichaId}
           podeEditar={podeEditar}
           podeEditarVinculos={podeEditarVinculos}
+          podeGerenciarPrecos={permissoes.includes('preco:gerenciar')}
           aoFechar={() => setFichaId(null)}
           aoMudar={recarregar}
         />
@@ -357,12 +358,14 @@ function FichaCliente({
   id,
   podeEditar,
   podeEditarVinculos,
+  podeGerenciarPrecos,
   aoFechar,
   aoMudar,
 }: {
   id: string;
   podeEditar: boolean;
   podeEditarVinculos: boolean;
+  podeGerenciarPrecos: boolean;
   aoFechar: () => void;
   aoMudar: () => void;
 }) {
@@ -371,6 +374,7 @@ function FichaCliente({
   const [ocupado, setOcupado] = useState(false);
   const [editando, setEditando] = useState(false);
   const [vinculando, setVinculando] = useState(false);
+  const [precificando, setPrecificando] = useState(false);
   const [nomeFantasia, setNomeFantasia] = useState('');
   const [razaoSocial, setRazaoSocial] = useState('');
   const [documento, setDocumento] = useState('');
@@ -595,6 +599,9 @@ function FichaCliente({
                 <Button onClick={() => setEditando(true)}>Editar</Button>
               </>
             )}
+            {podeGerenciarPrecos && !editando && (
+              <Button onClick={() => setPrecificando(true)}>Tabela de preços</Button>
+            )}
             {editando && (
               <>
                 <Button onClick={() => setEditando(false)} disabled={ocupado}>
@@ -611,6 +618,10 @@ function FichaCliente({
               </Button>
             )}
           </DialogActions>
+
+          {precificando && (
+            <DialogoPrecos clienteId={id} aoFechar={() => setPrecificando(false)} />
+          )}
 
           {vinculando && (
             <DialogoVincular
@@ -719,3 +730,117 @@ function Detalhe({ rotulo, valor }: { rotulo: string; valor: string }) {
   );
 }
 
+// --- tabela de precos do cliente ---------------------------------------------
+
+interface LinhaPreco {
+  servicoId: string;
+  nome: string;
+  codigo: string;
+  valorPadrao: string | null;
+  valorCliente: string | null;
+}
+
+/**
+ * M20 (review): "tabela padrão ou tabela personalizada". O catálogo aparece
+ * inteiro, com o valor padrão ao lado — o acordo é a exceção, e apagar o campo
+ * devolve o serviço à tabela padrão. O preço novo vale para itens NOVOS de OS;
+ * itens já lançados guardam o retrato do momento (M01: não retroage).
+ */
+function DialogoPrecos({ clienteId, aoFechar }: { clienteId: string; aoFechar: () => void }) {
+  const [linhas, setLinhas] = useState<LinhaPreco[]>([]);
+  const [edicao, setEdicao] = useState<Record<string, string>>({});
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const [carregado, setCarregado] = useState(false);
+
+  const carregar = useCallback(() => {
+    api
+      .get<LinhaPreco[]>(`/precos/clientes/${clienteId}`)
+      .then((r) => {
+        setLinhas(r);
+        setEdicao(
+          Object.fromEntries(r.map((l) => [l.servicoId, l.valorCliente ?? ''])),
+        );
+      })
+      .catch(() => setErro('Não foi possível carregar a tabela de preços.'))
+      .finally(() => setCarregado(true));
+  }, [clienteId]);
+
+  useEffect(carregar, [carregar]);
+
+  async function salvar() {
+    setOcupado(true);
+    setErro(null);
+    try {
+      for (const linha of linhas) {
+        const texto = (edicao[linha.servicoId] ?? '').trim().replace(',', '.');
+        // Campo vazio remove o acordo e devolve o cliente a tabela padrao.
+        const valor = texto === '' ? null : Number(texto);
+        if (valor !== null && (!Number.isFinite(valor) || valor < 0)) {
+          throw new Error(`Valor inválido para ${linha.nome}.`);
+        }
+        const original = linha.valorCliente === null ? null : Number(linha.valorCliente);
+        if (valor === original) continue;
+        await api.post(`/precos/clientes/${clienteId}`, { servicoId: linha.servicoId, valor });
+      }
+      aoFechar();
+    } catch (err) {
+      setErro(
+        err instanceof ErroApi ? err.detalhe : err instanceof Error ? err.message : 'Não foi possível salvar.',
+      );
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <Dialog open onClose={aoFechar} fullWidth maxWidth="sm">
+      <DialogTitle sx={{ fontSize: 16 }}>Tabela de preços do cliente</DialogTitle>
+      <DialogContent>
+        {erro && <Alert severity="error" sx={{ mb: 2 }}>{erro}</Alert>}
+        {!carregado ? (
+          <Skeleton variant="rounded" height={200} />
+        ) : (
+          <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+            <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+              Campo vazio = tabela padrão. O acordo vale para ordens novas; itens já
+              lançados não mudam.
+            </Typography>
+            {linhas.map((l) => (
+              <Stack
+                key={l.servicoId}
+                direction="row"
+                spacing={2}
+                sx={{ alignItems: 'center', justifyContent: 'space-between' }}
+              >
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{l.nome}</Typography>
+                  <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                    Padrão: {l.valorPadrao != null ? formatarReais(l.valorPadrao) : 'sem preço'}
+                  </Typography>
+                </Box>
+                <TextField
+                  size="small"
+                  label="Acordo (R$)"
+                  value={edicao[l.servicoId] ?? ''}
+                  onChange={(e) =>
+                    setEdicao((a) => ({ ...a, [l.servicoId]: e.target.value }))
+                  }
+                  sx={{ width: 140, flexShrink: 0 }}
+                />
+              </Stack>
+            ))}
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={aoFechar} disabled={ocupado}>
+          Cancelar
+        </Button>
+        <Button variant="contained" onClick={() => void salvar()} disabled={ocupado}>
+          Salvar
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}

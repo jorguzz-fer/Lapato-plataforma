@@ -120,6 +120,18 @@ export function identificadorSolicitacao(ano: number, sequencial: number): strin
   return `SOL-${ano}-${String(sequencial).padStart(6, '0')}`;
 }
 
+/**
+ * Identificador da Ordem de Servico: `OS-2026-000123` (M20).
+ *
+ * Serie propria e anual, separada da numeracao do caso: a OS e o documento da
+ * COBRANCA, e o financeiro precisa de uma sequencia continua propria - buracos
+ * na serie de casos (cancelamentos, necropsia sem cobranca) nao podem aparecer
+ * como buracos na serie fiscal.
+ */
+export function identificadorOrdemServico(ano: number, sequencial: number): string {
+  return `OS-${ano}-${String(sequencial).padStart(6, '0')}`;
+}
+
 /** Identificador proprio da imagem: `IMG-2026-0004582` (M16). */
 export function identificadorImagem(ano: number, sequencial: number): string {
   return `IMG-${ano}-${String(sequencial).padStart(7, '0')}`;

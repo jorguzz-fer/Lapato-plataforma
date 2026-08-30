@@ -21,6 +21,7 @@ import { Macroscopia } from './paginas/Macroscopia';
 import { Laudo } from './paginas/Laudo';
 import { Processamento } from './paginas/Processamento';
 import { Solicitacoes } from './paginas/Solicitacoes';
+import { OrdensDeServico } from './paginas/ordens/OrdensDeServico';
 import { Cadaveres } from './paginas/Cadaveres';
 import { Bioteca } from './paginas/Bioteca';
 import { Necropsia } from './paginas/Necropsia';
@@ -294,6 +295,14 @@ function App() {
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Solicitações e Pendências">
             <Solicitacoes permissoes={sessao.permissoes} />
+          </Shell>
+        }
+      />
+      <Route
+        path="/ordens"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Ordens de Serviço">
+            <OrdensDeServico />
           </Shell>
         }
       />

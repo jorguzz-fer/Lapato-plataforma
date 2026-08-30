@@ -5,6 +5,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   text,
   timestamp,
@@ -57,6 +58,14 @@ export const servico = pgTable(
     geraMaterialBioteca: boolean('gera_material_bioteca').notNull().default(false),
     /** M01: disponibilidade no Portal do Cliente. */
     disponivelPortal: boolean('disponivel_portal').notNull().default(true),
+
+    /**
+     * Preco da tabela padrao, em reais. Nulo = servico sem preco definido
+     * (a OS nasce com o item zerado e a tela avisa). O preco vigente NUNCA e
+     * consultado por OS antiga: cada item copia o valor no momento da criacao
+     * (M01: alteracoes de configuracao nao retroagem).
+     */
+    valorPadrao: numeric('valor_padrao', { precision: 12, scale: 2 }),
 
     /** M01 secao 13: prazo padrao em dias uteis. */
     prazoDiasUteis: integer('prazo_dias_uteis').notNull().default(5),

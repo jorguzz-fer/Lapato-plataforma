@@ -87,6 +87,13 @@ export const PERFIS: Array<{
       PERMISSOES.LOGISTICA_VISUALIZAR,
       PERMISSOES.LOGISTICA_SOLICITAR,
       PERMISSOES.LOGISTICA_OFERTAR,
+      /**
+       * M20 (review): a OS nasce na conferencia do recebimento - quem conta
+       * os frascos e a recepcao, e ajustar itens e desconto e a mesma mesa.
+       * Conferir a saida e outra funcao: fica com o tecnico.
+       */
+      PERMISSOES.OS_VISUALIZAR,
+      PERMISSOES.OS_EDITAR,
       PERMISSOES.IA_UTILIZAR,
     ],
   },
@@ -125,6 +132,13 @@ export const PERFIS: Array<{
       PERMISSOES.IMAGEM_VISUALIZAR,
       PERMISSOES.IMAGEM_ENVIAR,
       PERMISSOES.IMAGEM_EDITAR,
+      /**
+       * M20 (review): "a ultima saida e a parte tecnica - a pessoa pega a OS,
+       * verifica se foi tudo feito, da ok, vai pra despacho". A conferencia
+       * de saida e do tecnico; editar valores nao e.
+       */
+      PERMISSOES.OS_VISUALIZAR,
+      PERMISSOES.OS_CONFERIR,
       PERMISSOES.IA_UTILIZAR,
     ],
   },

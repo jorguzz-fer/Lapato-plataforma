@@ -56,6 +56,7 @@ import {
   RESULTADO_TRIAGEM,
   STATUS_CLIENTE,
   STATUS_LAUDO,
+  STATUS_ORDEM_SERVICO,
   STATUS_PENDENCIA,
   STATUS_SOLICITACAO,
   STATUS_USUARIO,
@@ -223,6 +224,7 @@ export const statusSolicitacaoLogisticaEnum = pgEnum(
   STATUS_SOLICITACAO_LOGISTICA,
 );
 export const statusOfertaEnum = pgEnum('status_oferta', STATUS_OFERTA);
+export const statusOrdemServicoEnum = pgEnum('status_ordem_servico', STATUS_ORDEM_SERVICO);
 export const motivoNaoRealizacaoEnum = pgEnum(
   'motivo_nao_realizacao',
   MOTIVO_NAO_REALIZACAO,

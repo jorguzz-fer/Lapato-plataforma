@@ -1090,6 +1090,8 @@ export interface ServicoAdmin {
   permiteComplementares: boolean;
   prazoDiasUteis: number;
   prazoUrgenteDiasUteis: number | null;
+  /** Decimal serializado ("120.00"); nulo = sem preco na tabela padrao. */
+  valorPadrao: string | null;
   inativadoEm: string | null;
 }
 

@@ -92,6 +92,11 @@ export const TIPO_EVENTO = [
   'historico.complementado',
   // M16 Imagens
   'imagem.anexada',
+  // M20 Financeiro (parcial) - Ordem de Servico
+  'os.criada',
+  'os.conferida',
+  'os.despachada',
+  'os.cancelada',
   // M07 Rastreamento (derivados)
   'fluxo.etapa_alterada',
   'fluxo.bloqueado',
@@ -196,6 +201,10 @@ export const EVENTO_LABEL: Record<TipoEvento, string> = {
   'laudo.corrigido': 'Laudo corrigido',
   'historico.complementado': 'Histórico clínico complementado pelo cliente',
   'imagem.anexada': 'Imagem anexada ao caso',
+  'os.criada': 'Ordem de Serviço criada',
+  'os.conferida': 'Ordem de Serviço conferida',
+  'os.despachada': 'Ordem de Serviço despachada',
+  'os.cancelada': 'Ordem de Serviço cancelada',
   'fluxo.etapa_alterada': 'Etapa alterada',
   'fluxo.bloqueado': 'Fluxo bloqueado',
   'fluxo.desbloqueado': 'Fluxo desbloqueado',

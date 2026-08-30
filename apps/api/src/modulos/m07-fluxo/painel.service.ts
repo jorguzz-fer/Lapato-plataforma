@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { and, count, eq, gte, inArray, notInArray, sql } from 'drizzle-orm';
 import { caso, estadoCaso, tenant } from '@lapato/db';
 import {
@@ -8,6 +8,7 @@ import {
   PERMISSOES,
   diaLocalIso,
   fusoDaInstituicao,
+  fusoSuportado,
   inicioDoDia,
   type Etapa,
   type Permissao,
@@ -66,6 +67,8 @@ export interface Painel {
  */
 @Injectable()
 export class PainelService {
+  private readonly logger = new Logger(PainelService.name);
+
   constructor(
     private readonly db: DbService,
     private readonly solicitacoes: SolicitacoesService,
@@ -409,6 +412,23 @@ export class PainelService {
       .from(tenant)
       .where(eq(tenant.id, ctx.tenantId))
       .limit(1);
-    return fusoDaInstituicao(instituicao?.preferencias);
+
+    const fuso = fusoDaInstituicao(instituicao?.preferencias);
+
+    /**
+     * Um runtime com ICU reduzido so conhece UTC, e o recorte do dia sai
+     * deslocado em silencio - "liberados hoje" passa a contar de 21h a 21h.
+     * A tela abre, que e o que importa na hora; mas isso precisa aparecer em
+     * algum lugar, ou vira um numero errado que ninguem consegue explicar.
+     */
+    if (!fusoSuportado(fuso)) {
+      this.logger.warn(
+        `Este runtime nao conhece o fuso "${fuso}" (Node compilado com ICU reduzido). ` +
+          'O painel vai recortar o dia em UTC, o que desloca "hoje" em algumas horas. ' +
+          'Use uma imagem de Node com ICU completo para corrigir.',
+      );
+    }
+
+    return fuso;
   }
 }

@@ -85,10 +85,7 @@ export class ProblemaFilter implements ExceptionFilter {
     }
 
     // Erro nao previsto: loga com contexto, mas nao expõe interno ao cliente.
-    this.logger.error(
-      { requestId, erro: excecao instanceof Error ? excecao.stack : String(excecao) },
-      'erro nao tratado',
-    );
+    this.logger.error({ requestId, erro: descreverErro(excecao) }, 'erro nao tratado');
 
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       type: 'https://lapato.app/erros/500',
@@ -98,4 +95,32 @@ export class ProblemaFilter implements ExceptionFilter {
       requestId,
     });
   }
+}
+
+/**
+ * Descreve o erro inteiro, e nao so a camada de fora.
+ *
+ * A partir do Drizzle 0.45 toda falha de consulta chega embrulhada num
+ * `Failed query: select ...`, com a mensagem REAL do Postgres - "column does
+ * not exist", "must appear in the GROUP BY clause" - escondida em `cause`.
+ * Logar apenas `stack` produzia uma pagina de SQL sem uma palavra sobre o
+ * motivo, e transformava cada 500 de producao numa adivinhacao.
+ *
+ * O mesmo vale para o driver: um erro de serializacao do postgres.js aparece
+ * como `TypeError` de buffer duas camadas abaixo do que a aplicacao chamou.
+ */
+export function descreverErro(excecao: unknown): string {
+  if (!(excecao instanceof Error)) return String(excecao);
+
+  const partes: string[] = [excecao.stack ?? `${excecao.name}: ${excecao.message}`];
+
+  let causa: unknown = (excecao as { cause?: unknown }).cause;
+  // Limite baixo de proposito: e uma cadeia de causas, nao uma lista - se
+  // passar disso, ha um ciclo, e um log infinito nao ajuda ninguem.
+  for (let nivel = 0; causa instanceof Error && nivel < 5; nivel += 1) {
+    partes.push(`  causa: ${causa.stack ?? `${causa.name}: ${causa.message}`}`);
+    causa = (causa as { cause?: unknown }).cause;
+  }
+
+  return partes.join('\n');
 }

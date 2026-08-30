@@ -106,7 +106,7 @@ export class AdministracaoService {
           categoria: dados.categoria.trim(),
           modalidade: dados.modalidade,
           descricao: dados.descricao?.trim() || null,
-          exigeTriagem: dados.exigeTriagem ?? true,
+          exigeTriagem: dados.exigeTriagem ?? false,
           exigeMacroscopia: dados.exigeMacroscopia ?? false,
           exigeProcessamento: dados.exigeProcessamento ?? false,
           exigeMicroscopia: dados.exigeMicroscopia ?? true,

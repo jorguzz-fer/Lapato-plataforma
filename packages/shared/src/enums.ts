@@ -255,6 +255,12 @@ export type TipoVersaoLaudo = (typeof TIPO_VERSAO_LAUDO)[number];
 /**
  * M16. `whole_slide` fica reservado: WSI esta fora do escopo v1 por decisao
  * da propria documentacao. Ver docs/adr/0004.
+ *
+ * `requisicao` e a folha de requisicao digitalizada. Nao e um `documento`
+ * qualquer: a resolucao do conselho exige que toda requisicao seja
+ * digitalizada e guardada por no minimo cinco anos, entao ela precisa ser
+ * encontravel por tipo - uma politica de retencao nao se aplica a uma
+ * categoria generica.
  */
 export const TIPO_IMAGEM = [
   'recebimento',
@@ -264,6 +270,7 @@ export const TIPO_IMAGEM = [
   'necropsia',
   'documento',
   'whole_slide',
+  'requisicao',
 ] as const;
 export type TipoImagem = (typeof TIPO_IMAGEM)[number];
 

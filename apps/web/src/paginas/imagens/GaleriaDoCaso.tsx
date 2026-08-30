@@ -15,9 +15,11 @@ import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddPhotoAlternateOutlined from '@mui/icons-material/AddPhotoAlternateOutlined';
+import PhotoCameraOutlined from '@mui/icons-material/PhotoCameraOutlined';
 import BlockOutlined from '@mui/icons-material/BlockOutlined';
 import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined';
 import { api, ErroApi, urlArquivo, type ImagemDoCaso } from '../../api';
+import { CapturaWebcam } from './CapturaWebcam';
 
 /**
  * M16 - galeria do caso (secao 57).
@@ -52,6 +54,7 @@ const TIPO_LABEL: Record<string, string> = {
   necropsia: 'Necropsia',
   documento: 'Documento',
   whole_slide: 'Lâmina digitalizada',
+  requisicao: 'Requisição (guarda 5 anos)',
 };
 
 const ORIGEM_LABEL: Record<string, string> = {
@@ -63,13 +66,20 @@ const ORIGEM_LABEL: Record<string, string> = {
   pericial_externa: 'Pericial externa',
 };
 
-/** Tipos que a tela oferece; `whole_slide` fica de fora (ADR 0004: WSI é v2). */
+/**
+ * Tipos que a tela oferece; `whole_slide` fica de fora (ADR 0004: WSI é v2).
+ * `requisicao` é a folha digitalizada — o conselho exige a digitalização e a
+ * guarda por no mínimo cinco anos, por isso ela tem tipo próprio e não entra
+ * como "documento" genérico.
+ */
 const TIPOS_OFERECIDOS = [
   'recebimento',
   'triagem',
   'macroscopia',
   'microfotografia',
   'necropsia',
+  'requisicao',
+  'documento',
 ] as const;
 
 /**
@@ -125,6 +135,7 @@ export function GaleriaDoCaso({ casoId, permissoes, moduloContexto = 'M16_IMAGEN
   const [ampliada, setAmpliada] = useState<ImagemDoCaso | null>(null);
 
   const podeEnviar = permissoes.includes('imagem:enviar');
+  const [cameraAberta, setCameraAberta] = useState(false);
   const podeEditar = permissoes.includes('imagem:editar');
 
   const carregar = useCallback(() => {
@@ -137,7 +148,7 @@ export function GaleriaDoCaso({ casoId, permissoes, moduloContexto = 'M16_IMAGEN
 
   useEffect(carregar, [carregar]);
 
-  async function enviar(arquivos: FileList | null) {
+  async function enviar(arquivos: FileList | File[] | null) {
     if (!arquivos || arquivos.length === 0) return;
     setOcupado(true);
     setErro(null);
@@ -272,6 +283,14 @@ export function GaleriaDoCaso({ casoId, permissoes, moduloContexto = 'M16_IMAGEN
               ))}
             </TextField>
 
+            <Button
+              variant="outlined"
+              startIcon={<PhotoCameraOutlined />}
+              disabled={ocupado}
+              onClick={() => setCameraAberta(true)}
+            >
+              Tirar foto
+            </Button>
             <Button
               variant="contained"
               startIcon={<AddPhotoAlternateOutlined />}
@@ -484,6 +503,12 @@ export function GaleriaDoCaso({ casoId, permissoes, moduloContexto = 'M16_IMAGEN
           </Button>
         </DialogActions>
       </Dialog>
+
+      <CapturaWebcam
+        aberto={cameraAberta}
+        aoFechar={() => setCameraAberta(false)}
+        aoCapturar={(arquivo) => void enviar([arquivo])}
+      />
     </Card>
   );
 }

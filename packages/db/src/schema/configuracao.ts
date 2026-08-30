@@ -41,7 +41,14 @@ export const servico = pgTable(
     modalidade: text('modalidade').notNull(),
 
     // --- Comportamento no fluxo (M01 secao 11) ---
-    exigeTriagem: boolean('exige_triagem').notNull().default(true),
+    /**
+     * Desligada por padrao desde a primeira review com o laboratorio: a
+     * conferencia do recebimento ja cumpre o papel na rotina deles, e a etapa
+     * repetida so travava o caso. A etapa continua no workflow, condicionada a
+     * esta flag - reativar e ligar o interruptor do servico na Administracao
+     * (util para material que chega sem fixacao, o caso que motivou a etapa).
+     */
+    exigeTriagem: boolean('exige_triagem').notNull().default(false),
     exigeMacroscopia: boolean('exige_macroscopia').notNull().default(false),
     exigeProcessamento: boolean('exige_processamento').notNull().default(false),
     exigeMicroscopia: boolean('exige_microscopia').notNull().default(true),

@@ -472,20 +472,46 @@ export class FluxoService {
    * Deliberadamente limitado: uma linguagem de expressao completa aqui viraria
    * codigo em banco, difícil de auditar e de testar.
    */
+  /**
+   * Filtra as etapas pelas flags do servico, **herdando os gatilhos das que
+   * sairam**.
+   *
+   * Sem a heranca, pular uma etapa condicional quebrava o fluxo: com a triagem
+   * desligada, `material.recebido` nao casava com a entrada de nenhuma etapa
+   * restante - a macroscopia so escuta `triagem.concluida.*` - e o caso parava
+   * em `aguardando_recebimento` para sempre. A etapa pulada empresta seus
+   * eventos de entrada a proxima aplicavel, em cascata: se triagem, macro e
+   * processamento forem todos dispensados, a microscopia passa a aceitar o
+   * proprio `material.recebido`.
+   */
   private filtrarEtapasAplicaveis(
     etapas: EtapaCarregada[],
     flags: Record<string, unknown>,
   ): EtapaCarregada[] {
-    return etapas.filter((etapa) => {
-      const condicao = etapa.condicao as Record<string, unknown>;
-      const chaves = Object.keys(condicao);
-      if (chaves.length === 0) return true;
+    const aplicaveis: EtapaCarregada[] = [];
+    let herdados: string[] = [];
 
-      return chaves.every((chave) => {
+    for (const etapa of etapas) {
+      const condicao = etapa.condicao as Record<string, unknown>;
+      const aplica = Object.keys(condicao).every((chave) => {
         const campo = chave.startsWith('servico.') ? chave.slice('servico.'.length) : chave;
         return flags[campo] === condicao[chave];
       });
-    });
+
+      if (!aplica) {
+        herdados = herdados.concat(etapa.eventosEntrada);
+        continue;
+      }
+
+      aplicaveis.push(
+        herdados.length === 0
+          ? etapa
+          : { ...etapa, eventosEntrada: [...etapa.eventosEntrada, ...herdados] },
+      );
+      herdados = [];
+    }
+
+    return aplicaveis;
   }
 
   /** M01 secao 14: feriados e recessos da instituicao entram no calculo do prazo. */

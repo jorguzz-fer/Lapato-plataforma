@@ -375,10 +375,16 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
     const rec = dossie.body.recipientes[0];
     expect(rec.quantidadeDeclarada).toBe(1);
     expect(rec.quantidadeRecebida).toBe(2);
-    expect(dossie.body.estado.etapa).toBe('aguardando_triagem');
+    /**
+     * Decisao da primeira review com o laboratorio: a triagem deixou de ser
+     * etapa obrigatoria (`exigeTriagem` padrao false). A etapa pulada empresta
+     * seus gatilhos a proxima - o `material.recebido` leva direto a
+     * macroscopia, sem parada intermediaria.
+     */
+    expect(dossie.body.estado.etapa).toBe('aguardando_macroscopia');
   });
 
-  test('4. triagem apta libera para macroscopia', async () => {
+  test('4. a triagem continua disponivel mesmo sem ser exigida', async () => {
     const r = await req('POST', `/casos/${casoId}/triagem`, {
       amostras: [
         {
@@ -1507,10 +1513,11 @@ describe('citopatologia de ponta a ponta (M12)', () => {
     expect(triagem.status, JSON.stringify(triagem.body)).toBe(201);
 
     /**
-     * O ponto do teste: as lâminas chegaram prontas da coleta, então a triagem
-     * apta já habilita a leitura (M12 seção 4). No workflow da histopatologia
-     * a microscopia só entra por `laminas.disponiveis`, e o caso citológico
-     * ficaria parado na triagem esperando um evento que ninguém emitiria.
+     * O ponto do teste: na citologia as lâminas chegam prontas da coleta, e o
+     * caso precisa cair direto na leitura (M12 seção 4). Com a triagem fora do
+     * fluxo padrão, o próprio `material.recebido` herda o caminho até a
+     * microscopia; a triagem registrada acima continua na linha do tempo, mas
+     * não é parada obrigatória.
      */
     const depois = await req('GET', `/casos/${casoId}`);
     expect(depois.body.estado.etapa).toBe('aguardando_microscopia');
@@ -2802,12 +2809,30 @@ describe('material sem recebimento não chega à bancada', () => {
   let amostraId: string;
 
   test('cadastro sozinho não autoriza macroscopia nem laudo', async () => {
+    /**
+     * A triagem saiu do fluxo padrao, mas segue configuravel por servico
+     * (M01). Este bloco quer exatamente o cenario em que ela E exigida -
+     * material que chega sem fixacao, por exemplo - entao cria o proprio
+     * servico com a flag ligada em vez de depender do padrao.
+     */
+    await entrar('admin@lapato.local');
+    const comTriagem = await req('POST', '/administracao/servicos', {
+      nome: `Histopatologia com triagem ${Date.now().toString().slice(-5)}`,
+      codigo: `TRI${Date.now().toString().slice(-6)}`,
+      categoria: 'anatomia_patologica',
+      modalidade: 'histopatologia',
+      exigeTriagem: true,
+      exigeMacroscopia: true,
+      exigeProcessamento: true,
+      exigeMicroscopia: true,
+    });
+    expect(comTriagem.status, JSON.stringify(comTriagem.body)).toBe(201);
+
     await entrar('recepcao@lapato.local');
 
-    const servicos = await req('GET', '/catalogo/servicos');
     const clientes = await req('GET', '/catalogo/clientes');
     const criado = await req('POST', '/casos', {
-      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      servicoId: comTriagem.body.id,
       clienteId: clientes.body[0].id,
       paciente: { nome: `Sem recebimento ${Date.now().toString().slice(-5)}` },
       amostras: [{ descricao: 'Fragmento' }],
@@ -2840,7 +2865,7 @@ describe('material sem recebimento não chega à bancada', () => {
 
     await entrar('patologista@lapato.local');
 
-    // O servico HISTO exige triagem (M01). Recebido nao basta.
+    // Este servico exige triagem (flag ligada acima). Recebido nao basta.
     const macro = await req('POST', `/macroscopia/amostras/${amostraId}`);
     expect(macro.status, JSON.stringify(macro.body)).toBe(400);
     expect(macro.body.detail).toContain('triagem ainda não foi concluída');
@@ -2915,8 +2940,13 @@ describe('triagem bloqueada impede o avanço do fluxo', () => {
     expect(triagem.body.resultado).toBe('bloqueado');
 
     const depois = await req('GET', `/casos/${criado.body.id}`);
-    // O fluxo NÃO avança: continua aguardando triagem, e agora bloqueado.
-    expect(depois.body.estado.etapa).toBe('aguardando_triagem');
+    /**
+     * Com a triagem fora do fluxo padrao o caso ja esta na etapa de
+     * macroscopia - mas o bloqueio vale do mesmo jeito: a etapa diz ONDE o
+     * caso esta, o bloqueio diz que ninguem pode agir nele. E a bancada
+     * recusa iniciar com resultado de triagem "bloqueado" (M08).
+     */
+    expect(depois.body.estado.etapa).toBe('aguardando_macroscopia');
     expect(depois.body.estado.bloqueado).toBe(true);
 
     const tipos = depois.body.linhaDoTempo.map((e: any) => e.tipo);

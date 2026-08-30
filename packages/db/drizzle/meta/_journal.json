@@ -57,6 +57,13 @@
       "when": 1788027576642,
       "tag": "0007_lowly_siren",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788111789112,
+      "tag": "0008_previous_fenris",
+      "breakpoints": true
     }
   ]
 }

@@ -637,7 +637,9 @@ export async function criarBaseInstitucional(
       codigo: 'HISTO',
       categoria: 'Anatomopatologia',
       modalidade: 'histopatologia',
-      exigeTriagem: true,
+      // A triagem como etapa do fluxo foi suprimida na review com o
+      // laboratorio; segue disponivel por servico, desligada.
+      exigeTriagem: false,
       exigeMacroscopia: true,
       exigeProcessamento: true,
       exigeMicroscopia: true,
@@ -654,7 +656,7 @@ export async function criarBaseInstitucional(
     codigo: 'CITO',
     categoria: 'Anatomopatologia',
     modalidade: 'citopatologia',
-    exigeTriagem: true,
+    exigeTriagem: false,
     // M08: nem todo exame passa por macroscopia. O motor de fluxo pula a etapa.
     exigeMacroscopia: false,
     exigeProcessamento: false,
@@ -668,7 +670,7 @@ export async function criarBaseInstitucional(
     codigo: 'REVISAO',
     categoria: 'Anatomopatologia',
     modalidade: 'revisao',
-    exigeTriagem: true,
+    exigeTriagem: false,
     exigeMacroscopia: false,
     exigeProcessamento: false,
     exigeMicroscopia: true,

@@ -103,6 +103,23 @@ interface Props {
   exigeSupervisao: boolean;
 }
 
+const LESAO_VAZIA = (rotulo: string) => ({
+  rotulo,
+  tipo: '',
+  localizacao: '',
+  lateralidade: 'nao_aplicavel' as Lateralidade,
+  maiorEixoCm: '',
+  menorEixoCm: '',
+});
+
+/** Linha que so tem o rotulo automatico: apresentada, mas nunca preenchida. */
+const lesaoIntocada = (l: ReturnType<typeof LESAO_VAZIA>) =>
+  l.tipo.trim() === '' &&
+  l.localizacao.trim() === '' &&
+  l.lateralidade === 'nao_aplicavel' &&
+  l.maiorEixoCm === '' &&
+  l.menorEixoCm === '';
+
 export function Macroscopia({ exigeSupervisao }: Props) {
   const { id } = useParams<{ id: string }>();
   const navegar = useNavigate();
@@ -148,15 +165,23 @@ export function Macroscopia({ exigeSupervisao }: Props) {
     setAltura(dados?.alturaCm ?? '');
     setPeso(dados?.pesoG ?? '');
     setTotalmenteIncluido(dados?.materialTotalmenteIncluido ?? false);
+    const lesoesGravadas = (dados?.lesoes ?? []).map((l) => ({
+      rotulo: l.rotulo,
+      tipo: l.tipo ?? '',
+      localizacao: l.localizacao ?? '',
+      lateralidade: (l.lateralidade as Lateralidade) ?? 'nao_aplicavel',
+      maiorEixoCm: l.maiorEixoCm ?? '',
+      menorEixoCm: l.menorEixoCm ?? '',
+    }));
+    /**
+     * Ficha aberta sem lesao ja apresenta uma linha pronta: na review, o botao
+     * "Adicionar" escondido a direita passou despercebido e a secao parecia
+     * nao ter onde escrever. A linha intocada e descartada no salvar.
+     */
     setLesoes(
-      (dados?.lesoes ?? []).map((l) => ({
-        rotulo: l.rotulo,
-        tipo: l.tipo ?? '',
-        localizacao: l.localizacao ?? '',
-        lateralidade: (l.lateralidade as Lateralidade) ?? 'nao_aplicavel',
-        maiorEixoCm: l.maiorEixoCm ?? '',
-        menorEixoCm: l.menorEixoCm ?? '',
-      })),
+      lesoesGravadas.length === 0 && dados && dados.concluidaEm == null
+        ? [LESAO_VAZIA('L01')]
+        : lesoesGravadas,
     );
     setMargens(
       (dados?.margens ?? []).map((m) => ({
@@ -221,9 +246,9 @@ export function Macroscopia({ exigeSupervisao }: Props) {
         ...(numero(altura) ? { alturaCm: numero(altura) } : {}),
         ...(numero(peso) ? { pesoG: numero(peso) } : {}),
         materialTotalmenteIncluido: totalmenteIncluido,
-        ...(lesoes.length > 0
+        ...(lesoes.filter((l) => !lesaoIntocada(l)).length > 0
           ? {
-              lesoes: lesoes.map((l) => ({
+              lesoes: lesoes.filter((l) => !lesaoIntocada(l)).map((l) => ({
                 rotulo: l.rotulo,
                 ...(l.tipo.trim() ? { tipo: l.tipo.trim() } : {}),
                 ...(l.localizacao.trim() ? { localizacao: l.localizacao.trim() } : {}),
@@ -296,7 +321,7 @@ export function Macroscopia({ exigeSupervisao }: Props) {
   }
 
   const cassetesIncompletos = novosCassetes.some((c) => c.tecidoOrigem.trim() === '');
-  const lesoesIncompletas = lesoes.some((l) => l.rotulo.trim() === '');
+  const lesoesIncompletas = lesoes.some((l) => l.rotulo.trim() === '' && !lesaoIntocada(l));
   const margensIncompletas = margens.some((m) => m.nome.trim() === '');
   const podeSalvar =
     !ocupado && !cassetesIncompletos && !lesoesIncompletas && !margensIncompletas;

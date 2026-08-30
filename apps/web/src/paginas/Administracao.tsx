@@ -233,7 +233,7 @@ function DialogoServico({
     setPrazoUrgente(servico?.prazoUrgenteDiasUteis ? String(servico.prazoUrgenteDiasUteis) : '');
     setFlags(
       Object.fromEntries(
-        FLAGS_SERVICO.map(([f]) => [f, servico ? servico[f] : f === 'exigeTriagem' || f === 'exigeMicroscopia' || f === 'geraLaudo' || f === 'permiteComplementares']),
+        FLAGS_SERVICO.map(([f]) => [f, servico ? servico[f] : f === 'exigeMicroscopia' || f === 'geraLaudo' || f === 'permiteComplementares']),
       ),
     );
     setErro(null);

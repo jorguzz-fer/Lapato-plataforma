@@ -2,6 +2,7 @@ import { relations } from 'drizzle-orm';
 import { index, integer, numeric, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 import { colunasTempo, colunasTenant, statusOrdemServicoEnum } from './_comum.js';
 import { caso } from './caso.js';
+import { fatura } from './financeiro.js';
 import { cliente } from './clientes.js';
 import { servico } from './configuracao.js';
 import { usuario } from './identidade.js';
@@ -66,6 +67,12 @@ export const ordemServico = pgTable(
 
     status: statusOrdemServicoEnum('status').notNull().default('aberta'),
     observacoes: text('observacoes'),
+
+    /**
+     * Preenchido quando a OS entra numa fatura (status `faturada`). Cancelar
+     * a fatura limpa o vinculo e devolve a OS a `despachada`.
+     */
+    faturaId: uuid('fatura_id').references(() => fatura.id, { onDelete: 'set null' }),
 
     conferidaEm: timestamp('conferida_em', { withTimezone: true }),
     conferidaPorId: uuid('conferida_por_id').references(() => usuario.id),

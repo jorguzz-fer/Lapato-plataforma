@@ -4125,3 +4125,86 @@ describe('financeiro padrão: fatura, livro e fluxo de caixa (M20 parcial)', () 
     expect(resumo.status, 'técnico não tem financeiro:visualizar').toBe(403);
   });
 });
+
+describe('descrição rápida em bloquinhos e etiquetas do parceiro (M08 + M09)', () => {
+  /**
+   * Os dois últimos pedidos da primeira review: "as opções já carregadas como
+   * botões... e a IA faz o texto corrido no final", e "ele imprime as nossas
+   * etiquetas na impressora dele, com código de barras para bipar as lâminas".
+   */
+  let macroscopiaId: string;
+
+  test('os bloquinhos viram texto corrido, com as medidas da ficha', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: any) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: 'Bloquinhos' },
+      amostras: [{ descricao: 'Nódulo cutâneo' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    const casoId = criado.body.id;
+    const amostraId = (await req('GET', `/casos/${casoId}`)).body.amostras[0].id;
+
+    await levarAteBancada(casoId);
+
+    await entrar('patologista@lapato.local');
+    const macro = await req('POST', `/macroscopia/amostras/${amostraId}`);
+    expect(macro.status, JSON.stringify(macro.body)).toBe(201);
+    macroscopiaId = macro.body.id;
+
+    await req('POST', `/macroscopia/${macroscopiaId}`, {
+      comprimentoCm: 3,
+      larguraCm: 2,
+      alturaCm: 1,
+      pesoG: 15,
+    });
+
+    const composicao = await req('POST', `/macroscopia/${macroscopiaId}/composicao`, {
+      selecoes: {
+        cor: ['avermelhada'],
+        consistencia: ['firme'],
+        delimitacao: ['bem delimitada'],
+        corte: ['sólido e homogêneo'],
+      },
+    });
+    expect(composicao.status, JSON.stringify(composicao.body)).toBe(201);
+    // Provedor stub: a base determinística responde - o LAPATO funciona sem
+    // IA (M17 §110), e a frase padrão já é publicável.
+    expect(composicao.body.origem).toBe('padrao');
+    for (const trecho of ['avermelhada', 'firme', 'bem delimitada', 'sólido e homogêneo']) {
+      expect(composicao.body.texto).toContain(trecho);
+    }
+    // As medidas gravadas na ficha entram na frase.
+    expect(composicao.body.texto).toContain('3,0 × 2,0 × 1,0 cm');
+    expect(composicao.body.texto).toContain('15 g');
+  });
+
+  test('composição sem nenhum descritor marcado é recusada', async () => {
+    const vazio = await req('POST', `/macroscopia/${macroscopiaId}/composicao`, {
+      selecoes: {},
+    });
+    expect(vazio.status).toBe(400);
+  });
+
+  test('as etiquetas do lote saem em PDF, uma página por cassete', async () => {
+    // Os testes anteriores da fatia já deixaram lotes com cassetes.
+    await entrar('tecnico@lapato.local');
+    const lotes = await req('GET', '/processamento/lotes');
+    expect(lotes.body.length, 'nenhum lote para etiquetar').toBeGreaterThan(0);
+
+    const resposta = await fetch(
+      `${servidor}${BASE}/processamento/lotes/${lotes.body[0].id}/etiquetas`,
+      { headers: { cookie } },
+    );
+    expect(resposta.status).toBe(200);
+    expect(resposta.headers.get('content-type')).toContain('application/pdf');
+    const bytes = Buffer.from(await resposta.arrayBuffer());
+    expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
+    // Etiqueta de 22 mm nunca gera um PDF de meia dúzia de bytes.
+    expect(bytes.length).toBeGreaterThan(800);
+  });
+});

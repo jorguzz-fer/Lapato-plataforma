@@ -67,6 +67,15 @@ export interface CopilotProvider {
   readonly nome: string;
   disponivel(): boolean;
   sugerir(contexto: ContextoCopiloto): Promise<RespostaCopiloto>;
+  /**
+   * Lapida um texto de base seguindo uma instrucao curta (ex.: transformar a
+   * composicao deterministica dos bloquinhos da macroscopia em texto corrido).
+   *
+   * OPCIONAL e com contrato de falha silenciosa: devolver `null` significa
+   * "use a base como esta". E o que garante o M17 secao 110 - o LAPATO
+   * funciona sem IA, e a base deterministica ja e publicavel.
+   */
+  redigir?(instrucao: string, base: string): Promise<string | null>;
 }
 
 /** Registro do que o usuario fez com a sugestao (M17 secao 15). */

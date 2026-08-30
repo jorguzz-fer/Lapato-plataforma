@@ -191,6 +191,47 @@ export class CopilotoClaudeProvider implements CopilotProvider {
     }
   }
 
+  /**
+   * Lapida um texto de base (M08: os bloquinhos viram texto corrido).
+   *
+   * Mesmo contrato de falha do `sugerir`: QUALQUER problema devolve `null` e
+   * quem chamou usa a base deterministica - a bancada nunca espera a IA.
+   * Minimizacao (secao 95) por construcao: so vai a base ja montada, que e
+   * descricao de tecido, sem nada que identifique pessoas.
+   */
+  async redigir(instrucao: string, base: string): Promise<string | null> {
+    if (!this.disponivel()) return null;
+
+    try {
+      const resposta = await this.obterCliente().messages.create({
+        model: this.env.COPILOT_MODELO,
+        max_tokens: 1024,
+        system:
+          'Você redige descrições macroscópicas de anatomia patológica veterinária em ' +
+          'português brasileiro técnico. Responda APENAS com o texto final, sem ' +
+          'preâmbulo, sem aspas e sem comentários. Não invente achados que não ' +
+          'estejam na base; apenas melhore a fluidez e a ordem.',
+        messages: [{ role: 'user', content: `${instrucao}
+
+Base:
+${base}` }],
+      });
+
+      const texto = resposta.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('')
+        .trim();
+
+      return texto.length > 0 ? texto : null;
+    } catch (erro) {
+      this.logger.warn(
+        `Redação indisponível: ${erro instanceof Error ? erro.message : String(erro)}`,
+      );
+      return null;
+    }
+  }
+
   /** Lazy: o construtor roda no boot mesmo quando o provedor ativo e o stub. */
   private obterCliente(): Anthropic {
     this.cliente ??= new Anthropic({

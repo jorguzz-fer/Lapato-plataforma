@@ -132,6 +132,11 @@ export function identificadorOrdemServico(ano: number, sequencial: number): stri
   return `OS-${ano}-${String(sequencial).padStart(6, '0')}`;
 }
 
+/** Identificador da fatura: `FAT-2026-000045` (M20). Mesma logica fiscal da OS. */
+export function identificadorFatura(ano: number, sequencial: number): string {
+  return `FAT-${ano}-${String(sequencial).padStart(6, '0')}`;
+}
+
 /** Identificador proprio da imagem: `IMG-2026-0004582` (M16). */
 export function identificadorImagem(ano: number, sequencial: number): string {
   return `IMG-${ano}-${String(sequencial).padStart(7, '0')}`;

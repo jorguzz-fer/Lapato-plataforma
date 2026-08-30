@@ -71,6 +71,13 @@
       "when": 1788112636578,
       "tag": "0009_plain_ender_wiggin",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788113616161,
+      "tag": "0010_real_maggott",
+      "breakpoints": true
     }
   ]
 }

@@ -197,6 +197,10 @@ export const PERMISSOES = {
   OS_CONFERIR: 'os:conferir',
   /** Precos: valor padrao do servico e tabela personalizada do cliente. */
   PRECO_GERENCIAR: 'preco:gerenciar',
+  /** Faturas, lancamentos e fluxo de caixa. */
+  FINANCEIRO_VISUALIZAR: 'financeiro:visualizar',
+  /** Criar e emitir fatura, registrar pagamento, lancar entrada e saida. */
+  FINANCEIRO_LANCAR: 'financeiro:lancar',
 
   // M22 Qualidade e auditoria
   AUDITORIA_VISUALIZAR: 'auditoria:visualizar',
@@ -227,6 +231,8 @@ export const PERFIS_PADRAO = {
   ADMINISTRADOR_GERAL: 'administrador_geral',
   ADMINISTRADOR_UNIDADE: 'administrador_unidade',
   GESTOR: 'gestor',
+  /** M20: quem cuida da cobranca - fatura, lancamento, fluxo de caixa. */
+  FINANCEIRO: 'financeiro',
   RECEPCAO: 'recepcao',
   TECNICO_LABORATORIO: 'tecnico_laboratorio',
   TECNICO_HISTOTECNICA: 'tecnico_histotecnica',

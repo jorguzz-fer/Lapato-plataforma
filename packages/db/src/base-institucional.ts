@@ -98,6 +98,23 @@ export const PERFIS: Array<{
     ],
   },
   {
+    /**
+     * M20 (review): quem cuida da cobranca. Ve as ordens e os precos, fatura,
+     * lanca entrada e saida - e nao toca em nada clinico alem do minimo para
+     * saber DO QUE a cobranca trata.
+     */
+    chave: PERFIS_PADRAO.FINANCEIRO,
+    nome: 'Financeiro',
+    permissoes: [
+      PERMISSOES.FINANCEIRO_VISUALIZAR,
+      PERMISSOES.FINANCEIRO_LANCAR,
+      PERMISSOES.OS_VISUALIZAR,
+      PERMISSOES.PRECO_GERENCIAR,
+      PERMISSOES.CLIENTE_VISUALIZAR,
+      PERMISSOES.IA_UTILIZAR,
+    ],
+  },
+  {
     chave: PERFIS_PADRAO.TECNICO_LABORATORIO,
     nome: 'Técnico de Laboratório',
     permissoes: [

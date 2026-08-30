@@ -23,7 +23,9 @@ import {
   REQUISITO_ESPECIAL_LOGISTICO,
   TIPO_OPERACAO_LOGISTICA,
   TIPO_SERVICO_LOGISTICO,
+  type StatusFatura,
   type StatusOrdemServico,
+  type TipoLancamento,
   type StatusSolicitacaoLogistica,
   CONDICAO_OBJETO,
   FINALIDADE_USO,
@@ -99,6 +101,7 @@ import { FluxoConsultaService } from './m07-fluxo/fluxo-consulta.service.js';
 import { PainelService } from './m07-fluxo/painel.service.js';
 import { LogisticaService } from './m19-logistica/logistica.service.js';
 import { OrdensService } from './m20-ordens/ordens.service.js';
+import { FinanceiroService } from './m20-ordens/financeiro.service.js';
 import { DbService } from '../core/db/db.service.js';
 
 // ---------------------------------------------------------------------------
@@ -2870,6 +2873,125 @@ export class PrecosController {
   async definir(@Param('clienteId', ParseUUIDPipe) clienteId: string, @Body() corpo: unknown) {
     const dados = validarCorpo(precoClienteSchema, corpo);
     return this.ordens.definirPrecoCliente(clienteId, dados.servicoId, dados.valor);
+  }
+}
+
+const novaFaturaSchema = z.object({
+  clienteId: z.string().uuid(),
+  ordemIds: z.array(z.string().uuid()).min(1, 'Escolha ao menos uma OS despachada.'),
+});
+
+const lancamentoSchema = z.object({
+  tipo: z.enum(['entrada', 'saida']),
+  categoria: z.string().min(1).max(120),
+  descricao: z.string().min(1).max(300),
+  valor: z.number().positive().max(9_999_999),
+  /** Data de competência do caixa, `YYYY-MM-DD`. */
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+@ApiTags('M20 - Financeiro')
+@Controller('financeiro')
+export class FinanceiroController {
+  constructor(private readonly financeiro: FinanceiroService) {}
+
+  @Get('resumo')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Fluxo de caixa, contas a receber e o que já pode ser faturado',
+  })
+  async resumo() {
+    return this.financeiro.resumo();
+  }
+
+  @Get('faturas')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_VISUALIZAR)
+  @ApiOperation({ summary: 'Faturas, com total calculado das ordens' })
+  async faturas(@Query('status') status?: string) {
+    return this.financeiro.listarFaturas(status as StatusFatura | undefined);
+  }
+
+  @Get('faturas/:id')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_VISUALIZAR)
+  @ApiOperation({ summary: 'Fatura com as ordens que a compõem' })
+  async fatura(@Param('id', ParseUUIDPipe) id: string) {
+    return this.financeiro.buscarFatura(id);
+  }
+
+  @Post('faturas')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_LANCAR)
+  @ApiOperation({
+    summary: 'Cria a fatura agrupando OSs despachadas do cliente',
+    description:
+      'Só ordem despachada entra — "a partir desse momento já pode ir pra fatura". ' +
+      'As ordens passam a `faturada`; cancelar a fatura as devolve.',
+  })
+  async criarFatura(@Body() corpo: unknown) {
+    const dados = validarCorpo(novaFaturaSchema, corpo);
+    return this.financeiro.criarFatura(dados.clienteId, dados.ordemIds);
+  }
+
+  @Post('faturas/:id/emissao')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_LANCAR)
+  @ApiOperation({ summary: 'Emite a fatura com vencimento — vira contas a receber' })
+  async emitir(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({ vencimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
+      corpo,
+    );
+    return this.financeiro.emitirFatura(id, dados.vencimento);
+  }
+
+  @Post('faturas/:id/pagamento')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_LANCAR)
+  @ApiOperation({
+    summary: 'Registra o pagamento',
+    description:
+      'Gera o lançamento de ENTRADA automático e travado no livro — fluxo de ' +
+      'caixa e contas a receber contam a mesma história.',
+  })
+  async pagar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        valor: z.number().positive().max(9_999_999).optional(),
+        data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      }),
+      corpo,
+    );
+    return this.financeiro.registrarPagamento(id, dados);
+  }
+
+  @Post('faturas/:id/cancelamento')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_LANCAR)
+  @ApiOperation({ summary: 'Cancela a fatura; as ordens voltam a "despachada"' })
+  async cancelarFatura(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(z.object({ motivo: z.string().min(1) }), corpo);
+    return this.financeiro.cancelarFatura(id, dados.motivo);
+  }
+
+  @Get('lancamentos')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_VISUALIZAR)
+  @ApiOperation({ summary: 'Livro de entradas e saídas (filtro por mês YYYY-MM)' })
+  async lancamentos(@Query('mes') mes?: string) {
+    return this.financeiro.listarLancamentos(mes);
+  }
+
+  @Post('lancamentos')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_LANCAR)
+  @ApiOperation({ summary: 'Lançamento manual de entrada ou saída' })
+  async lancar(@Body() corpo: unknown) {
+    const dados = validarCorpo(lancamentoSchema, corpo);
+    return this.financeiro.lancar({ ...dados, tipo: dados.tipo as TipoLancamento });
+  }
+
+  @Post('lancamentos/:id/remocao')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_LANCAR)
+  @ApiOperation({
+    summary: 'Remove um lançamento manual',
+    description: 'Lançamento automático de fatura não se remove — ajuste a fatura.',
+  })
+  async removerLancamento(@Param('id', ParseUUIDPipe) id: string) {
+    return this.financeiro.removerLancamento(id);
   }
 }
 

@@ -29,6 +29,7 @@ import ManageSearch from '@mui/icons-material/ManageSearchOutlined';
 import Colorize from '@mui/icons-material/ColorizeOutlined';
 import PendingActions from '@mui/icons-material/PendingActionsOutlined';
 import RequestQuoteOutlined from '@mui/icons-material/RequestQuoteOutlined';
+import PaidOutlined from '@mui/icons-material/PaidOutlined';
 import Science from '@mui/icons-material/ScienceOutlined';
 import Contacts from '@mui/icons-material/ContactsOutlined';
 import MedicalServices from '@mui/icons-material/MedicalServicesOutlined';
@@ -116,6 +117,13 @@ const MENU = [
     icone: <RequestQuoteOutlined fontSize="small" />,
     rotulo: 'Ordens de Serviço',
     permissao: 'os:visualizar',
+  },
+  {
+    /* M20 (review): fluxo de caixa, faturas e o livro de entrada e saida. */
+    para: '/financeiro',
+    icone: <PaidOutlined fontSize="small" />,
+    rotulo: 'Financeiro',
+    permissao: 'financeiro:visualizar',
   },
   {
     /* M15: a fila é física e atravessa casos - quem está na câmara agora. */

@@ -185,11 +185,14 @@ export class OrdensService {
           criadoEm: ordemServico.criadoEm,
           casoId: ordemServico.casoId,
           casoIdentificador: caso.identificador,
+          clienteId: ordemServico.clienteId,
           clienteNome: cliente.nomeFantasia,
+          // Referencia externa literal: interpolar a coluna aqui pode sair
+          // sem qualificacao e capturar `i.id` (armadilha do M19).
           total: sql<string>`coalesce((
             select sum(round(i.quantidade * i.valor_unitario * (1 - i.desconto_percentual / 100), 2))
             from item_ordem_servico i
-            where i.ordem_id = ${ordemServico.id}
+            where i.ordem_id = ordem_servico.id
           ), 0)::text`,
         })
         .from(ordemServico)

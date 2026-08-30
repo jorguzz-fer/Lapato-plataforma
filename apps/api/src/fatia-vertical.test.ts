@@ -3938,3 +3938,190 @@ describe('ordem de serviço: do recebimento ao despacho (M20 parcial)', () => {
     expect(tabela.body.find((l: any) => l.servicoId === servicoId).valorCliente).toBeNull();
   });
 });
+
+describe('financeiro padrão: fatura, livro e fluxo de caixa (M20 parcial)', () => {
+  /**
+   * O restante do combinado da review: "lançamentos, entrada e saída,
+   * balanço, fluxo de caixa, essas coisas padrões". A fatura agrupa OSs
+   * DESPACHADAS - o despacho é o portão ("a partir desse momento já pode ir
+   * pra fatura") - e o pagamento espelha um lançamento de ENTRADA automático
+   * e travado no livro, para o caixa e o contas a receber contarem a mesma
+   * história.
+   */
+  let casoId: string;
+  let ordemId: string;
+  let faturaId: string;
+  let clienteId: string;
+  let servicoId: string;
+
+  async function despacharUmaOrdem(): Promise<{ casoId: string; ordemId: string }> {
+    await entrar('recepcao@lapato.local');
+    const criado = await req('POST', '/casos', {
+      servicoId,
+      clienteId,
+      paciente: { nome: `Fatura ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Fragmento' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+
+    await entrar('tecnico@lapato.local');
+    const dossie = await req('GET', `/casos/${criado.body.id}`);
+    await req('POST', `/casos/${criado.body.id}/recebimento`, {
+      conferencia: dossie.body.recipientes.map((r: any) => ({
+        recipienteId: r.id,
+        quantidadeRecebida: 1,
+      })),
+    });
+
+    const ordem = await req('GET', `/ordens/casos/${criado.body.id}`);
+    await req('POST', `/ordens/${ordem.body.id}/conferencia`, {});
+    const despacho = await req('POST', `/ordens/${ordem.body.id}/despacho`, {});
+    expect(despacho.status, JSON.stringify(despacho.body)).toBe(201);
+    return { casoId: criado.body.id, ordemId: ordem.body.id };
+  }
+
+  test('fatura só nasce de OS despachada', async () => {
+    await entrar('admin@lapato.local');
+    const servicos = await req('GET', '/administracao/servicos');
+    servicoId = servicos.body.find((s: any) => s.codigo === 'HISTO').id;
+    const clientes = await req('GET', '/catalogo/clientes');
+    clienteId = clientes.body[0].id;
+
+    // Uma OS ainda aberta não entra na fatura.
+    await entrar('recepcao@lapato.local');
+    const aberta = await req('POST', '/casos', {
+      servicoId,
+      clienteId,
+      paciente: { nome: 'Sem despacho' },
+      amostras: [{ descricao: 'Fragmento' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    await entrar('tecnico@lapato.local');
+    const dossieAberta = await req('GET', `/casos/${aberta.body.id}`);
+    await req('POST', `/casos/${aberta.body.id}/recebimento`, {
+      conferencia: dossieAberta.body.recipientes.map((r: any) => ({
+        recipienteId: r.id,
+        quantidadeRecebida: 1,
+      })),
+    });
+    const ordemAberta = await req('GET', `/ordens/casos/${aberta.body.id}`);
+
+    await entrar('admin@lapato.local');
+    const recusada = await req('POST', '/financeiro/faturas', {
+      clienteId,
+      ordemIds: [ordemAberta.body.id],
+    });
+    expect(recusada.status).toBe(400);
+    expect(recusada.body.detail).toContain('despachada');
+
+    ({ casoId, ordemId } = await despacharUmaOrdem());
+
+    await entrar('admin@lapato.local');
+    const fatura = await req('POST', '/financeiro/faturas', {
+      clienteId,
+      ordemIds: [ordemId],
+    });
+    expect(fatura.status, JSON.stringify(fatura.body)).toBe(201);
+    expect(fatura.body.identificador).toMatch(/^FAT-\d{4}-\d{6}$/);
+    faturaId = fatura.body.id;
+
+    // A OS agora pertence à fatura.
+    const ordem = await req('GET', `/ordens/casos/${casoId}`);
+    expect(ordem.body.status).toBe('faturada');
+  });
+
+  test('emitir vira contas a receber; pagar espelha entrada travada no livro', async () => {
+    await entrar('admin@lapato.local');
+
+    const emissao = await req('POST', `/financeiro/faturas/${faturaId}/emissao`, {
+      vencimento: '2026-09-30',
+    });
+    expect(emissao.status, JSON.stringify(emissao.body)).toBe(201);
+
+    const resumoAntes = await req('GET', '/financeiro/resumo');
+    expect(resumoAntes.body.aReceber.quantidade).toBeGreaterThanOrEqual(1);
+
+    const pagamento = await req('POST', `/financeiro/faturas/${faturaId}/pagamento`, {});
+    expect(pagamento.status, JSON.stringify(pagamento.body)).toBe(201);
+
+    const detalhe = await req('GET', `/financeiro/faturas/${faturaId}`);
+    expect(detalhe.body.status).toBe('paga');
+    expect(Number(detalhe.body.valorPago)).toBe(detalhe.body.total);
+
+    // O espelho no livro: entrada automática, vinculada à fatura, travada.
+    const lancamentos = await req('GET', '/financeiro/lancamentos');
+    const automatico = lancamentos.body.find((l: any) => l.faturaId === faturaId);
+    expect(automatico, 'lançamento automático do pagamento ausente').toBeTruthy();
+    expect(automatico.tipo).toBe('entrada');
+
+    const remocao = await req('POST', `/financeiro/lancamentos/${automatico.id}/remocao`, {});
+    expect(remocao.status).toBe(400);
+    expect(remocao.body.detail).toContain('automático');
+  });
+
+  test('lançamento manual entra no fluxo de caixa e pode ser removido', async () => {
+    await entrar('admin@lapato.local');
+
+    const hoje = new Date().toISOString().slice(0, 10);
+    const lancado = await req('POST', '/financeiro/lancamentos', {
+      tipo: 'saida',
+      categoria: 'Insumos e reagentes',
+      descricao: 'Formalina tamponada',
+      valor: 80.5,
+      data: hoje,
+    });
+    expect(lancado.status, JSON.stringify(lancado.body)).toBe(201);
+
+    const resumo = await req('GET', '/financeiro/resumo');
+
+    const mesAtual = resumo.body.meses.find((m: any) => m.mes === hoje.slice(0, 7));
+    expect(mesAtual, 'mês corrente ausente do fluxo de caixa').toBeTruthy();
+    expect(mesAtual.saidas).toBeGreaterThanOrEqual(80.5);
+    // Entradas incluem o pagamento da fatura do teste anterior.
+    expect(mesAtual.entradas).toBeGreaterThan(0);
+
+    const remocao = await req('POST', `/financeiro/lancamentos/${lancado.body.id}/remocao`, {});
+    expect(remocao.status, JSON.stringify(remocao.body)).toBe(201);
+  });
+
+  test('cancelar a fatura devolve a OS a "despachada"', async () => {
+    const segunda = await despacharUmaOrdem();
+
+    await entrar('admin@lapato.local');
+    const fatura = await req('POST', '/financeiro/faturas', {
+      clienteId,
+      ordemIds: [segunda.ordemId],
+    });
+    expect(fatura.status).toBe(201);
+
+    const semMotivo = await req('POST', `/financeiro/faturas/${fatura.body.id}/cancelamento`, {
+      motivo: '',
+    });
+    expect(semMotivo.status).toBe(400);
+
+    const cancelada = await req('POST', `/financeiro/faturas/${fatura.body.id}/cancelamento`, {
+      motivo: 'Cliente pediu para reunir com o fechamento do mês.',
+    });
+    expect(cancelada.status, JSON.stringify(cancelada.body)).toBe(201);
+
+    const ordem = await req('GET', `/ordens/casos/${segunda.casoId}`);
+    expect(ordem.body.status).toBe('despachada');
+
+    /**
+     * Regressor da armadilha do M19: o "pronto para faturar" chegou a mostrar
+     * 8 ordens somando R$ 0,00, porque a referencia externa interpolada na
+     * subconsulta correlacionada saia sem qualificacao e capturava `i.id`.
+     * Com a OS devolvida acima na fila, o valor tem que ser positivo.
+     */
+    const resumo = await req('GET', '/financeiro/resumo');
+    expect(resumo.body.aFaturar.quantidade).toBeGreaterThanOrEqual(1);
+    expect(resumo.body.aFaturar.valor).toBeGreaterThan(0);
+  });
+
+  test('quem não é do financeiro não vê o caixa', async () => {
+    await entrar('tecnico@lapato.local');
+    const resumo = await req('GET', '/financeiro/resumo');
+    expect(resumo.status, 'técnico não tem financeiro:visualizar').toBe(403);
+  });
+});

@@ -56,12 +56,14 @@ import {
   RESULTADO_TRIAGEM,
   STATUS_CLIENTE,
   STATUS_LAUDO,
+  STATUS_FATURA,
   STATUS_ORDEM_SERVICO,
   STATUS_PENDENCIA,
   STATUS_SOLICITACAO,
   STATUS_USUARIO,
   TIPO_CLIENTE,
   TIPO_IMAGEM,
+  TIPO_LANCAMENTO,
   TIPO_UNIDADE,
   TIPO_VERSAO_LAUDO,
   VISIBILIDADE_EVENTO,
@@ -225,6 +227,8 @@ export const statusSolicitacaoLogisticaEnum = pgEnum(
 );
 export const statusOfertaEnum = pgEnum('status_oferta', STATUS_OFERTA);
 export const statusOrdemServicoEnum = pgEnum('status_ordem_servico', STATUS_ORDEM_SERVICO);
+export const statusFaturaEnum = pgEnum('status_fatura', STATUS_FATURA);
+export const tipoLancamentoEnum = pgEnum('tipo_lancamento', TIPO_LANCAMENTO);
 export const motivoNaoRealizacaoEnum = pgEnum(
   'motivo_nao_realizacao',
   MOTIVO_NAO_REALIZACAO,

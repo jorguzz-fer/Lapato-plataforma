@@ -185,6 +185,19 @@ export const PERMISSOES = {
   /** Cancelar operacao, que a secao 86 exige registrar com responsavel e motivo. */
   LOGISTICA_CANCELAR: 'logistica:cancelar',
 
+  // M20 Financeiro (parcial) - Ordem de Servico
+  OS_VISUALIZAR: 'os:visualizar',
+  /** Ajustar itens, quantidades, precos e descontos enquanto a OS esta aberta. */
+  OS_EDITAR: 'os:editar',
+  /**
+   * Conferir e despachar. E o ato da "ultima saida" descrito pelo proprio
+   * laboratorio: alguem pega a OS, verifica se tudo que ela lista foi feito,
+   * da o ok e manda para o despacho - so dai ela pode virar fatura.
+   */
+  OS_CONFERIR: 'os:conferir',
+  /** Precos: valor padrao do servico e tabela personalizada do cliente. */
+  PRECO_GERENCIAR: 'preco:gerenciar',
+
   // M22 Qualidade e auditoria
   AUDITORIA_VISUALIZAR: 'auditoria:visualizar',
 } as const;

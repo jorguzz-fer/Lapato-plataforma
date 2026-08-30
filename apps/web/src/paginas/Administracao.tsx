@@ -19,7 +19,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import ChevronRight from '@mui/icons-material/ChevronRight';
-import { TIPO_UNIDADE } from '@lapato/shared';
+import { TIPO_UNIDADE, formatarReais } from '@lapato/shared';
 import {
   api,
   ErroApi,
@@ -163,6 +163,7 @@ function AbaServicos({ podeEditar }: { podeEditar: boolean }) {
               <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.25 }}>
                 Prazo: {s.prazoDiasUteis} dias úteis
                 {s.prazoUrgenteDiasUteis ? ` (urgente: ${s.prazoUrgenteDiasUteis})` : ''}
+                {s.valorPadrao != null ? ` · ${formatarReais(s.valorPadrao)}` : ' · sem preço'}
                 {' · '}
                 {FLAGS_SERVICO.filter(([f]) => s[f])
                   .map(([, rotulo]) => rotulo.toLowerCase())
@@ -220,6 +221,7 @@ function DialogoServico({
   const [modalidade, setModalidade] = useState('histopatologia');
   const [prazo, setPrazo] = useState('5');
   const [prazoUrgente, setPrazoUrgente] = useState('');
+  const [valorPadrao, setValorPadrao] = useState('');
   const [flags, setFlags] = useState<Record<string, boolean>>({});
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -231,6 +233,7 @@ function DialogoServico({
     setModalidade(servico?.modalidade ?? 'histopatologia');
     setPrazo(String(servico?.prazoDiasUteis ?? 5));
     setPrazoUrgente(servico?.prazoUrgenteDiasUteis ? String(servico.prazoUrgenteDiasUteis) : '');
+    setValorPadrao(servico?.valorPadrao != null ? String(servico.valorPadrao) : '');
     setFlags(
       Object.fromEntries(
         FLAGS_SERVICO.map(([f]) => [f, servico ? servico[f] : f === 'exigeMicroscopia' || f === 'geraLaudo' || f === 'permiteComplementares']),
@@ -249,6 +252,8 @@ function DialogoServico({
         modalidade,
         prazoDiasUteis: Number(prazo),
         prazoUrgenteDiasUteis: prazoUrgente.trim() ? Number(prazoUrgente) : null,
+        // Vale para itens NOVOS de OS; os ja lancados guardam o retrato (M01).
+        valorPadrao: valorPadrao.trim() ? Number(valorPadrao.replace(',', '.')) : null,
         ...flags,
       };
       if (servico) {
@@ -310,6 +315,13 @@ function DialogoServico({
               onChange={(e) => setPrazoUrgente(e.target.value)}
               sx={{ flex: 1 }}
               helperText="Opcional."
+            />
+            <TextField
+              label="Valor padrão (R$)"
+              value={valorPadrao}
+              onChange={(e) => setValorPadrao(e.target.value)}
+              sx={{ flex: 1 }}
+              helperText="Tabela padrão; acordos por cliente ficam no cadastro do cliente."
             />
           </Stack>
 

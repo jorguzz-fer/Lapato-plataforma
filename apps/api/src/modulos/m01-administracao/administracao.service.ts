@@ -29,6 +29,7 @@ export interface DadosServico {
   permiteComplementares?: boolean;
   prazoDiasUteis?: number;
   prazoUrgenteDiasUteis?: number | null;
+  valorPadrao?: number | null;
 }
 
 export interface DadosTermo {
@@ -114,6 +115,7 @@ export class AdministracaoService {
           permiteComplementares: dados.permiteComplementares ?? true,
           prazoDiasUteis: dados.prazoDiasUteis ?? 5,
           prazoUrgenteDiasUteis: dados.prazoUrgenteDiasUteis ?? null,
+          valorPadrao: dados.valorPadrao != null ? dados.valorPadrao.toFixed(2) : null,
         })
         .returning({ id: servico.id });
 
@@ -155,6 +157,12 @@ export class AdministracaoService {
       if (dados.prazoDiasUteis !== undefined) mudancas.prazoDiasUteis = dados.prazoDiasUteis;
       if (dados.prazoUrgenteDiasUteis !== undefined)
         mudancas.prazoUrgenteDiasUteis = dados.prazoUrgenteDiasUteis ?? null;
+      /**
+       * O preco vigente vale para itens NOVOS de OS; itens ja lancados
+       * guardam o retrato do momento (M01: alteracoes nao retroagem).
+       */
+      if (dados.valorPadrao !== undefined)
+        mudancas.valorPadrao = dados.valorPadrao != null ? dados.valorPadrao.toFixed(2) : null;
 
       if (Object.keys(mudancas).length === 0) return;
 

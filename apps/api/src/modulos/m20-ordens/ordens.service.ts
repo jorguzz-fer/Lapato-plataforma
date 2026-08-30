@@ -1,0 +1,572 @@
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import {
+  amostra,
+  caso,
+  cliente,
+  itemOrdemServico,
+  ordemServico,
+  precoCliente,
+  servico,
+  type Transacao,
+} from '@lapato/db';
+import { MODULOS, totalDaOrdem, type StatusOrdemServico } from '@lapato/shared';
+import { DbService } from '../../core/db/db.service.js';
+import { EventosService } from '../../core/eventos/eventos.service.js';
+import { AuditoriaService } from '../../core/auditoria/auditoria.service.js';
+import { NumeracaoService } from '../m01-administracao/numeracao.service.js';
+import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
+
+export interface NovoItemOrdem {
+  servicoId?: string | null;
+  descricao?: string | null;
+  quantidade?: number;
+  valorUnitario?: number | null;
+  descontoPercentual?: number;
+}
+
+export interface EdicaoItemOrdem {
+  descricao?: string;
+  quantidade?: number;
+  valorUnitario?: number;
+  descontoPercentual?: number;
+}
+
+/**
+ * M20 (parcial) - Ordem de Servico.
+ *
+ * O ciclo veio da primeira review com o laboratorio, que ja opera assim:
+ *
+ *   recebimento conferido -> OS aberta (itens editaveis)
+ *     -> conferencia tecnica da saida ("foi tudo feito?") -> conferida
+ *     -> despacho -> pronta para faturar (a fatura e do modulo financeiro)
+ *
+ * Duas regras estruturais:
+ *
+ * - **Uma OS por caso.** Servico adicional e ITEM da mesma ordem. E a ordem,
+ *   nao o caso, que o financeiro fatura.
+ * - **Preco e retrato.** O item copia o valor vigente (acordo do cliente, ou
+ *   tabela padrao) no momento em que entra. Mudar preco depois nao retroage
+ *   (M01) - por isso nenhuma leitura volta a consultar o preco atual.
+ */
+@Injectable()
+export class OrdensService {
+  constructor(
+    private readonly db: DbService,
+    private readonly eventos: EventosService,
+    private readonly auditoria: AuditoriaService,
+    private readonly numeracao: NumeracaoService,
+  ) {}
+
+  /**
+   * Cria a OS do caso no momento da conferencia do recebimento.
+   *
+   * Chamado DENTRO da transacao do recebimento (M05): se a criacao da ordem
+   * falhar, o recebimento tambem falha - um material conferido sem ordem de
+   * cobranca e exatamente o vazamento de receita que o modelo quer impedir.
+   *
+   * Idempotente por consulta: um segundo recebimento do mesmo caso (nao deve
+   * acontecer, mas o banco nao proibe) nao gera segunda ordem.
+   */
+  async criarParaCaso(tx: Transacao, casoId: string): Promise<void> {
+    const ctx = exigirContexto();
+
+    const [existente] = await tx
+      .select({ id: ordemServico.id })
+      .from(ordemServico)
+      .where(and(eq(ordemServico.tenantId, ctx.tenantId), eq(ordemServico.casoId, casoId)))
+      .limit(1);
+    if (existente) return;
+
+    const [alvo] = await tx
+      .select({
+        clienteId: caso.clienteId,
+        servicoId: caso.servicoId,
+        servicoNome: servico.nome,
+        valorPadrao: servico.valorPadrao,
+      })
+      .from(caso)
+      .innerJoin(servico, eq(servico.id, caso.servicoId))
+      .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.id, casoId)))
+      .limit(1);
+    if (!alvo) throw new NotFoundException('Caso não encontrado.');
+
+    /**
+     * A quantidade nasce do que foi CONFERIDO: uma remessa com nodulo de pele
+     * que revelou dois fragmentos cobra dois. A recepcao ajusta depois se o
+     * acordo do cliente for por caso, nao por amostra.
+     */
+    const [{ quantidadeAmostras }] = (await tx
+      .select({ quantidadeAmostras: sql<number>`count(*)::int` })
+      .from(amostra)
+      .where(and(eq(amostra.tenantId, ctx.tenantId), eq(amostra.casoId, casoId)))) as [
+      { quantidadeAmostras: number },
+    ];
+
+    const agora = new Date();
+    const identificador = await this.numeracao.proximaOrdemServico(tx, agora.getFullYear());
+
+    const [ordem] = await tx
+      .insert(ordemServico)
+      .values({
+        tenantId: ctx.tenantId,
+        identificador,
+        casoId,
+        clienteId: alvo.clienteId,
+      })
+      .returning({ id: ordemServico.id });
+
+    const valor = await this.precoVigente(tx, alvo.clienteId, alvo.servicoId);
+    await tx.insert(itemOrdemServico).values({
+      tenantId: ctx.tenantId,
+      ordemId: ordem!.id,
+      servicoId: alvo.servicoId,
+      descricao: alvo.servicoNome,
+      quantidade: String(Math.max(quantidadeAmostras, 1)),
+      valorUnitario: valor,
+      ordem: 0,
+    });
+
+    await this.eventos.publicar(tx, {
+      tipo: 'os.criada',
+      casoId,
+      moduloOrigem: MODULOS.M20_FINANCEIRO,
+      objetoTipo: 'ordem_servico',
+      objetoId: ordem!.id,
+      payload: { identificador },
+    });
+  }
+
+  /**
+   * Preco vigente para o par cliente x servico: acordo personalizado quando
+   * existe, tabela padrao quando nao. So e consultado no momento em que um
+   * item ENTRA na ordem - nunca para reler itens antigos.
+   */
+  private async precoVigente(
+    tx: Transacao,
+    clienteId: string,
+    servicoId: string,
+  ): Promise<string> {
+    const ctx = exigirContexto();
+
+    const [acordo] = await tx
+      .select({ valor: precoCliente.valor })
+      .from(precoCliente)
+      .where(
+        and(
+          eq(precoCliente.tenantId, ctx.tenantId),
+          eq(precoCliente.clienteId, clienteId),
+          eq(precoCliente.servicoId, servicoId),
+        ),
+      )
+      .limit(1);
+    if (acordo) return acordo.valor;
+
+    const [padrao] = await tx
+      .select({ valor: servico.valorPadrao })
+      .from(servico)
+      .where(and(eq(servico.tenantId, ctx.tenantId), eq(servico.id, servicoId)))
+      .limit(1);
+
+    // Servico sem preco cadastrado entra zerado: a tela avisa e a recepcao
+    // corrige antes do despacho. Melhor um zero visivel que um item ausente.
+    return padrao?.valor ?? '0';
+  }
+
+  async listar(status?: StatusOrdemServico) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+
+      const ordens = await tx
+        .select({
+          id: ordemServico.id,
+          identificador: ordemServico.identificador,
+          status: ordemServico.status,
+          criadoEm: ordemServico.criadoEm,
+          casoId: ordemServico.casoId,
+          casoIdentificador: caso.identificador,
+          clienteNome: cliente.nomeFantasia,
+          total: sql<string>`coalesce((
+            select sum(round(i.quantidade * i.valor_unitario * (1 - i.desconto_percentual / 100), 2))
+            from item_ordem_servico i
+            where i.ordem_id = ${ordemServico.id}
+          ), 0)::text`,
+        })
+        .from(ordemServico)
+        .innerJoin(caso, eq(caso.id, ordemServico.casoId))
+        .innerJoin(cliente, eq(cliente.id, ordemServico.clienteId))
+        .where(
+          and(
+            eq(ordemServico.tenantId, ctx.tenantId),
+            ...(status ? [eq(ordemServico.status, status)] : []),
+          ),
+        )
+        .orderBy(desc(ordemServico.criadoEm))
+        .limit(200);
+
+      return ordens;
+    });
+  }
+
+  async buscarPorCaso(casoId: string) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+
+      const [ordem] = await tx
+        .select({
+          id: ordemServico.id,
+          identificador: ordemServico.identificador,
+          status: ordemServico.status,
+          observacoes: ordemServico.observacoes,
+          criadoEm: ordemServico.criadoEm,
+          conferidaEm: ordemServico.conferidaEm,
+          despachadaEm: ordemServico.despachadaEm,
+          motivoCancelamento: ordemServico.motivoCancelamento,
+          clienteNome: cliente.nomeFantasia,
+        })
+        .from(ordemServico)
+        .innerJoin(cliente, eq(cliente.id, ordemServico.clienteId))
+        .where(and(eq(ordemServico.tenantId, ctx.tenantId), eq(ordemServico.casoId, casoId)))
+        .limit(1);
+
+      if (!ordem) return null;
+
+      const itens = await tx
+        .select({
+          id: itemOrdemServico.id,
+          servicoId: itemOrdemServico.servicoId,
+          descricao: itemOrdemServico.descricao,
+          quantidade: itemOrdemServico.quantidade,
+          valorUnitario: itemOrdemServico.valorUnitario,
+          descontoPercentual: itemOrdemServico.descontoPercentual,
+        })
+        .from(itemOrdemServico)
+        .where(
+          and(
+            eq(itemOrdemServico.tenantId, ctx.tenantId),
+            eq(itemOrdemServico.ordemId, ordem.id),
+          ),
+        )
+        .orderBy(asc(itemOrdemServico.ordem), asc(itemOrdemServico.criadoEm));
+
+      return { ...ordem, itens, total: totalDaOrdem(itens) };
+    });
+  }
+
+  async adicionarItem(ordemId: string, dados: NovoItemOrdem) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      const ordem = await this.exigirOrdem(tx, ordemId, ['aberta']);
+
+      let descricao = dados.descricao?.trim() ?? '';
+      let valor =
+        dados.valorUnitario != null ? dados.valorUnitario.toFixed(2) : null;
+
+      if (dados.servicoId) {
+        const [alvo] = await tx
+          .select({ nome: servico.nome })
+          .from(servico)
+          .where(and(eq(servico.tenantId, ctx.tenantId), eq(servico.id, dados.servicoId)))
+          .limit(1);
+        if (!alvo) throw new BadRequestException('Serviço não encontrado.');
+        descricao = descricao || alvo.nome;
+        valor = valor ?? (await this.precoVigente(tx, ordem.clienteId, dados.servicoId));
+      }
+
+      if (!descricao) {
+        throw new BadRequestException('Item avulso precisa de descrição.');
+      }
+      if (valor == null) {
+        throw new BadRequestException('Item avulso precisa de valor unitário.');
+      }
+
+      const [{ maiorOrdem }] = (await tx
+        .select({ maiorOrdem: sql<number>`coalesce(max(${itemOrdemServico.ordem}), 0)` })
+        .from(itemOrdemServico)
+        .where(
+          and(eq(itemOrdemServico.tenantId, ctx.tenantId), eq(itemOrdemServico.ordemId, ordemId)),
+        )) as [{ maiorOrdem: number }];
+
+      const [item] = await tx
+        .insert(itemOrdemServico)
+        .values({
+          tenantId: ctx.tenantId,
+          ordemId,
+          servicoId: dados.servicoId ?? null,
+          descricao,
+          quantidade: String(dados.quantidade ?? 1),
+          valorUnitario: valor,
+          descontoPercentual: String(dados.descontoPercentual ?? 0),
+          ordem: maiorOrdem + 1,
+        })
+        .returning({ id: itemOrdemServico.id });
+
+      return { id: item!.id };
+    });
+  }
+
+  async editarItem(ordemId: string, itemId: string, dados: EdicaoItemOrdem) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      await this.exigirOrdem(tx, ordemId, ['aberta']);
+
+      const [anterior] = await tx
+        .select()
+        .from(itemOrdemServico)
+        .where(
+          and(
+            eq(itemOrdemServico.tenantId, ctx.tenantId),
+            eq(itemOrdemServico.id, itemId),
+            eq(itemOrdemServico.ordemId, ordemId),
+          ),
+        )
+        .limit(1);
+      if (!anterior) throw new NotFoundException('Item não encontrado.');
+
+      await tx
+        .update(itemOrdemServico)
+        .set({
+          ...(dados.descricao !== undefined ? { descricao: dados.descricao.trim() } : {}),
+          ...(dados.quantidade !== undefined ? { quantidade: String(dados.quantidade) } : {}),
+          ...(dados.valorUnitario !== undefined
+            ? { valorUnitario: dados.valorUnitario.toFixed(2) }
+            : {}),
+          ...(dados.descontoPercentual !== undefined
+            ? { descontoPercentual: String(dados.descontoPercentual) }
+            : {}),
+          atualizadoEm: new Date(),
+        })
+        .where(and(eq(itemOrdemServico.tenantId, ctx.tenantId), eq(itemOrdemServico.id, itemId)));
+
+      // Valor de OS e dado sensivel: alteracao fica no rastro de auditoria.
+      await this.auditoria.registrar(tx, {
+        entidade: 'item_ordem_servico',
+        entidadeId: itemId,
+        acao: 'editar',
+        valorAnterior: {
+          quantidade: anterior.quantidade,
+          valorUnitario: anterior.valorUnitario,
+          descontoPercentual: anterior.descontoPercentual,
+        },
+        valorNovo: dados as Record<string, unknown>,
+      });
+
+      return { ok: true };
+    });
+  }
+
+  async removerItem(ordemId: string, itemId: string) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      await this.exigirOrdem(tx, ordemId, ['aberta']);
+
+      const removidos = await tx
+        .delete(itemOrdemServico)
+        .where(
+          and(
+            eq(itemOrdemServico.tenantId, ctx.tenantId),
+            eq(itemOrdemServico.id, itemId),
+            eq(itemOrdemServico.ordemId, ordemId),
+          ),
+        )
+        .returning({ id: itemOrdemServico.id, descricao: itemOrdemServico.descricao });
+      if (!removidos[0]) throw new NotFoundException('Item não encontrado.');
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'item_ordem_servico',
+        entidadeId: itemId,
+        acao: 'remover',
+        valorAnterior: { descricao: removidos[0].descricao },
+      });
+
+      return { ok: true };
+    });
+  }
+
+  /**
+   * A conferencia da saida: alguem olhou a OS e confirmou que tudo que ela
+   * lista foi executado. So a partir daqui os valores congelam.
+   */
+  async conferir(ordemId: string) {
+    return this.transicionar(ordemId, ['aberta'], 'conferida', 'os.conferida', (agora, ctx) => ({
+      conferidaEm: agora,
+      conferidaPorId: ctx.usuarioId,
+    }));
+  }
+
+  async despachar(ordemId: string) {
+    return this.transicionar(
+      ordemId,
+      ['conferida'],
+      'despachada',
+      'os.despachada',
+      (agora, ctx) => ({
+        despachadaEm: agora,
+        despachadaPorId: ctx.usuarioId,
+      }),
+    );
+  }
+
+  async cancelar(ordemId: string, motivo: string) {
+    if (!motivo.trim()) {
+      throw new BadRequestException('Cancelamento de OS exige motivo.');
+    }
+    return this.transicionar(
+      ordemId,
+      ['aberta', 'conferida'],
+      'cancelada',
+      'os.cancelada',
+      (agora) => ({
+        canceladaEm: agora,
+        motivoCancelamento: motivo.trim(),
+      }),
+    );
+  }
+
+  private async transicionar(
+    ordemId: string,
+    origens: StatusOrdemServico[],
+    destino: StatusOrdemServico,
+    tipoEvento: 'os.conferida' | 'os.despachada' | 'os.cancelada',
+    campos: (
+      agora: Date,
+      ctx: ReturnType<typeof exigirContexto>,
+    ) => Partial<typeof ordemServico.$inferInsert>,
+  ) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      const ordem = await this.exigirOrdem(tx, ordemId, origens);
+
+      if (destino === 'conferida') {
+        const [{ quantidadeItens }] = (await tx
+          .select({ quantidadeItens: sql<number>`count(*)::int` })
+          .from(itemOrdemServico)
+          .where(
+            and(
+              eq(itemOrdemServico.tenantId, ctx.tenantId),
+              eq(itemOrdemServico.ordemId, ordemId),
+            ),
+          )) as [{ quantidadeItens: number }];
+        if (quantidadeItens === 0) {
+          throw new BadRequestException('OS sem itens não pode ser conferida.');
+        }
+      }
+
+      const agora = new Date();
+      await tx
+        .update(ordemServico)
+        .set({ status: destino, atualizadoEm: agora, ...campos(agora, ctx) })
+        .where(and(eq(ordemServico.tenantId, ctx.tenantId), eq(ordemServico.id, ordemId)));
+
+      await this.eventos.publicar(tx, {
+        tipo: tipoEvento,
+        casoId: ordem.casoId,
+        moduloOrigem: MODULOS.M20_FINANCEIRO,
+        objetoTipo: 'ordem_servico',
+        objetoId: ordemId,
+        payload: { identificador: ordem.identificador },
+      });
+
+      return { ok: true, status: destino };
+    });
+  }
+
+  private async exigirOrdem(tx: Transacao, ordemId: string, statusPermitidos: StatusOrdemServico[]) {
+    const ctx = exigirContexto();
+
+    const [ordem] = await tx
+      .select({
+        id: ordemServico.id,
+        status: ordemServico.status,
+        casoId: ordemServico.casoId,
+        clienteId: ordemServico.clienteId,
+        identificador: ordemServico.identificador,
+      })
+      .from(ordemServico)
+      .where(and(eq(ordemServico.tenantId, ctx.tenantId), eq(ordemServico.id, ordemId)))
+      .limit(1);
+
+    if (!ordem) throw new NotFoundException('Ordem de Serviço não encontrada.');
+    if (!statusPermitidos.includes(ordem.status as StatusOrdemServico)) {
+      throw new BadRequestException(
+        `Ordem ${ordem.identificador} está "${ordem.status}" e não permite esta operação.`,
+      );
+    }
+    return ordem;
+  }
+
+  // --- Precos ------------------------------------------------------------
+
+  /**
+   * Tabela de precos do cliente: o catalogo inteiro, com o valor padrao e o
+   * acordo (quando ha). A tela mostra lado a lado - e o "tabela padrao ou
+   * personalizada" da review, sem duplicar catalogo.
+   */
+  async precosDoCliente(clienteId: string) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+
+      return tx
+        .select({
+          servicoId: servico.id,
+          nome: servico.nome,
+          codigo: servico.codigo,
+          valorPadrao: servico.valorPadrao,
+          valorCliente: precoCliente.valor,
+        })
+        .from(servico)
+        .leftJoin(
+          precoCliente,
+          and(
+            eq(precoCliente.servicoId, servico.id),
+            eq(precoCliente.clienteId, clienteId),
+            eq(precoCliente.tenantId, ctx.tenantId),
+          ),
+        )
+        .where(and(eq(servico.tenantId, ctx.tenantId), isNull(servico.inativadoEm)))
+        .orderBy(asc(servico.nome));
+    });
+  }
+
+  /** Define ou remove (valor nulo) o acordo do cliente para um servico. */
+  async definirPrecoCliente(clienteId: string, servicoId: string, valor: number | null) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+
+      if (valor == null) {
+        await tx
+          .delete(precoCliente)
+          .where(
+            and(
+              eq(precoCliente.tenantId, ctx.tenantId),
+              eq(precoCliente.clienteId, clienteId),
+              eq(precoCliente.servicoId, servicoId),
+            ),
+          );
+        return { ok: true };
+      }
+
+      await tx
+        .insert(precoCliente)
+        .values({
+          tenantId: ctx.tenantId,
+          clienteId,
+          servicoId,
+          valor: valor.toFixed(2),
+        })
+        .onConflictDoUpdate({
+          target: [precoCliente.tenantId, precoCliente.clienteId, precoCliente.servicoId],
+          set: { valor: valor.toFixed(2), atualizadoEm: new Date() },
+        });
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'preco_cliente',
+        entidadeId: clienteId,
+        acao: 'definir',
+        valorNovo: { servicoId, valor: valor.toFixed(2) },
+      });
+
+      return { ok: true };
+    });
+  }
+}

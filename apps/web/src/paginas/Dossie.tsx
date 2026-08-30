@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import Chip from '@mui/material/Chip';
@@ -17,6 +17,7 @@ import BiotechOutlined from '@mui/icons-material/BiotechOutlined';
 import { EVENTO_LABEL, type TipoEvento } from '@lapato/shared';
 import { api, type Dossie as DadosDossie } from '../api';
 import { GaleriaDoCaso } from './imagens/GaleriaDoCaso';
+import { OrdemDoCaso } from './ordens/OrdemDoCaso';
 
 /**
  * Dossie unico do caso (DIRETRIZES secoes 13 e 14).
@@ -26,13 +27,15 @@ import { GaleriaDoCaso } from './imagens/GaleriaDoCaso';
  * perfil, permissoes e etapa - mas o dossie e um so.
  */
 
-type Aba = 'visao' | 'amostras' | 'imagens' | 'historico' | 'timeline';
+type Aba = 'visao' | 'amostras' | 'imagens' | 'os' | 'historico' | 'timeline';
 
 const ABAS: Array<{ id: Aba; rotulo: string }> = [
   { id: 'visao', rotulo: 'Visão geral' },
   { id: 'amostras', rotulo: 'Amostras' },
   // M16 seção 57: todo caso tem sua aba de imagens - o acervo é um só.
   { id: 'imagens', rotulo: 'Imagens' },
+  // M20 (review): a OS acompanha o caso; quem pode ver cobrança a vê aqui.
+  { id: 'os', rotulo: 'Ordem de Serviço' },
   { id: 'historico', rotulo: 'Histórico' },
   { id: 'timeline', rotulo: 'Linha do tempo' },
 ];
@@ -54,8 +57,12 @@ const ETAPAS_LAUDO = new Set([
 
 export function Dossie({ permissoes }: { permissoes: string[] }) {
   const { id } = useParams<{ id: string }>();
+  const [parametros] = useSearchParams();
   const [dados, setDados] = useState<DadosDossie | null>(null);
-  const [aba, setAba] = useState<Aba>('visao');
+  const abaInicial = parametros.get('aba');
+  const [aba, setAba] = useState<Aba>(
+    ABAS.some((a) => a.id === abaInicial) ? (abaInicial as Aba) : 'visao',
+  );
 
   useEffect(() => {
     if (id) api.get<DadosDossie>(`/casos/${id}`).then(setDados);
@@ -223,7 +230,7 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
         scrollButtons="auto"
         sx={{ mb: 2, borderBottom: '1px solid', borderColor: 'divider' }}
       >
-        {ABAS.map((a) => (
+        {ABAS.filter((a) => a.id !== 'os' || permissoes.includes('os:visualizar')).map((a) => (
           <Tab key={a.id} value={a.id} label={a.rotulo} sx={{ fontSize: 13.5, minHeight: 42 }} />
         ))}
       </Tabs>
@@ -317,6 +324,10 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
 
       {aba === 'imagens' && id && (
         <GaleriaDoCaso casoId={id} permissoes={permissoes} moduloContexto="M05_RECEBIMENTO" />
+      )}
+
+      {aba === 'os' && id && permissoes.includes('os:visualizar') && (
+        <OrdemDoCaso casoId={id} permissoes={permissoes} />
       )}
 
       {aba === 'historico' && (

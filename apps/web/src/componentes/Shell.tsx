@@ -28,6 +28,7 @@ import SpaceDashboard from '@mui/icons-material/SpaceDashboardOutlined';
 import ManageSearch from '@mui/icons-material/ManageSearchOutlined';
 import Colorize from '@mui/icons-material/ColorizeOutlined';
 import PendingActions from '@mui/icons-material/PendingActionsOutlined';
+import RequestQuoteOutlined from '@mui/icons-material/RequestQuoteOutlined';
 import Science from '@mui/icons-material/ScienceOutlined';
 import Contacts from '@mui/icons-material/ContactsOutlined';
 import MedicalServices from '@mui/icons-material/MedicalServicesOutlined';
@@ -108,6 +109,13 @@ const MENU = [
     icone: <PendingActions fontSize="small" />,
     rotulo: MODULO_LABEL[MODULOS.M10_SOLICITACOES],
     permissao: 'solicitacao:visualizar',
+  },
+  {
+    /* M20 (review): a fila da cobrança - conferir a saída e despachar. */
+    para: '/ordens',
+    icone: <RequestQuoteOutlined fontSize="small" />,
+    rotulo: 'Ordens de Serviço',
+    permissao: 'os:visualizar',
   },
   {
     /* M15: a fila é física e atravessa casos - quem está na câmara agora. */

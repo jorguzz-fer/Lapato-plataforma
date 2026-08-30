@@ -23,6 +23,7 @@ import {
   REQUISITO_ESPECIAL_LOGISTICO,
   TIPO_OPERACAO_LOGISTICA,
   TIPO_SERVICO_LOGISTICO,
+  type StatusOrdemServico,
   type StatusSolicitacaoLogistica,
   CONDICAO_OBJETO,
   FINALIDADE_USO,
@@ -97,6 +98,7 @@ import {
 import { FluxoConsultaService } from './m07-fluxo/fluxo-consulta.service.js';
 import { PainelService } from './m07-fluxo/painel.service.js';
 import { LogisticaService } from './m19-logistica/logistica.service.js';
+import { OrdensService } from './m20-ordens/ordens.service.js';
 import { DbService } from '../core/db/db.service.js';
 
 // ---------------------------------------------------------------------------
@@ -2736,3 +2738,138 @@ export class BiotecaController {
     await this.bioteca.adicionarNaColecao(id, dados.objetoId, dados.nota);
   }
 }
+
+// --- M20 (parcial): Ordem de Servico e precos ------------------------------
+
+const itemOrdemSchema = z.object({
+  servicoId: z.string().uuid().nullish(),
+  descricao: z.string().max(300).nullish(),
+  quantidade: z.number().positive().max(100000).optional(),
+  valorUnitario: z.number().min(0).max(9_999_999).nullish(),
+  descontoPercentual: z.number().min(0).max(100).optional(),
+});
+
+const edicaoItemOrdemSchema = z.object({
+  descricao: z.string().min(1).max(300).optional(),
+  quantidade: z.number().positive().max(100000).optional(),
+  valorUnitario: z.number().min(0).max(9_999_999).optional(),
+  descontoPercentual: z.number().min(0).max(100).optional(),
+});
+
+const precoClienteSchema = z.object({
+  servicoId: z.string().uuid(),
+  /** Nulo remove o acordo e devolve o cliente a tabela padrao. */
+  valor: z.number().min(0).max(9_999_999).nullable(),
+});
+
+@ApiTags('M20 - Ordens de Serviço')
+@Controller('ordens')
+export class OrdensController {
+  constructor(private readonly ordens: OrdensService) {}
+
+  @Get()
+  @ExigePermissao(PERMISSOES.OS_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Fila de Ordens de Serviço',
+    description:
+      'A OS nasce na conferência do recebimento e é o que o financeiro fatura — ' +
+      'a cobrança nunca sai de um caso solto.',
+  })
+  async listar(@Query('status') status?: string) {
+    return this.ordens.listar(status as StatusOrdemServico | undefined);
+  }
+
+  @Get('casos/:casoId')
+  @ExigePermissao(PERMISSOES.OS_VISUALIZAR)
+  @ApiOperation({ summary: 'OS do caso, com itens e total calculado' })
+  async porCaso(@Param('casoId', ParseUUIDPipe) casoId: string) {
+    return this.ordens.buscarPorCaso(casoId);
+  }
+
+  @Post(':id/itens')
+  @ExigePermissao(PERMISSOES.OS_EDITAR)
+  @ApiOperation({
+    summary: 'Adiciona um item à OS aberta',
+    description:
+      'Com serviço, o preço entra do acordo do cliente ou da tabela padrão; sem ' +
+      'serviço é item avulso, criado na hora, com descrição e valor próprios.',
+  })
+  async adicionarItem(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    return this.ordens.adicionarItem(id, validarCorpo(itemOrdemSchema, corpo));
+  }
+
+  @Post(':id/itens/:itemId')
+  @ExigePermissao(PERMISSOES.OS_EDITAR)
+  @ApiOperation({ summary: 'Edita quantidade, valor, desconto ou descrição de um item' })
+  async editarItem(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() corpo: unknown,
+  ) {
+    return this.ordens.editarItem(id, itemId, validarCorpo(edicaoItemOrdemSchema, corpo));
+  }
+
+  @Post(':id/itens/:itemId/remocao')
+  @ExigePermissao(PERMISSOES.OS_EDITAR)
+  @ApiOperation({ summary: 'Remove um item da OS aberta' })
+  async removerItem(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+  ) {
+    return this.ordens.removerItem(id, itemId);
+  }
+
+  @Post(':id/conferencia')
+  @ExigePermissao(PERMISSOES.OS_CONFERIR)
+  @ApiOperation({
+    summary: 'Conferência da saída',
+    description:
+      'O ato descrito na review: alguém pega a OS, verifica se tudo que ela ' +
+      'lista foi executado e dá o ok. Congela os itens.',
+  })
+  async conferir(@Param('id', ParseUUIDPipe) id: string) {
+    return this.ordens.conferir(id);
+  }
+
+  @Post(':id/despacho')
+  @ExigePermissao(PERMISSOES.OS_CONFERIR)
+  @ApiOperation({ summary: 'Despacho — a OS fica pronta para o faturamento' })
+  async despachar(@Param('id', ParseUUIDPipe) id: string) {
+    return this.ordens.despachar(id);
+  }
+
+  @Post(':id/cancelamento')
+  @ExigePermissao(PERMISSOES.OS_EDITAR)
+  @ApiOperation({ summary: 'Cancela a OS, com motivo obrigatório' })
+  async cancelar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(z.object({ motivo: z.string().min(1) }), corpo);
+    return this.ordens.cancelar(id, dados.motivo);
+  }
+}
+
+@ApiTags('M20 - Preços')
+@Controller('precos')
+export class PrecosController {
+  constructor(private readonly ordens: OrdensService) {}
+
+  @Get('clientes/:clienteId')
+  @ExigePermissao(PERMISSOES.PRECO_GERENCIAR)
+  @ApiOperation({
+    summary: 'Tabela de preços do cliente',
+    description:
+      'O catálogo inteiro com o valor padrão e o acordo personalizado lado a ' +
+      'lado — "tabela padrão ou personalizada", como na rotina do laboratório.',
+  })
+  async doCliente(@Param('clienteId', ParseUUIDPipe) clienteId: string) {
+    return this.ordens.precosDoCliente(clienteId);
+  }
+
+  @Post('clientes/:clienteId')
+  @ExigePermissao(PERMISSOES.PRECO_GERENCIAR)
+  @ApiOperation({ summary: 'Define ou remove (valor nulo) o acordo de um serviço' })
+  async definir(@Param('clienteId', ParseUUIDPipe) clienteId: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(precoClienteSchema, corpo);
+    return this.ordens.definirPrecoCliente(clienteId, dados.servicoId, dados.valor);
+  }
+}
+

@@ -16,3 +16,4 @@ export * from './bioteca.js';
 export * from './pessoas.js';
 export * from './dia.js';
 export * from './logistica.js';
+export * from './ordens.js';

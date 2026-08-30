@@ -3764,3 +3764,177 @@ describe('assistência de IA exige perfil interno (M17)', () => {
     expect(interno.status, JSON.stringify(interno.body)).toBe(201);
   });
 });
+
+describe('ordem de serviço: do recebimento ao despacho (M20 parcial)', () => {
+  /**
+   * O ciclo que o laboratório descreveu na review: a OS nasce quando o
+   * material foi CONFERIDO no recebimento, com o preço do acordo do cliente
+   * (ou da tabela padrão), acompanha o caso, e no fim alguém confere se tudo
+   * que ela lista foi feito - conferiu, despachou, e só então vira fatura.
+   */
+  let casoId: string;
+  let ordemId: string;
+  let itemPrincipalId: string;
+  let clienteId: string;
+  let servicoId: string;
+
+  test('preço padrão no serviço, acordo por cliente', async () => {
+    await entrar('admin@lapato.local');
+
+    const servicos = await req('GET', '/administracao/servicos');
+    const histo = servicos.body.find((s: any) => s.codigo === 'HISTO');
+    servicoId = histo.id;
+
+    const preco = await req('POST', `/administracao/servicos/${servicoId}`, {
+      valorPadrao: 150,
+    });
+    expect(preco.status, JSON.stringify(preco.body)).toBe(201);
+
+    const clientes = await req('GET', '/catalogo/clientes');
+    clienteId = clientes.body[0].id;
+
+    // O acordo: este cliente paga 120 no mesmo serviço.
+    const acordo = await req('POST', `/precos/clientes/${clienteId}`, {
+      servicoId,
+      valor: 120,
+    });
+    expect(acordo.status, JSON.stringify(acordo.body)).toBe(201);
+
+    const tabela = await req('GET', `/precos/clientes/${clienteId}`);
+    expect(tabela.status).toBe(200);
+    const linha = tabela.body.find((l: any) => l.servicoId === servicoId);
+    expect(Number(linha.valorPadrao)).toBe(150);
+    expect(Number(linha.valorCliente)).toBe(120);
+  });
+
+  test('a OS nasce na conferência do recebimento, com o preço do acordo', async () => {
+    await entrar('recepcao@lapato.local');
+
+    const criado = await req('POST', '/casos', {
+      servicoId,
+      clienteId,
+      paciente: { nome: `Cobrança ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Nódulo de pele' }, { descricao: 'Linfonodo' }],
+      recipientes: [{ quantidadeDeclarada: 2 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    casoId = criado.body.id;
+
+    // Antes do recebimento, não há ordem: cadastrar não é cobrar (M05 §12).
+    const antes = await req('GET', `/ordens/casos/${casoId}`);
+    expect(antes.status).toBe(200);
+    expect(antes.body).toBeNull();
+
+    await entrar('tecnico@lapato.local');
+    const dossie = await req('GET', `/casos/${casoId}`);
+    const recebimento = await req('POST', `/casos/${casoId}/recebimento`, {
+      conferencia: dossie.body.recipientes.map((r: any) => ({
+        recipienteId: r.id,
+        quantidadeRecebida: r.quantidadeDeclarada,
+      })),
+    });
+    expect(recebimento.status, JSON.stringify(recebimento.body)).toBe(201);
+
+    const ordem = await req('GET', `/ordens/casos/${casoId}`);
+    expect(ordem.status, JSON.stringify(ordem.body)).toBe(200);
+    expect(ordem.body.identificador).toMatch(/^OS-\d{4}-\d{6}$/);
+    expect(ordem.body.status).toBe('aberta');
+
+    // Uma amostra por linha não: o item principal agrega as DUAS amostras
+    // conferidas, ao preço do acordo (120), não da tabela padrão (150).
+    expect(ordem.body.itens).toHaveLength(1);
+    expect(Number(ordem.body.itens[0].quantidade)).toBe(2);
+    expect(Number(ordem.body.itens[0].valorUnitario)).toBe(120);
+    expect(ordem.body.total).toBe(240);
+
+    ordemId = ordem.body.id;
+    itemPrincipalId = ordem.body.itens[0].id;
+
+    // O nascimento da ordem fica na linha do tempo do caso.
+    const tipos = (await req('GET', `/casos/${casoId}`)).body.linhaDoTempo.map(
+      (e: any) => e.tipo,
+    );
+    expect(tipos).toContain('os.criada');
+  });
+
+  test('recepção ajusta desconto e adiciona item avulso; total recalcula', async () => {
+    await entrar('recepcao@lapato.local');
+
+    const desconto = await req('POST', `/ordens/${ordemId}/itens/${itemPrincipalId}`, {
+      descontoPercentual: 10,
+    });
+    expect(desconto.status, JSON.stringify(desconto.body)).toBe(201);
+
+    // "Vender um serviço de consultoria dá pra fazer por lá": item avulso,
+    // criado na hora, sem cadastro prévio.
+    const avulso = await req('POST', `/ordens/${ordemId}/itens`, {
+      descricao: 'Fotografia macroscópica adicional',
+      quantidade: 1,
+      valorUnitario: 30,
+    });
+    expect(avulso.status, JSON.stringify(avulso.body)).toBe(201);
+
+    const ordem = await req('GET', `/ordens/casos/${casoId}`);
+    // 2 × 120 − 10% = 216, mais 30 do avulso.
+    expect(ordem.body.total).toBe(246);
+  });
+
+  test('quem não vê cobrança não vê a OS', async () => {
+    await entrar('patologista@lapato.local');
+    const lista = await req('GET', '/ordens');
+    expect(lista.status, 'patologista não tem os:visualizar').toBe(403);
+  });
+
+  test('despacho sem conferência é barrado; conferir e despachar seguem a ordem', async () => {
+    await entrar('tecnico@lapato.local');
+
+    // Pular a conferência é pular a pergunta "foi tudo feito?".
+    const precoce = await req('POST', `/ordens/${ordemId}/despacho`, {});
+    expect(precoce.status).toBe(400);
+
+    const conferencia = await req('POST', `/ordens/${ordemId}/conferencia`, {});
+    expect(conferencia.status, JSON.stringify(conferencia.body)).toBe(201);
+
+    // Conferida congela: a recepção não mexe mais nos itens.
+    await entrar('recepcao@lapato.local');
+    const tarde = await req('POST', `/ordens/${ordemId}/itens`, {
+      descricao: 'Item atrasado',
+      valorUnitario: 10,
+    });
+    expect(tarde.status).toBe(400);
+
+    await entrar('tecnico@lapato.local');
+    const despacho = await req('POST', `/ordens/${ordemId}/despacho`, {});
+    expect(despacho.status, JSON.stringify(despacho.body)).toBe(201);
+
+    const ordem = await req('GET', `/ordens/casos/${casoId}`);
+    expect(ordem.body.status).toBe('despachada');
+
+    const fila = await req('GET', '/ordens?status=despachada');
+    expect(fila.status).toBe(200);
+    expect(fila.body.some((o: any) => o.id === ordemId)).toBe(true);
+  });
+
+  test('mudar o preço depois não retroage sobre a ordem', async () => {
+    await entrar('admin@lapato.local');
+
+    const reajuste = await req('POST', `/precos/clientes/${clienteId}`, {
+      servicoId,
+      valor: 999,
+    });
+    expect(reajuste.status).toBe(201);
+
+    // O item guarda o retrato de quando entrou (M01: não retroage).
+    const ordem = await req('GET', `/ordens/casos/${casoId}`);
+    expect(Number(ordem.body.itens[0].valorUnitario)).toBe(120);
+
+    // Valor nulo remove o acordo e devolve o cliente à tabela padrão.
+    const remocao = await req('POST', `/precos/clientes/${clienteId}`, {
+      servicoId,
+      valor: null,
+    });
+    expect(remocao.status).toBe(201);
+    const tabela = await req('GET', `/precos/clientes/${clienteId}`);
+    expect(tabela.body.find((l: any) => l.servicoId === servicoId).valorCliente).toBeNull();
+  });
+});

@@ -34,6 +34,8 @@ const servicoSchema = z.object({
   permiteComplementares: z.boolean().optional(),
   prazoDiasUteis: z.number().int().min(1).max(365).optional(),
   prazoUrgenteDiasUteis: z.number().int().min(1).max(365).nullish(),
+  /** Preco da tabela padrao, em reais. Nulo = sem preco definido. */
+  valorPadrao: z.number().min(0).max(9_999_999).nullish(),
 });
 
 const termoSchema = z.object({

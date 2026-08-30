@@ -142,6 +142,7 @@ export function Macroscopia({ exigeSupervisao }: Props) {
   const [lesoes, setLesoes] = useState<Lesao[]>([]);
   const [margens, setMargens] = useState<Margem[]>([]);
   const [novosCassetes, setNovosCassetes] = useState<CasseteNovo[]>([]);
+  const [quantidadeCassetes, setQuantidadeCassetes] = useState('1');
 
   const [erro, setErro] = useState<string | null>(null);
   const [bloqueioGuardian, setBloqueioGuardian] = useState<ErroApi | null>(null);
@@ -707,18 +708,43 @@ export function Macroscopia({ exigeSupervisao }: Props) {
               descricao="Cada cassete precisa de tecido de origem. É o primeiro elo da rastreabilidade até a lâmina."
               acao={
                 !concluida && (
-                  <Button
-                    size="small"
-                    startIcon={<AddOutlined />}
-                    onClick={() =>
-                      setNovosCassetes((a) => [
-                        ...a,
-                        { tecidoOrigem: '', descricao: '', exigeDescalcificacao: false },
-                      ])
-                    }
-                  >
-                    Adicionar
-                  </Button>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                    <TextField
+                      size="small"
+                      label="Qtd."
+                      value={quantidadeCassetes}
+                      onChange={(e) => setQuantidadeCassetes(e.target.value)}
+                      sx={{ width: 64, '& input': { textAlign: 'center' } }}
+                    />
+                    {/**
+                      * Review: "eu pensei que ele já criasse o cassete de cada
+                      * amostra... o cara tem que inserir um a um". Um clique
+                      * gera N linhas com o tecido de origem herdado da amostra
+                      * (editável) — quantos são, só quem cortou sabe, então a
+                      * quantidade é informada, não adivinhada.
+                      */}
+                    <Button
+                      size="small"
+                      startIcon={<AddOutlined />}
+                      onClick={() => {
+                        const quantidade = Math.min(
+                          Math.max(Math.trunc(Number(quantidadeCassetes)) || 1, 1),
+                          40,
+                        );
+                        const tecido = amostra?.descricao?.trim() ?? '';
+                        setNovosCassetes((a) => [
+                          ...a,
+                          ...Array.from({ length: quantidade }, () => ({
+                            tecidoOrigem: tecido,
+                            descricao: '',
+                            exigeDescalcificacao: false,
+                          })),
+                        ]);
+                      }}
+                    >
+                      Gerar cassetes
+                    </Button>
+                  </Stack>
                 )
               }
             >

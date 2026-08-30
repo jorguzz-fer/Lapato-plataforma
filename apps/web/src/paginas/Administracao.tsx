@@ -72,7 +72,7 @@ const FLAGS_SERVICO = [
 
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
 
-type Aba = 'servicos' | 'tabelas' | 'unidades' | 'locais' | 'calendario';
+type Aba = 'servicos' | 'tabelas' | 'unidades' | 'locais' | 'etiquetas' | 'calendario';
 
 export function Administracao({ permissoes }: { permissoes: string[] }) {
   const [aba, setAba] = useState<Aba>('servicos');
@@ -100,6 +100,7 @@ export function Administracao({ permissoes }: { permissoes: string[] }) {
         <Tab value="tabelas" label="Tabelas mestres" />
         <Tab value="unidades" label="Unidades e setores" />
         <Tab value="locais" label="Locais físicos" />
+        <Tab value="etiquetas" label="Etiquetas" />
         <Tab value="calendario" label="Calendário" />
       </Tabs>
 
@@ -107,6 +108,7 @@ export function Administracao({ permissoes }: { permissoes: string[] }) {
       {aba === 'tabelas' && <AbaTabelas podeEditar={podeTabelas} />}
       {aba === 'unidades' && <AbaUnidades podeEditar={podeUnidades} />}
       {aba === 'locais' && <AbaLocais podeEditar={podeUnidades} />}
+      {aba === 'etiquetas' && <AbaEtiquetas podeEditar={podeConfig} />}
       {aba === 'calendario' && <AbaCalendario podeEditar={podeConfig} />}
     </Box>
   );
@@ -1171,3 +1173,140 @@ function AbaLocais({ podeEditar }: { podeEditar: boolean }) {
     </Box>
   );
 }
+
+// --- etiquetas -----------------------------------------------------------------
+
+interface ModeloEtiqueta {
+  id: string;
+  nome: string;
+  alvo: string;
+  larguraMm: number;
+  alturaMm: number;
+  copiasPadrao: number;
+}
+
+/**
+ * M01 §19 — modelos de etiqueta. Só as DIMENSÕES são editáveis: o layout
+ * (campos, código de barras) tem contrato com o código que imprime. O caso de
+ * uso real é o da review do M09: o laboratório de apoio informa as medidas da
+ * etiqueta dele, alguém ajusta aqui, e a impressão sai no tamanho certo — sem
+ * deploy.
+ */
+function AbaEtiquetas({ podeEditar }: { podeEditar: boolean }) {
+  const [modelos, setModelos] = useState<ModeloEtiqueta[]>([]);
+  const [edicao, setEdicao] = useState<Record<string, { largura: string; altura: string }>>({});
+  const [erro, setErro] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const [carregado, setCarregado] = useState(false);
+
+  const carregar = useCallback(() => {
+    api
+      .get<ModeloEtiqueta[]>('/administracao/etiquetas')
+      .then((r) => {
+        setModelos(r);
+        setEdicao(
+          Object.fromEntries(
+            r.map((m) => [m.id, { largura: String(m.larguraMm), altura: String(m.alturaMm) }]),
+          ),
+        );
+      })
+      .catch(() => setErro('Não foi possível carregar os modelos.'))
+      .finally(() => setCarregado(true));
+  }, []);
+
+  useEffect(carregar, [carregar]);
+
+  async function salvar(modelo: ModeloEtiqueta) {
+    const atual = edicao[modelo.id];
+    if (!atual) return;
+    setOcupado(true);
+    setErro(null);
+    setAviso(null);
+    try {
+      await api.post(`/administracao/etiquetas/${modelo.id}`, {
+        larguraMm: Number(atual.largura),
+        alturaMm: Number(atual.altura),
+      });
+      setAviso(`"${modelo.nome}" agora imprime em ${atual.largura} × ${atual.altura} mm.`);
+      carregar();
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível salvar.');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  if (!carregado) return <Skeleton variant="rounded" height={200} />;
+
+  return (
+    <Stack spacing={1.5}>
+      {erro && <Alert severity="error">{erro}</Alert>}
+      {aviso && <Alert severity="success">{aviso}</Alert>}
+      <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+        As dimensões valem para a próxima impressão. O conteúdo da etiqueta (campos e código de
+        barras) faz parte do sistema e não se edita por aqui.
+      </Typography>
+
+      {modelos.map((m) => (
+        <Card key={m.id} sx={{ p: 2 }}>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={2}
+            sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{m.nome}</Typography>
+              <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                Alvo: {m.alvo} · hoje {m.larguraMm} × {m.alturaMm} mm
+              </Typography>
+            </Box>
+            {podeEditar && (
+              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexShrink: 0 }}>
+                <TextField
+                  size="small"
+                  label="Largura (mm)"
+                  value={edicao[m.id]?.largura ?? ''}
+                  onChange={(e) =>
+                    setEdicao((a) => ({
+                      ...a,
+                      [m.id]: { largura: e.target.value, altura: a[m.id]?.altura ?? '' },
+                    }))
+                  }
+                  sx={{ width: 110 }}
+                />
+                <TextField
+                  size="small"
+                  label="Altura (mm)"
+                  value={edicao[m.id]?.altura ?? ''}
+                  onChange={(e) =>
+                    setEdicao((a) => ({
+                      ...a,
+                      [m.id]: { largura: a[m.id]?.largura ?? '', altura: e.target.value },
+                    }))
+                  }
+                  sx={{ width: 110 }}
+                />
+                <Button
+                  size="small"
+                  variant="contained"
+                  disabled={
+                    ocupado ||
+                    !Number.isInteger(Number(edicao[m.id]?.largura)) ||
+                    !Number.isInteger(Number(edicao[m.id]?.altura)) ||
+                    Number(edicao[m.id]?.largura) < 10 ||
+                    Number(edicao[m.id]?.altura) < 5
+                  }
+                  onClick={() => void salvar(m)}
+                >
+                  Salvar
+                </Button>
+              </Stack>
+            )}
+          </Stack>
+        </Card>
+      ))}
+    </Stack>
+  );
+}
+

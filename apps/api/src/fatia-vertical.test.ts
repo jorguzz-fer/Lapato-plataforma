@@ -4208,3 +4208,48 @@ describe('descrição rápida em bloquinhos e etiquetas do parceiro (M08 + M09)'
     expect(bytes.length).toBeGreaterThan(800);
   });
 });
+
+describe('modelo de etiqueta ajustável pela Administração (M01 §19)', () => {
+  test('mudar as dimensões muda o tamanho da página do PDF, sem deploy', async () => {
+    await entrar('admin@lapato.local');
+
+    const modelos = await req('GET', '/administracao/etiquetas');
+    expect(modelos.status, JSON.stringify(modelos.body)).toBe(200);
+    const lamina = modelos.body.find((m: any) => m.alvo === 'lamina');
+    expect(lamina, 'modelo de lâmina não semeado').toBeTruthy();
+
+    /**
+     * O caso da review do M09: o laboratório de apoio manda as medidas da
+     * etiqueta DELE e o ajuste é feito na tela. 30 × 20 mm em pontos PDF é
+     * 85.04 × 56.69 - o MediaBox da página tem que refletir isso.
+     */
+    const ajuste = await req('POST', `/administracao/etiquetas/${lamina.id}`, {
+      larguraMm: 30,
+      alturaMm: 20,
+    });
+    expect(ajuste.status, JSON.stringify(ajuste.body)).toBe(201);
+
+    await entrar('tecnico@lapato.local');
+    const lotes = await req('GET', '/processamento/lotes');
+    const resposta = await fetch(
+      `${servidor}${BASE}/processamento/lotes/${lotes.body[0].id}/etiquetas`,
+      { headers: { cookie } },
+    );
+    expect(resposta.status).toBe(200);
+    const conteudo = Buffer.from(await resposta.arrayBuffer()).toString('latin1');
+    expect(conteudo).toContain('85.0393');
+
+    // Devolve o padrão para os demais testes e para o seed continuar valendo.
+    await entrar('admin@lapato.local');
+    await req('POST', `/administracao/etiquetas/${lamina.id}`, {
+      larguraMm: 22,
+      alturaMm: 15,
+    });
+
+    // Dimensão absurda é recusada antes de chegar ao banco.
+    const invalido = await req('POST', `/administracao/etiquetas/${lamina.id}`, {
+      larguraMm: 2,
+    });
+    expect(invalido.status).toBe(400);
+  });
+});

@@ -3,6 +3,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import {
   diaNaoUtil,
   localFisico,
+  modeloEtiqueta,
   servico,
   setor,
   tabelaMestre,
@@ -71,6 +72,48 @@ export class AdministracaoService {
   ) {}
 
   // --- servicos (secoes 10-13) ----------------------------------------------
+
+  // --- Modelos de etiqueta (M01 secao 19) --------------------------------
+
+  async listarModelosEtiqueta(): Promise<unknown[]> {
+    const ctx = exigirContexto();
+    return this.db.executar((tx) =>
+      tx
+        .select()
+        .from(modeloEtiqueta)
+        .where(eq(modeloEtiqueta.tenantId, ctx.tenantId))
+        .orderBy(asc(modeloEtiqueta.nome)),
+    );
+  }
+
+  /**
+   * So as dimensoes sao editaveis pela tela. O layout (campos, codigo de
+   * barras) tem contrato com o codigo que imprime - muda-lo sem mudar o
+   * renderizador quebraria a etiqueta em silencio, entao segue no seed.
+   * O caso de uso real: o laboratorio de apoio manda as medidas da etiqueta
+   * DELES, e o ajuste e aqui - nunca no codigo (review M09).
+   */
+  async editarModeloEtiqueta(
+    id: string,
+    dados: { larguraMm?: number; alturaMm?: number; copiasPadrao?: number },
+  ): Promise<void> {
+    return this.db.executar(async (tx) => {
+      const atual = await this.buscar(tx, modeloEtiqueta, id, 'Modelo de etiqueta');
+
+      const mudancas: Record<string, unknown> = {};
+      if (dados.larguraMm !== undefined) mudancas.larguraMm = dados.larguraMm;
+      if (dados.alturaMm !== undefined) mudancas.alturaMm = dados.alturaMm;
+      if (dados.copiasPadrao !== undefined) mudancas.copiasPadrao = dados.copiasPadrao;
+      if (Object.keys(mudancas).length === 0) return;
+
+      await tx
+        .update(modeloEtiqueta)
+        .set({ ...mudancas, atualizadoEm: new Date() })
+        .where(eq(modeloEtiqueta.id, id));
+
+      await this.auditoria.registrarAlteracao(tx, 'modelo_etiqueta', id, atual, mudancas);
+    });
+  }
 
   async listarServicos(): Promise<unknown[]> {
     const ctx = exigirContexto();
@@ -658,7 +701,8 @@ export class AdministracaoService {
       | typeof unidade
       | typeof setor
       | typeof tabelaMestre
-      | typeof localFisico,
+      | typeof localFisico
+      | typeof modeloEtiqueta,
     id: string,
     rotulo: string,
   ) {

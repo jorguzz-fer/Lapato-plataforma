@@ -148,6 +148,37 @@ export class AdministracaoController {
 
   // --- tabelas mestres e termos ----------------------------------------------
 
+  @Get('etiquetas')
+  @ExigePermissao(PERMISSOES.CONFIG_VISUALIZAR)
+  @ApiOperation({ summary: 'Modelos de etiqueta (M01 §19)' })
+  async modelosEtiqueta() {
+    return this.admin.listarModelosEtiqueta();
+  }
+
+  @Post('etiquetas/:id')
+  @ExigePermissao(PERMISSOES.CONFIG_EDITAR)
+  @ApiOperation({
+    summary: 'Ajusta as dimensões de um modelo de etiqueta',
+    description:
+      'O caso real: o laboratório de apoio informa as medidas da etiqueta ' +
+      'DELE e a impressão passa a sair no tamanho certo — sem deploy. O ' +
+      'layout (campos, código de barras) tem contrato com o renderizador e ' +
+      'não é editável por aqui.',
+  })
+  async editarModeloEtiqueta(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.admin.editarModeloEtiqueta(
+      id,
+      validarCorpo(
+        z.object({
+          larguraMm: z.number().int().min(10).max(300).optional(),
+          alturaMm: z.number().int().min(5).max(300).optional(),
+          copiasPadrao: z.number().int().min(1).max(20).optional(),
+        }),
+        corpo,
+      ),
+    );
+  }
+
   @Get('tabelas')
   @ExigePermissao(PERMISSOES.CONFIG_VISUALIZAR)
   @ApiOperation({ summary: 'Tabelas mestres com a contagem de termos ativos' })

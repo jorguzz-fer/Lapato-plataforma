@@ -25,6 +25,8 @@ interface CamposLocais {
  * com horario de verao continua correto quando ele entra ou sai de vigencia.
  */
 function deslocamentoMs(instante: Date, fuso: string): number {
+  if (!fusoSuportado(fuso)) return 0;
+
   const partes = new Intl.DateTimeFormat('en-US', {
     timeZone: fuso,
     hour12: false,
@@ -88,15 +90,34 @@ export function diaLocalIso(instante: Date, fuso = FUSO_PADRAO): string {
   return `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
 }
 
-/** Le o fuso configurado pela instituicao, caindo no padrao quando ausente. */
-export function fusoDaInstituicao(preferencias: Record<string, unknown> | null | undefined): string {
-  const fuso = preferencias?.['fuso'];
-  if (typeof fuso !== 'string' || fuso.trim() === '') return FUSO_PADRAO;
+/**
+ * Se este runtime sabe converter para o fuso pedido.
+ *
+ * Nao e so sobre nome errado na configuracao. Um Node compilado com ICU
+ * reduzido (`small-icu`) conhece apenas UTC, e pedir `America/Sao_Paulo` a ele
+ * lanca `RangeError` - de dentro de uma funcao pura, no meio de uma consulta,
+ * virando 500 sem nenhuma pista do motivo. Melhor perguntar antes.
+ */
+export function fusoSuportado(fuso: string): boolean {
   try {
-    // Um fuso invalido vindo da configuracao nao pode derrubar o painel.
     new Intl.DateTimeFormat('en-US', { timeZone: fuso });
-    return fuso;
+    return true;
   } catch {
-    return FUSO_PADRAO;
+    return false;
   }
+}
+
+/**
+ * Le o fuso configurado pela instituicao, caindo no padrao quando ausente.
+ *
+ * Aceita `fuso` e `fusoHorario`: o provisionamento grava `fusoHorario` em
+ * `tenant.preferencias`, e ler so uma das duas chaves fazia o painel ignorar em
+ * silencio o fuso que a instituicao configurou - o pior tipo de erro, porque a
+ * tela continua funcionando e so os numeros do dia ficam errados.
+ */
+export function fusoDaInstituicao(preferencias: Record<string, unknown> | null | undefined): string {
+  const bruto = preferencias?.['fusoHorario'] ?? preferencias?.['fuso'];
+  if (typeof bruto !== 'string' || bruto.trim() === '') return FUSO_PADRAO;
+  // Um fuso invalido vindo da configuracao nao pode derrubar o painel.
+  return fusoSuportado(bruto) ? bruto : FUSO_PADRAO;
 }

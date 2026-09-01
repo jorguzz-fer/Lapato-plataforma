@@ -181,3 +181,36 @@ export const espacamento = {
   cartao: { xs: '18px', sm: '20px', lg: '25px' },
   linhaDensa: '15px 20px',
 } as const;
+
+/**
+ * Tons dos bloquinhos da descricao rapida (M08).
+ *
+ * A bancada que o dono do produto ja opera usa bloquinhos multicoloridos, e foi
+ * o que ele pediu para trazer para o LAPATO. A cor aqui e identidade visual,
+ * nao significado: o que o bloquinho quer dizer esta no rotulo do grupo, e a
+ * marcacao NAO pode depender de cor - por isso o bloquinho marcado ganha
+ * preenchimento solido e um sinal de marcado, e nao apenas outro tom.
+ *
+ * Ficam de fora `atencao` e `perigo`: amarelo e vermelho ja significam prazo
+ * estourado e nivel critico da IA em toda a aplicacao, e reusa-los num
+ * descritor neutro ensinaria o olho a ignorar o alerta.
+ */
+export const tomBloquinho = [
+  { texto: marca.roxo[600], borda: '#e9d5ff', fundo: marca.roxo[50], ativo: marca.roxo.main },
+  {
+    texto: marca.sucesso[700],
+    borda: '#c4eeb2',
+    fundo: marca.sucesso[50],
+    ativo: marca.sucesso.main,
+  },
+  { texto: marca.primaria[600], borda: '#c9dcfe', fundo: '#f2f7ff', ativo: marca.secundaria.main },
+  { texto: '#c2410c', borda: '#ffd9c4', fundo: marca.laranja[50], ativo: marca.laranja.main },
+  {
+    texto: marca.primaria[700],
+    borda: marca.primaria[100],
+    fundo: marca.primaria[50],
+    ativo: marca.primaria.main,
+  },
+] as const;
+
+export type TomBloquinho = (typeof tomBloquinho)[number];

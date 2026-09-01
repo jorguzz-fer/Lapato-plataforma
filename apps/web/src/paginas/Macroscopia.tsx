@@ -4,6 +4,7 @@ import Alert from '@mui/material/Alert';
 import AlertTitle from '@mui/material/AlertTitle';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import ButtonBase from '@mui/material/ButtonBase';
 import Card from '@mui/material/Card';
 import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
@@ -19,21 +20,20 @@ import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddOutlined from '@mui/icons-material/AddOutlined';
+import CheckOutlined from '@mui/icons-material/CheckOutlined';
 import DeleteOutline from '@mui/icons-material/DeleteOutlined';
 import ScienceOutlined from '@mui/icons-material/ScienceOutlined';
+import { tomBloquinho } from '@lapato/design-tokens';
 import {
+  comporDescricaoMacro,
   GRUPOS_DESCRITORES_MACRO,
   LATERALIDADE,
   METODO_AMOSTRAGEM,
+  TEXTO_TODO_MATERIAL,
   type Lateralidade,
   type MetodoAmostragem,
 } from '@lapato/shared';
-import {
-  api,
-  ErroApi,
-  type Dossie as DadosDossie,
-  type FichaMacroscopia,
-} from '../api';
+import { api, ErroApi, type Dossie as DadosDossie, type FichaMacroscopia } from '../api';
 import { BloqueioGuardian } from './BloqueioGuardian';
 import { AvisoBancadaBloqueada, impedimentoDeBancada } from './AvisoBancadaBloqueada';
 
@@ -165,7 +165,13 @@ export function Macroscopia({ exigeSupervisao }: Props) {
   const carregar = useCallback((dados: FichaMacroscopia | null) => {
     setFicha(dados);
     setDescricaoTexto(dados?.descricaoTexto ?? '');
-    setSelecoes({});
+    /*
+      "Todo o material" é bloquinho E campo gravado da ficha: o M18 lê esse
+      campo para saber se sobra remanescente para a Bioteca. Semear a marcação
+      a partir do que está no banco impede que a frase composta diga uma coisa
+      e o dado diga outra.
+    */
+    setSelecoes(dados?.materialTotalmenteIncluido ? { representacao: [TEXTO_TODO_MATERIAL] } : {});
     setOutroPorGrupo({});
     setComprimento(dados?.comprimentoCm ?? '');
     setLargura(dados?.larguraCm ?? '');
@@ -226,6 +232,39 @@ export function Macroscopia({ exigeSupervisao }: Props) {
   const concluida = ficha?.concluidaEm != null;
   const proximoRotulo = `L${String(lesoes.length + 1).padStart(2, '0')}`;
 
+  /**
+   * Marca e desmarca um bloquinho. O par "todo o material" espelha o campo
+   * gravado da ficha - um fato, um lugar.
+   */
+  function alternar(chave: string, texto: string) {
+    const marcado = (selecoes[chave] ?? []).includes(texto);
+    if (chave === 'representacao' && texto === TEXTO_TODO_MATERIAL) {
+      setTotalmenteIncluido(!marcado);
+    }
+    setSelecoes((a) => {
+      const atuais = a[chave] ?? [];
+      return { ...a, [chave]: marcado ? atuais.filter((t) => t !== texto) : [...atuais, texto] };
+    });
+  }
+
+  /**
+   * A previa usa a MESMA funcao do servidor: o que aparece na tela e o que
+   * seria gravado se nao houvesse IA nenhuma.
+   */
+  /** Só medidas produzem frase, mas não são descrição: o servidor recusa. */
+  const temBloquinho = Object.values(selecoes).some((v) => v.some((t) => t.trim() !== ''));
+
+  const previa = useMemo(
+    () =>
+      comporDescricaoMacro(selecoes, {
+        comprimentoCm: numero(comprimento),
+        larguraCm: numero(largura),
+        alturaCm: numero(altura),
+        pesoG: numero(peso),
+      }),
+    [selecoes, comprimento, largura, altura, peso],
+  );
+
   async function iniciar() {
     setOcupado(true);
     setErro(null);
@@ -246,9 +285,20 @@ export function Macroscopia({ exigeSupervisao }: Props) {
    */
   async function compor() {
     if (!ficha) return;
+    /*
+      Salvar antes de compor não é zelo: as medidas da frase vêm da ficha
+      GRAVADA, então compor com medida recém-digitada e não salva devolveria um
+      texto sem as medidas que estão na tela — o tipo de divergência silenciosa
+      que ninguém percebe até o laudo sair. As marcações são congeladas porque
+      recarregar a ficha limpa a seleção.
+    */
+    const marcadas = selecoes;
     setCompondo(true);
     setErro(null);
     try {
+      if (!(await salvar())) return;
+      setSelecoes(marcadas);
+
       const r = await api.post<{ texto: string; origem: 'ia' | 'padrao' }>(
         `/macroscopia/${ficha.id}/composicao`,
         { selecoes },
@@ -280,14 +330,16 @@ export function Macroscopia({ exigeSupervisao }: Props) {
         materialTotalmenteIncluido: totalmenteIncluido,
         ...(lesoes.filter((l) => !lesaoIntocada(l)).length > 0
           ? {
-              lesoes: lesoes.filter((l) => !lesaoIntocada(l)).map((l) => ({
-                rotulo: l.rotulo,
-                ...(l.tipo.trim() ? { tipo: l.tipo.trim() } : {}),
-                ...(l.localizacao.trim() ? { localizacao: l.localizacao.trim() } : {}),
-                lateralidade: l.lateralidade,
-                ...(numero(l.maiorEixoCm) ? { maiorEixoCm: numero(l.maiorEixoCm) } : {}),
-                ...(numero(l.menorEixoCm) ? { menorEixoCm: numero(l.menorEixoCm) } : {}),
-              })),
+              lesoes: lesoes
+                .filter((l) => !lesaoIntocada(l))
+                .map((l) => ({
+                  rotulo: l.rotulo,
+                  ...(l.tipo.trim() ? { tipo: l.tipo.trim() } : {}),
+                  ...(l.localizacao.trim() ? { localizacao: l.localizacao.trim() } : {}),
+                  lateralidade: l.lateralidade,
+                  ...(numero(l.maiorEixoCm) ? { maiorEixoCm: numero(l.maiorEixoCm) } : {}),
+                  ...(numero(l.menorEixoCm) ? { menorEixoCm: numero(l.menorEixoCm) } : {}),
+                })),
             }
           : {}),
         ...(margens.length > 0
@@ -355,8 +407,7 @@ export function Macroscopia({ exigeSupervisao }: Props) {
   const cassetesIncompletos = novosCassetes.some((c) => c.tecidoOrigem.trim() === '');
   const lesoesIncompletas = lesoes.some((l) => l.rotulo.trim() === '' && !lesaoIntocada(l));
   const margensIncompletas = margens.some((m) => m.nome.trim() === '');
-  const podeSalvar =
-    !ocupado && !cassetesIncompletos && !lesoesIncompletas && !margensIncompletas;
+  const podeSalvar = !ocupado && !cassetesIncompletos && !lesoesIncompletas && !margensIncompletas;
 
   if (!dossie) {
     return erro ? (
@@ -421,9 +472,11 @@ export function Macroscopia({ exigeSupervisao }: Props) {
         <Skeleton variant="rounded" height={320} />
       ) : travadaNaTriagem ? (
         <Alert severity="warning">
-          <AlertTitle>Amostra {amostra?.resultadoTriagem?.replaceAll('_', ' ')} na triagem</AlertTitle>
-          Material com esse resultado não segue para a bancada. Resolva a pendência de triagem
-          antes da macroscopia.
+          <AlertTitle>
+            Amostra {amostra?.resultadoTriagem?.replaceAll('_', ' ')} na triagem
+          </AlertTitle>
+          Material com esse resultado não segue para a bancada. Resolva a pendência de triagem antes
+          da macroscopia.
         </Alert>
       ) : !ficha ? (
         <Card sx={{ p: 4, textAlign: 'center' }}>
@@ -441,8 +494,8 @@ export function Macroscopia({ exigeSupervisao }: Props) {
           {concluida && (
             <Alert severity="success" sx={{ mb: 2.5 }}>
               <AlertTitle>Macroscopia concluída</AlertTitle>
-              Concluída em {new Date(ficha.concluidaEm!).toLocaleString('pt-BR')}. Alterar depois
-              da conclusão exige permissão própria e passa por outra rota.
+              Concluída em {new Date(ficha.concluidaEm!).toLocaleString('pt-BR')}. Alterar depois da
+              conclusão exige permissão própria e passa por outra rota.
             </Alert>
           )}
 
@@ -455,26 +508,170 @@ export function Macroscopia({ exigeSupervisao }: Props) {
           )}
 
           <Stack spacing={2.5}>
-            <Secao titulo="Medidas" descricao="Em centímetros; peso em gramas.">
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <Medida rotulo="Comprimento" valor={comprimento} aoMudar={setComprimento} travado={concluida} />
-                <Medida rotulo="Largura" valor={largura} aoMudar={setLargura} travado={concluida} />
-                <Medida rotulo="Altura" valor={altura} aoMudar={setAltura} travado={concluida} />
-                <Medida rotulo="Peso (g)" valor={peso} aoMudar={setPeso} travado={concluida} />
-              </Stack>
+            {/*
+              O cartão do fragmento: medidas e bloquinhos no mesmo lugar.
 
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={totalmenteIncluido}
-                    onChange={(e) => setTotalmenteIncluido(e.target.checked)}
-                    disabled={concluida}
-                  />
-                }
-                // M18: se nada sobra, não há o que arquivar na Bioteca.
-                label="Material totalmente incluído (não há remanescente)"
-                slotProps={{ typography: { sx: { fontSize: 13.5 } } }}
-              />
+              Vem da bancada que o dono do produto já opera e aprovou na review
+              — "gostei muito do UX/UI, quero refazer a da LAPATO assim". O que
+              muda em relação àquela tela é que aqui a medida é NÚMERO, e não
+              texto livre: é ela que alimenta a frase composta, o Guardian e o
+              laudo. Uma caixa "Ex: 3,0 x 2,0 x 1,5 cm" seria mais bonita e
+              indexaria nada.
+            */}
+            <Secao
+              titulo="Fragmento"
+              descricao="Medidas e descrição rápida. Marque os bloquinhos e componha o texto — a IA lapida quando disponível; sem ela, a frase padrão já sai pronta."
+              acao={
+                <Chip
+                  size="small"
+                  label={amostra?.identificador ?? ''}
+                  sx={{ ...MONO, fontSize: 12, fontWeight: 600 }}
+                />
+              }
+            >
+              {/*
+                Colunas de texto, não grade: os grupos têm alturas diferentes e
+                uma grade deixaria buracos entre linhas desalinhadas.
+              */}
+              <Box sx={{ columnCount: { xs: 1, md: 2 }, columnGap: 3.5 }}>
+                <Box sx={{ breakInside: 'avoid', mb: 2.25 }}>
+                  <RotuloGrupo>Medidas do fragmento</RotuloGrupo>
+                  <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                    <Medida
+                      rotulo="Compr."
+                      valor={comprimento}
+                      aoMudar={setComprimento}
+                      travado={concluida}
+                    />
+                    <Medida
+                      rotulo="Largura"
+                      valor={largura}
+                      aoMudar={setLargura}
+                      travado={concluida}
+                    />
+                    <Medida
+                      rotulo="Altura"
+                      valor={altura}
+                      aoMudar={setAltura}
+                      travado={concluida}
+                    />
+                    <Medida rotulo="Peso (g)" valor={peso} aoMudar={setPeso} travado={concluida} />
+                  </Stack>
+                </Box>
+
+                {/*
+                  Depois de concluída, os bloquinhos somem: eles são um atalho
+                  para ESCREVER, e a marcação não é gravada - só o texto que
+                  ela produziu. Mantê-los na tela, todos apagados, diria que
+                  nada foi descrito quando a descrição está logo abaixo.
+                */}
+                {!concluida &&
+                  GRUPOS_DESCRITORES_MACRO.map((grupo, iGrupo) => {
+                    const marcados = selecoes[grupo.chave] ?? [];
+                    const doGrupo = grupo.opcoes.map((o) => o.texto);
+                    const extras = marcados.filter((m) => !doGrupo.includes(m));
+                    const opcoes = [
+                      ...grupo.opcoes,
+                      ...extras.map((texto) => ({ rotulo: texto, texto, amostra: undefined })),
+                    ];
+
+                    return (
+                      <Box key={grupo.chave} sx={{ breakInside: 'avoid', mb: 2.25 }}>
+                        <RotuloGrupo>{grupo.rotulo}</RotuloGrupo>
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                          {opcoes.map((opcao, iOpcao) => (
+                            <Bloquinho
+                              key={opcao.texto}
+                              rotulo={opcao.rotulo}
+                              amostra={opcao.amostra}
+                              tom={tomBloquinho[(iGrupo + iOpcao) % tomBloquinho.length]!}
+                              ativo={marcados.includes(opcao.texto)}
+                              travado={concluida}
+                              aoAlternar={() => alternar(grupo.chave, opcao.texto)}
+                            />
+                          ))}
+
+                          {/* "Caso não tenha, se adiciona na hora" (review). */}
+                          {!concluida && (
+                            <TextField
+                              size="small"
+                              variant="standard"
+                              placeholder="outro…"
+                              value={outroPorGrupo[grupo.chave] ?? ''}
+                              onChange={(e) =>
+                                setOutroPorGrupo((a) => ({ ...a, [grupo.chave]: e.target.value }))
+                              }
+                              onKeyDown={(e) => {
+                                const texto = (outroPorGrupo[grupo.chave] ?? '').trim();
+                                if (e.key === 'Enter' && texto) {
+                                  e.preventDefault();
+                                  if (!marcados.includes(texto)) alternar(grupo.chave, texto);
+                                  setOutroPorGrupo((a) => ({ ...a, [grupo.chave]: '' }));
+                                }
+                              }}
+                              sx={{ width: 96, '& input': { fontSize: 12.5, py: 0.35 } }}
+                            />
+                          )}
+                        </Stack>
+                      </Box>
+                    );
+                  })}
+              </Box>
+
+              {/*
+                Pré-visualização com a MESMA função que o servidor usa. Ver a
+                frase nascer a cada bloquinho é o que torna o modo sem IA um
+                caminho de primeira classe, e não um plano B (M17 §110).
+              */}
+              {!concluida && (
+                <Box>
+                  <RotuloGrupo>Prévia da frase</RotuloGrupo>
+                  <Box
+                    sx={{
+                      p: 1.5,
+                      borderRadius: 1.5,
+                      border: '1px dashed',
+                      borderColor: 'divider',
+                      bgcolor: 'action.hover',
+                      fontSize: 13.5,
+                      lineHeight: 1.55,
+                      color: previa ? 'text.primary' : 'text.secondary',
+                      minHeight: 44,
+                    }}
+                  >
+                    {previa || 'Marque um bloquinho para ver a frase se formar aqui.'}
+                  </Box>
+
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1.5}
+                    sx={{ mt: 1.5, alignItems: { sm: 'center' } }}
+                  >
+                    <Button
+                      size="small"
+                      variant="contained"
+                      disabled={compondo || !ficha || !temBloquinho}
+                      onClick={() => void compor()}
+                      sx={{ alignSelf: 'flex-start' }}
+                    >
+                      {compondo ? 'Compondo…' : 'Compor descrição'}
+                    </Button>
+                    <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
+                      A frase vai para a descrição macroscópica, onde continua editável.
+                    </Typography>
+                  </Stack>
+                </Box>
+              )}
+
+              {/* M18: se nada sobra, não há o que arquivar na Bioteca. */}
+              {concluida && (
+                <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+                  Material totalmente incluído:{' '}
+                  <Box component="span" sx={{ fontWeight: 600 }}>
+                    {totalmenteIncluido ? 'sim' : 'não'}
+                  </Box>
+                </Typography>
+              )}
             </Secao>
 
             <Secao
@@ -717,12 +914,12 @@ export function Macroscopia({ exigeSupervisao }: Props) {
                       sx={{ width: 64, '& input': { textAlign: 'center' } }}
                     />
                     {/**
-                      * Review: "eu pensei que ele já criasse o cassete de cada
-                      * amostra... o cara tem que inserir um a um". Um clique
-                      * gera N linhas com o tecido de origem herdado da amostra
-                      * (editável) — quantos são, só quem cortou sabe, então a
-                      * quantidade é informada, não adivinhada.
-                      */}
+                     * Review: "eu pensei que ele já criasse o cassete de cada
+                     * amostra... o cara tem que inserir um a um". Um clique
+                     * gera N linhas com o tecido de origem herdado da amostra
+                     * (editável) — quantos são, só quem cortou sabe, então a
+                     * quantidade é informada, não adivinhada.
+                     */}
                     <Button
                       size="small"
                       startIcon={<AddOutlined />}
@@ -749,10 +946,10 @@ export function Macroscopia({ exigeSupervisao }: Props) {
               }
             >
               {/**
-                * Já gravados: em leitura. O identificador é definitivo e o M08
-                * proíbe renumerar sem rastreabilidade — editar aqui seria
-                * prometer algo que o modelo não permite.
-                */}
+               * Já gravados: em leitura. O identificador é definitivo e o M08
+               * proíbe renumerar sem rastreabilidade — editar aqui seria
+               * prometer algo que o modelo não permite.
+               */}
               {ficha.cassetes.map((c) => (
                 <Stack
                   key={c.id}
@@ -799,7 +996,9 @@ export function Macroscopia({ exigeSupervisao }: Props) {
                     required
                     error={c.tecidoOrigem.trim() === ''}
                     helperText={
-                      c.tecidoOrigem.trim() === '' ? 'Obrigatório: sem ele o cassete não existe.' : ' '
+                      c.tecidoOrigem.trim() === ''
+                        ? 'Obrigatório: sem ele o cassete não existe.'
+                        : ' '
                     }
                     sx={{ flex: 1.5, width: { xs: '100%', md: 'auto' } }}
                   />
@@ -845,84 +1044,6 @@ export function Macroscopia({ exigeSupervisao }: Props) {
                 </Typography>
               )}
             </Secao>
-
-            {!concluida && (
-              <Secao
-                titulo="Descrição rápida"
-                descricao="Marque os bloquinhos e componha o texto — a IA lapida quando disponível; sem ela, a frase padrão já sai pronta."
-              >
-                <Stack spacing={1.25}>
-                  {GRUPOS_DESCRITORES_MACRO.map((grupo) => {
-                    const marcados = selecoes[grupo.chave] ?? [];
-                    const extras = marcados.filter((m) => !grupo.opcoes.includes(m));
-                    return (
-                      <Box key={grupo.chave}>
-                        <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mb: 0.5 }}>
-                          {grupo.rotulo}
-                        </Typography>
-                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
-                          {[...grupo.opcoes, ...extras].map((opcao) => {
-                            const ativo = marcados.includes(opcao);
-                            return (
-                              <Chip
-                                key={opcao}
-                                size="small"
-                                label={opcao}
-                                color={ativo ? 'primary' : 'default'}
-                                variant={ativo ? 'filled' : 'outlined'}
-                                onClick={() =>
-                                  setSelecoes((a) => ({
-                                    ...a,
-                                    [grupo.chave]: ativo
-                                      ? marcados.filter((m) => m !== opcao)
-                                      : [...marcados, opcao],
-                                  }))
-                                }
-                              />
-                            );
-                          })}
-                          {/* "Caso não tenha, se adiciona na hora" (review). */}
-                          <TextField
-                            size="small"
-                            variant="standard"
-                            placeholder="outro…"
-                            value={outroPorGrupo[grupo.chave] ?? ''}
-                            onChange={(e) =>
-                              setOutroPorGrupo((a) => ({ ...a, [grupo.chave]: e.target.value }))
-                            }
-                            onKeyDown={(e) => {
-                              const texto = (outroPorGrupo[grupo.chave] ?? '').trim();
-                              if (e.key === 'Enter' && texto) {
-                                setSelecoes((a) => ({
-                                  ...a,
-                                  [grupo.chave]: [...(a[grupo.chave] ?? []), texto],
-                                }));
-                                setOutroPorGrupo((a) => ({ ...a, [grupo.chave]: '' }));
-                              }
-                            }}
-                            sx={{ width: 110, '& input': { fontSize: 12.5, py: 0.4 } }}
-                          />
-                        </Stack>
-                      </Box>
-                    );
-                  })}
-
-                  <Button
-                    size="small"
-                    variant="contained"
-                    disabled={
-                      compondo ||
-                      !ficha ||
-                      Object.values(selecoes).every((v) => v.length === 0)
-                    }
-                    onClick={() => void compor()}
-                    sx={{ alignSelf: 'flex-start' }}
-                  >
-                    {compondo ? 'Compondo…' : 'Compor descrição'}
-                  </Button>
-                </Stack>
-              </Secao>
-            )}
 
             <Secao
               titulo="Descrição macroscópica"
@@ -1072,5 +1193,88 @@ function Remover({ rotulo, aoRemover }: { rotulo: string; aoRemover: () => void 
         <DeleteOutline fontSize="small" />
       </IconButton>
     </Tooltip>
+  );
+}
+
+/** Rótulo curto e maiúsculo que abre cada grupo de bloquinhos. */
+function RotuloGrupo({ children }: { children: React.ReactNode }) {
+  return (
+    <Typography
+      sx={{
+        fontSize: 10.5,
+        fontWeight: 700,
+        letterSpacing: '0.07em',
+        textTransform: 'uppercase',
+        color: 'text.secondary',
+        mb: 0.85,
+      }}
+    >
+      {children}
+    </Typography>
+  );
+}
+
+/**
+ * O bloquinho da descrição rápida.
+ *
+ * A cor é identidade visual, não significado — quem diz o que o bloquinho
+ * significa é o rótulo do grupo. Por isso o estado marcado NÃO é só outro tom:
+ * é preenchimento sólido mais o sinal de marcado, para não depender de cor
+ * (M07, e a mesma regra dos indicadores de prazo).
+ */
+function Bloquinho({
+  rotulo,
+  amostra,
+  tom,
+  ativo,
+  travado,
+  aoAlternar,
+}: {
+  rotulo: string;
+  amostra?: string;
+  tom: { texto: string; borda: string; fundo: string; ativo: string };
+  ativo: boolean;
+  travado: boolean;
+  aoAlternar: () => void;
+}) {
+  return (
+    <ButtonBase
+      onClick={aoAlternar}
+      disabled={travado}
+      aria-pressed={ativo}
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 0.55,
+        px: 1.1,
+        py: 0.5,
+        borderRadius: 1.5,
+        border: '1px solid',
+        fontSize: 12.5,
+        fontWeight: 500,
+        lineHeight: 1.4,
+        transition: 'background-color .12s, border-color .12s',
+        borderColor: ativo ? tom.ativo : tom.borda,
+        color: ativo ? '#ffffff' : tom.texto,
+        bgcolor: ativo ? tom.ativo : 'background.paper',
+        '&:hover': { bgcolor: ativo ? tom.ativo : tom.fundo },
+        '&.Mui-disabled': { opacity: 0.55 },
+      }}
+    >
+      {amostra && (
+        <Box
+          aria-hidden
+          sx={{
+            width: 11,
+            height: 11,
+            borderRadius: '50%',
+            bgcolor: amostra,
+            border: '1px solid rgba(0,0,0,0.28)',
+          }}
+        />
+      )}
+      {ativo && <CheckOutlined sx={{ fontSize: 13.5 }} />}
+      {rotulo}
+    </ButtonBase>
   );
 }

@@ -4165,22 +4165,28 @@ describe('descrição rápida em bloquinhos e etiquetas do parceiro (M08 + M09)'
 
     const composicao = await req('POST', `/macroscopia/${macroscopiaId}/composicao`, {
       selecoes: {
+        caracteristica: ['cutâneo'],
         cor: ['avermelhada'],
         consistencia: ['firme'],
-        delimitacao: ['bem delimitada'],
-        corte: ['sólido e homogêneo'],
+        delimitacao: ['bem delimitado'],
+        corte: ['sólido', 'homogêneo'],
+        representacao: ['todo o material incluído'],
       },
     });
     expect(composicao.status, JSON.stringify(composicao.body)).toBe(201);
     // Provedor stub: a base determinística responde - o LAPATO funciona sem
     // IA (M17 §110), e a frase padrão já é publicável.
     expect(composicao.body.origem).toBe('padrao');
-    for (const trecho of ['avermelhada', 'firme', 'bem delimitada', 'sólido e homogêneo']) {
+    // A característica é o sujeito, e não mais um item da lista.
+    expect(composicao.body.texto).toContain('Fragmento cutâneo de coloração avermelhada');
+    for (const trecho of ['firme', 'bem delimitado', 'sólido e homogêneo']) {
       expect(composicao.body.texto).toContain(trecho);
     }
     // As medidas gravadas na ficha entram na frase.
     expect(composicao.body.texto).toContain('3,0 × 2,0 × 1,0 cm');
     expect(composicao.body.texto).toContain('15 g');
+    // A representação fecha o texto, depois das medidas.
+    expect(composicao.body.texto).toMatch(/15 g\.\s+Representação: todo o material incluído\.$/);
   });
 
   test('composição sem nenhum descritor marcado é recusada', async () => {

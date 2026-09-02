@@ -106,6 +106,14 @@ const MENU = [
     permissao: 'processamento:visualizar',
   },
   {
+    /* Documento do Hugo: "um botão só para MACROSCOPIA no menu lateral" - a
+       fila dos aptos, do mais antigo para o mais recente, com a bipagem do pote. */
+    para: '/macroscopia',
+    icone: <Science fontSize="small" />,
+    rotulo: 'Macroscopia',
+    permissao: 'macroscopia:visualizar',
+  },
+  {
     /* M10: a demanda atravessa casos e setores - a fila é da instituição. */
     para: '/solicitacoes',
     icone: <PendingActions fontSize="small" />,

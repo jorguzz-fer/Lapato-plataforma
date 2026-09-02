@@ -22,7 +22,7 @@ import FactCheckOutlined from '@mui/icons-material/FactCheckOutlined';
 import ScienceOutlined from '@mui/icons-material/ScienceOutlined';
 import BiotechOutlined from '@mui/icons-material/BiotechOutlined';
 import { EVENTO_LABEL, type TipoEvento } from '@lapato/shared';
-import { api, ErroApi, type Dossie as DadosDossie } from '../api';
+import { api, ErroApi, urlArquivo, type Dossie as DadosDossie } from '../api';
 import { GaleriaDoCaso } from './imagens/GaleriaDoCaso';
 import { OrdemDoCaso } from './ordens/OrdemDoCaso';
 
@@ -92,9 +92,37 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
           direction="row"
           sx={{ flexWrap: 'wrap', alignItems: 'center', columnGap: 3, rowGap: 1 }}
         >
-          <Typography sx={{ ...MONO, fontSize: 17, fontWeight: 700 }}>
-            {dados.caso.identificador}
-          </Typography>
+          <Box>
+            <Typography sx={{ ...MONO, fontSize: 17, fontWeight: 700 }}>
+              {dados.caso.identificador}
+            </Typography>
+            {/* Documento do Hugo: etiqueta da requisição e uma por pote, logo na entrada. */}
+            <Stack direction="row" spacing={0.5} sx={{ mt: 0.25, flexWrap: 'wrap' }}>
+              <Button
+                size="small"
+                component="a"
+                href={urlArquivo(`/casos/${dados.caso.id}/etiquetas?alvo=requisicao`)}
+                target="_blank"
+                rel="noreferrer"
+                sx={{ fontSize: 11, minWidth: 0, px: 0.75 }}
+              >
+                Etiqueta da requisição
+              </Button>
+              {dados.recipientes.map((r) => (
+                <Button
+                  key={r.id}
+                  size="small"
+                  component="a"
+                  href={urlArquivo(`/casos/${dados.caso.id}/etiquetas?alvo=${r.id}`)}
+                  target="_blank"
+                  rel="noreferrer"
+                  sx={{ fontSize: 11, minWidth: 0, px: 0.75, ...MONO }}
+                >
+                  {r.identificador.slice(r.identificador.lastIndexOf('-') + 1)}
+                </Button>
+              ))}
+            </Stack>
+          </Box>
 
           <Box>
             <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>Paciente</Typography>
@@ -418,7 +446,8 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
                     {EVENTO_LABEL[e.tipo as TipoEvento] ?? e.tipo}
                   </Typography>
                   <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
-                    {e.moduloOrigem}
+                    {/* Documento do Hugo: o nome de quem executou cada etapa. */}
+                    {[e.usuarioNome, e.moduloOrigem].filter(Boolean).join(' · ')}
                   </Typography>
                 </Box>
               </Stack>

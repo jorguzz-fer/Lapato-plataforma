@@ -9,10 +9,13 @@ import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
+import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import CheckCircleOutline from '@mui/icons-material/CheckCircleOutlineOutlined';
+import { RESSALVAS_RECEBIMENTO, RESSALVA_RECEBIMENTO_LABEL } from '@lapato/shared';
 import { api, ErroApi, type Dossie as DadosDossie } from '../api';
+import { GaleriaDoCaso } from './imagens/GaleriaDoCaso';
 
 /**
  * M05 - Recebimento fisico do material.
@@ -31,12 +34,16 @@ import { api, ErroApi, type Dossie as DadosDossie } from '../api';
 
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
 
-export function Recebimento() {
+export function Recebimento({ permissoes }: { permissoes: string[] }) {
   const { id } = useParams<{ id: string }>();
   const navegar = useNavigate();
 
   const [dados, setDados] = useState<DadosDossie | null>(null);
   const [contagem, setContagem] = useState<Record<string, string>>({});
+  /** Documento do Hugo: fragmentos por pote ('' | 'multiplos' | numero) e ressalva. */
+  const [fragmentos, setFragmentos] = useState<Record<string, string>>({});
+  const [ressalva, setRessalva] = useState<Record<string, string>>({});
+  const [ressalvaDetalhe, setRessalvaDetalhe] = useState<Record<string, string>>({});
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
@@ -73,10 +80,19 @@ export function Recebimento() {
 
     try {
       await api.post(`/casos/${id}/recebimento`, {
-        conferencia: recipientes.map((r) => ({
-          recipienteId: r.id,
-          quantidadeRecebida: Number(contagem[r.id]),
-        })),
+        conferencia: recipientes.map((r) => {
+          const frag = (fragmentos[r.id] ?? '').trim();
+          return {
+            recipienteId: r.id,
+            quantidadeRecebida: Number(contagem[r.id]),
+            fragmentosMultiplos: frag === 'multiplos',
+            ...(frag && frag !== 'multiplos' ? { fragmentosRecebidos: Number(frag) } : {}),
+            ...(ressalva[r.id] ? { ressalva: ressalva[r.id] } : {}),
+            ...(ressalva[r.id] && (ressalvaDetalhe[r.id] ?? '').trim()
+              ? { ressalvaDetalhe: (ressalvaDetalhe[r.id] ?? '').trim() }
+              : {}),
+          };
+        }),
       });
       navegar(`/casos/${id}`);
     } catch (err) {
@@ -179,7 +195,10 @@ export function Recebimento() {
                 key={r.id}
                 direction={{ xs: 'column', sm: 'row' }}
                 spacing={{ xs: 1.5, sm: 2 }}
-                sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+                useFlexGap
+                // `wrap` + `flexBasis: 100%` na linha de fragmentos/ressalva: ela
+                // desce para a segunda linha em vez de esticar a primeira.
+                sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between', flexWrap: 'wrap' }}
               >
                 {/**
                   * Review: "esta faltando a descricao exata do que foi
@@ -245,10 +264,79 @@ export function Recebimento() {
                     {diverge && <Chip size="small" color="warning" label="▲ divergência" />}
                   </Box>
                 </Stack>
+
+                {/* Documento do Hugo: "muitas vezes uma amostra possui mais de 1
+                    fragmento" e ressalvas a escolha, em dropdown. */}
+                <Stack
+                  direction={{ xs: 'column', sm: 'row' }}
+                  spacing={1.5}
+                  sx={{ width: '100%', flexBasis: '100%' }}
+                >
+                  <TextField
+                    select
+                    size="small"
+                    label="Fragmentos"
+                    value={fragmentos[r.id] ?? ''}
+                    onChange={(e) => setFragmentos((a) => ({ ...a, [r.id]: e.target.value }))}
+                    sx={{ minWidth: 150 }}
+                  >
+                    <MenuItem value="">—</MenuItem>
+                    <MenuItem value="multiplos">Múltiplos</MenuItem>
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                      <MenuItem key={n} value={String(n)}>
+                        {n}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    select
+                    size="small"
+                    label="Ressalva"
+                    value={ressalva[r.id] ?? ''}
+                    onChange={(e) => setRessalva((a) => ({ ...a, [r.id]: e.target.value }))}
+                    sx={{ minWidth: 240 }}
+                  >
+                    <MenuItem value="">Sem ressalva</MenuItem>
+                    {RESSALVAS_RECEBIMENTO.map((v) => (
+                      <MenuItem key={v} value={v}>
+                        {RESSALVA_RECEBIMENTO_LABEL[v]}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  {ressalva[r.id] && (
+                    <TextField
+                      size="small"
+                      label="Detalhe da ressalva"
+                      value={ressalvaDetalhe[r.id] ?? ''}
+                      onChange={(e) =>
+                        setRessalvaDetalhe((a) => ({ ...a, [r.id]: e.target.value }))
+                      }
+                      sx={{ flex: 1 }}
+                    />
+                  )}
+                </Stack>
               </Stack>
             );
           })}
         </Stack>
+      </Card>
+
+      {/* Documento do Hugo: fotos da requisição e dos potes, arquivadas para
+          sempre e exibidas na macro e no laudo. Câmera ou upload. */}
+      <Card sx={{ p: 2.5, mt: 2.5 }}>
+        <Typography variant="h4" sx={{ mb: 0.25 }}>
+          Fotos da requisição e dos potes
+        </Typography>
+        <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 2 }}>
+          Ficam no dossiê e aparecem no cabeçalho da macroscopia e do laudo — é o que evita troca
+          entre pacientes com o mesmo nome.
+        </Typography>
+        <GaleriaDoCaso
+          casoId={id!}
+          permissoes={permissoes}
+          moduloContexto="M05_RECEBIMENTO"
+          tipoPadrao="requisicao"
+        />
       </Card>
 
       {divergencias.length > 0 && (

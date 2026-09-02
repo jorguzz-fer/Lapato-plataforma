@@ -59,6 +59,7 @@ import {
   INTENSIDADE,
   LATERALIDADE,
   MODALIDADE_COBRANCA,
+  RESSALVAS_RECEBIMENTO,
   METODO_AMOSTRAGEM,
   NIVEL_BLOQUEIO,
   PERMISSOES,
@@ -185,6 +186,11 @@ const recebimentoSchema = z.object({
       z.object({
         recipienteId: z.string().uuid(),
         quantidadeRecebida: z.number().int().nonnegative(),
+        /** Documento do Hugo: fragmentos por pote (numero) ou "multiplos". */
+        fragmentosRecebidos: z.number().int().nonnegative().max(999).nullable().optional(),
+        fragmentosMultiplos: z.boolean().optional(),
+        ressalva: z.enum(RESSALVAS_RECEBIMENTO).nullable().optional(),
+        ressalvaDetalhe: z.string().max(300).nullable().optional(),
       }),
     )
     .min(1),
@@ -193,7 +199,10 @@ const recebimentoSchema = z.object({
 @ApiTags('M05 - Recebimento e Cadastro')
 @Controller('casos')
 export class CasosController {
-  constructor(private readonly casos: CasosService) {}
+  constructor(
+    private readonly casos: CasosService,
+    private readonly etiquetasEntrada: EtiquetasService,
+  ) {}
 
   @Post()
   @ExigePermissao(PERMISSOES.CASO_CRIAR)
@@ -247,6 +256,41 @@ export class CasosController {
     const dados = validarCorpo(z.object({ usuarioId: z.string().uuid() }), corpo);
     await this.casos.atribuirPatologista(id, dados.usuarioId);
     return { ok: true };
+  }
+
+  @Post('resolver-codigo')
+  @ExigePermissao(PERMISSOES.CASO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Resolve um código bipado (caso, pote, cassete, bloco ou lâmina) ao caso',
+    description:
+      'Sem atribuir responsável — é o que a fila de macroscopia usa para abrir a ficha do pote ' +
+      'que está na bancada. Para assumir o caso, use /casos/bipagem.',
+  })
+  async resolverCodigo(@Body() corpo: unknown) {
+    const dados = validarCorpo(z.object({ codigo: z.string().min(1).max(80) }), corpo);
+    return this.casos.resolverCodigo(dados.codigo);
+  }
+
+  @Get(':id/etiquetas')
+  @ExigePermissao(PERMISSOES.CASO_VISUALIZAR)
+  @Header('Content-Type', 'application/pdf')
+  @ApiOperation({
+    summary: 'PDF das etiquetas da entrada: requisição e potes',
+    description:
+      'Uma página por etiqueta, no modelo de recipiente do M01. `alvo`: tudo (padrão), ' +
+      'requisicao, recipientes, ou o id de um recipiente.',
+  })
+  async etiquetasDoCaso(@Param('id', ParseUUIDPipe) id: string, @Query('alvo') alvo?: string) {
+    const escolha =
+      alvo === 'requisicao' || alvo === 'recipientes'
+        ? alvo
+        : alvo && /^[0-9a-f-]{36}$/i.test(alvo)
+          ? { recipienteId: alvo }
+          : ('tudo' as const);
+    const { bytes, nomeArquivo } = await this.etiquetasEntrada.etiquetasDoCaso(id, escolha);
+    return new StreamableFile(bytes, {
+      disposition: `inline; filename="${nomeParaCabecalho(nomeArquivo)}"`,
+    });
   }
 
   @Post(':id/recebimento')
@@ -1503,10 +1547,16 @@ export class FluxoController {
     summary: 'Central de casos',
     description: 'Filas por etapa, responsável e alerta de prazo.',
   })
-  async listar(@Query('etapa') etapa?: string, @Query('minhaFila') minhaFila?: string) {
+  async listar(
+    @Query('etapa') etapa?: string,
+    @Query('minhaFila') minhaFila?: string,
+    @Query('q') q?: string,
+  ) {
     return this.consulta.listar({
-      etapa: etapa as Etapa | undefined,
+      // `etapa=a,b` lista varias etapas de uma vez (fila da macro).
+      etapa: etapa ? (etapa.split(',').map((e) => e.trim()) as Etapa[]) : undefined,
       apenasMinhaFila: minhaFila === 'true',
+      q,
     });
   }
 
@@ -3130,7 +3180,34 @@ export class PrecosController {
     const dados = validarCorpo(precoClienteSchema, corpo);
     return this.ordens.definirItemTabela(id, dados.servicoId, dados.valor);
   }
+
+  @Get('tabelas/:id/faixas')
+  @ExigePermissao(PERMISSOES.PRECO_GERENCIAR)
+  @ApiOperation({ summary: 'Faixas por quantidade de um serviço na tabela' })
+  async faixasDaTabela(@Param('id', ParseUUIDPipe) id: string, @Query('servicoId') servicoId: string) {
+    if (!servicoId) throw new BadRequestException('Informe o serviço.');
+    return this.ordens.faixasDaTabela(id, servicoId);
+  }
+
+  @Post('tabelas/:id/faixas')
+  @ExigePermissao(PERMISSOES.PRECO_GERENCIAR)
+  @ApiOperation({
+    summary: 'Define o total para N amostras do serviço na tabela (nulo remove)',
+    description:
+      'Documento do Hugo: "1 histopatológico 100, 2 = 160, 3 = 200" — a cobrança de mais de uma ' +
+      'amostra nem sempre é linear. A faixa guarda o TOTAL para exatamente N amostras.',
+  })
+  async definirFaixaTabela(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(faixaTabelaSchema, corpo);
+    return this.ordens.definirFaixaTabela(id, dados.servicoId, dados.quantidade, dados.valorTotal);
+  }
 }
+
+const faixaTabelaSchema = z.object({
+  servicoId: z.string().uuid(),
+  quantidade: z.number().int().min(2).max(500),
+  valorTotal: z.number().min(0).max(9_999_999).nullable(),
+});
 
 const tabelaPrecoSchema = z.object({
   nome: z.string().min(2).max(80),

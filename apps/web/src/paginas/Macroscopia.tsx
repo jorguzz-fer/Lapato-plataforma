@@ -36,6 +36,7 @@ import {
 import { api, ErroApi, type Dossie as DadosDossie, type FichaMacroscopia } from '../api';
 import { BloqueioGuardian } from './BloqueioGuardian';
 import { AvisoBancadaBloqueada, impedimentoDeBancada } from './AvisoBancadaBloqueada';
+import { CabecalhoDoMaterial } from './CabecalhoDoMaterial';
 
 /**
  * M08 - Macroscopia.
@@ -478,6 +479,9 @@ export function Macroscopia({ exigeSupervisao }: Props) {
             <Typography sx={{ fontSize: 13.5 }}>{dossie.paciente.nome}</Typography>
           </Box>
         </Stack>
+        {/* Documento do Hugo: tudo que foi cadastrado aparece no cabeçalho, com as
+            fotos e ressalvas - é o que evita troca entre pacientes homônimos. */}
+        <CabecalhoDoMaterial dossie={dossie} />
       </Card>
 
       {/* Uma ficha por amostra: as abas tornam isso estrutural em vez de implícito. */}

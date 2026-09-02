@@ -169,9 +169,12 @@ export interface CasoNaFila {
   casoId: string;
   identificador: string;
   paciente: string;
+  responsavel: string | null;
   cliente: string;
+  modalidade: 'convenio' | 'particular';
   servico: string;
   prioridade: string;
+  entradaEm: string;
   etapa: Etapa;
   previsaoLiberacao: string | null;
   alertaPrazo: 'normal' | 'atencao' | 'critico' | 'atrasado';
@@ -208,6 +211,8 @@ export interface EventoTimeline {
   id: string;
   tipo: string;
   moduloOrigem: string;
+  /** Quem executou (documento do Hugo: "aumenta o cuidado do funcionário"). */
+  usuarioNome: string | null;
   ocorridoEm: string;
   payload: Record<string, unknown>;
 }
@@ -271,8 +276,21 @@ export interface Dossie {
     observacoes: string | null;
     quantidadeDeclarada: number | null;
     quantidadeRecebida: number | null;
+    /** Conferência (documento do Hugo): fragmentos por pote e ressalva em dropdown. */
+    fragmentosRecebidos: number | null;
+    fragmentosMultiplos: boolean;
+    ressalva: string | null;
+    ressalvaDetalhe: string | null;
   }>;
   historicos: Array<{ id: string; texto: string; origem: string }>;
+  /** Não conformidades da triagem (M06), para o cabeçalho da macro e do laudo. */
+  naoConformidades: Array<{
+    id: string;
+    tipo: string;
+    gravidade: string;
+    descricao: string;
+    amostraId: string | null;
+  }>;
   linhaDoTempo: EventoTimeline[];
 }
 

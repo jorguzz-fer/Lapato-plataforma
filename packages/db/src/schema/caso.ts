@@ -228,6 +228,16 @@ export const recipiente = pgTable(
     identificacaoExterna: text('identificacao_externa'),
     quantidadeDeclarada: integer('quantidade_declarada'),
     quantidadeRecebida: integer('quantidade_recebida'),
+    /**
+     * Documento do Hugo: "muitas vezes uma amostra possui mais de 1
+     * fragmento". Contado na conferencia; `multiplos` quando nao da para
+     * contar. E o que faz a macro saber o que esperar ao abrir o pote.
+     */
+    fragmentosRecebidos: integer('fragmentos_recebidos'),
+    fragmentosMultiplos: boolean('fragmentos_multiplos').notNull().default(false),
+    /** Ressalva escolhida em dropdown (RESSALVAS_RECEBIMENTO) + detalhe livre. */
+    ressalva: text('ressalva'),
+    ressalvaDetalhe: text('ressalva_detalhe'),
     recebidoEm: timestamp('recebido_em', { withTimezone: true }),
     observacoes: text('observacoes'),
     ...colunasTempo,

@@ -37,6 +37,7 @@ export const TIPO_EVENTO = [
   'material.recebido',
   'recipiente.recebido',
   'divergencia.identificada',
+  'ressalva.recebimento',
   'etiqueta.impressa',
   // M06 Triagem
   'triagem.iniciada',
@@ -167,6 +168,7 @@ export const EVENTO_LABEL: Record<TipoEvento, string> = {
   'material.recebido': 'Material recebido',
   'recipiente.recebido': 'Recipiente conferido',
   'divergencia.identificada': 'Divergência identificada',
+  'ressalva.recebimento': 'Ressalva no recebimento',
   'etiqueta.impressa': 'Etiqueta impressa',
   'triagem.iniciada': 'Triagem iniciada',
   'triagem.concluida.apta': 'Triagem concluída — apto',

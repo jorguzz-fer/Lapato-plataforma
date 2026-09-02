@@ -21,6 +21,7 @@ import { Triagem } from './paginas/Triagem';
 import { Macroscopia } from './paginas/Macroscopia';
 import { Laudo } from './paginas/Laudo';
 import { Processamento } from './paginas/Processamento';
+import { FilaMacroscopia } from './paginas/FilaMacroscopia';
 import { Solicitacoes } from './paginas/Solicitacoes';
 import { OrdensDeServico } from './paginas/ordens/OrdensDeServico';
 import { Financeiro } from './paginas/ordens/Financeiro';
@@ -216,7 +217,7 @@ function App() {
         path="/casos/:id/recebimento"
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Recebimento e Cadastro" etapa="recebimento">
-            <Recebimento />
+            <Recebimento permissoes={sessao.permissoes} />
           </Shell>
         }
       />
@@ -229,6 +230,14 @@ function App() {
         }
       />
       {/* Fora de /casos: o lote é do dia e atravessa vários casos (M09). */}
+      <Route
+        path="/macroscopia"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Macroscopia">
+            <FilaMacroscopia />
+          </Shell>
+        }
+      />
       <Route
         path="/processamento"
         element={

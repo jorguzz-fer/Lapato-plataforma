@@ -46,6 +46,14 @@ export const cliente = pgTable(
      */
     codigo: text('codigo').notNull(),
     nomeAbreviado: text('nome_abreviado'),
+    /**
+     * Contato institucional (documento do Hugo: "as unicas infos obrigatorias
+     * sao CNPJ, email, telefone"). Pessoas de contato continuam em
+     * `cliente_contato`; estes sao os canais da empresa, para onde vai o
+     * fechamento do mes.
+     */
+    email: text('email'),
+    telefone: text('telefone'),
 
     /** M03: interno | pre_cadastro | indicacao | importacao | integracao */
     origem: text('origem').notNull().default('interno'),
@@ -220,6 +228,11 @@ export const paciente = pgTable(
     dataNascimento: date('data_nascimento'),
     /** Quando a data exata e desconhecida, mas a idade foi informada. */
     idadeInformada: text('idade_informada'),
+    /**
+     * Raca como veio na requisicao. `racaId` fica reservado para quando o M01
+     * curar uma tabela mestre por especie; ate la, o texto e o dado.
+     */
+    raca: text('raca'),
     pelagem: text('pelagem'),
     /**
      * M05: identificador de alta relevancia. O mesmo microchip em outro paciente

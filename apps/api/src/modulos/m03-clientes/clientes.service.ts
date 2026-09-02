@@ -26,6 +26,9 @@ export interface DadosCliente {
   tipo: TipoCliente;
   codigo: string;
   nomeAbreviado?: string;
+  /** Contato institucional - obrigatorio no cadastro (documento do Hugo). */
+  email?: string;
+  telefone?: string;
   observacoes?: string;
   /** M20: tabela de precos que o cliente segue; nulo = valor padrao. */
   tabelaPrecoId?: string | null;
@@ -101,6 +104,8 @@ export class ClientesService {
           tipo: dados.tipo,
           codigo,
           nomeAbreviado: dados.nomeAbreviado?.trim() || null,
+          email: dados.email?.trim().toLowerCase() || null,
+          telefone: dados.telefone?.trim() || null,
           observacoes: dados.observacoes?.trim() || null,
         })
         .returning({ id: cliente.id });
@@ -132,6 +137,8 @@ export class ClientesService {
       if (dados.tipo !== undefined) mudancas.tipo = dados.tipo;
       if (dados.nomeAbreviado !== undefined)
         mudancas.nomeAbreviado = dados.nomeAbreviado.trim() || null;
+      if (dados.email !== undefined) mudancas.email = dados.email.trim().toLowerCase() || null;
+      if (dados.telefone !== undefined) mudancas.telefone = dados.telefone.trim() || null;
       if (dados.observacoes !== undefined) mudancas.observacoes = dados.observacoes.trim() || null;
       if (dados.tabelaPrecoId !== undefined) {
         if (dados.tabelaPrecoId) {

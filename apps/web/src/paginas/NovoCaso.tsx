@@ -11,6 +11,8 @@ import IconButton from '@mui/material/IconButton';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddOutlined from '@mui/icons-material/AddOutlined';
@@ -20,6 +22,7 @@ import {
   api,
   ErroApi,
   type CasoCriado,
+  type PacienteEncontrado,
   type ClienteResumo,
   type Servico,
   type Termo,
@@ -110,6 +113,54 @@ export function NovoCaso() {
   const [sexo, setSexo] = useState('');
   const [microchip, setMicrochip] = useState('');
   const [tutorNome, setTutorNome] = useState('');
+  const [tutorTelefone, setTutorTelefone] = useState('');
+  const [tutorEmail, setTutorEmail] = useState('');
+  const [raca, setRaca] = useState('');
+  const [idadeInformada, setIdadeInformada] = useState('');
+  const [dataNascimento, setDataNascimento] = useState('');
+  /**
+   * Convenio x particular (documento do Hugo): no particular nao ha cliente
+   * nem veterinario cadastrados - o responsavel traz a amostra, paga na
+   * entrada e recebe o laudo; clinica e veterinario ficam como texto.
+   */
+  const [modalidade, setModalidade] = useState<'convenio' | 'particular'>('convenio');
+  const [clinicaOrigem, setClinicaOrigem] = useState('');
+  const [veterinarioInformado, setVeterinarioInformado] = useState('');
+  /** Paciente ja atendido, reaproveitado: "so inserir o exame". */
+  const [pacienteExistente, setPacienteExistente] = useState<PacienteEncontrado | null>(null);
+  const [buscaPaciente, setBuscaPaciente] = useState('');
+  const [encontrados, setEncontrados] = useState<PacienteEncontrado[]>([]);
+
+  useEffect(() => {
+    const q = buscaPaciente.trim();
+    if (q.length < 2) {
+      setEncontrados([]);
+      return;
+    }
+    const alca = setTimeout(() => {
+      api
+        .get<PacienteEncontrado[]>(`/pacientes?q=${encodeURIComponent(q)}`)
+        .then(setEncontrados)
+        .catch(() => setEncontrados([]));
+    }, 250);
+    return () => clearTimeout(alca);
+  }, [buscaPaciente]);
+
+  function usarPaciente(p: PacienteEncontrado | null) {
+    setPacienteExistente(p);
+    if (!p) return;
+    setNome(p.nome);
+    setRaca(p.raca ?? '');
+    setSexo(p.sexo ?? '');
+    setMicrochip(p.microchip ?? '');
+    setIdadeInformada(p.idadeInformada ?? '');
+    setDataNascimento(p.dataNascimento ?? '');
+    setTutorNome(p.tutorNome ?? '');
+    setTutorTelefone(p.tutorTelefone ?? '');
+    setTutorEmail(p.tutorEmail ?? '');
+    const especie = especies.find((e) => e.valor === p.especie);
+    if (especie) setEspecieId(especie.id);
+  }
   const [historicoClinico, setHistoricoClinico] = useState('');
 
   const [amostras, setAmostras] = useState<Amostra[]>([{ ...AMOSTRA_VAZIA }]);
@@ -161,7 +212,15 @@ export function NovoCaso() {
     ].filter((e): e is string => Boolean(e));
   }, [servico]);
 
-  const valido = servicoId !== '' && cliente !== null && nome.trim() !== '';
+  // Convenio: precisa do cliente. Particular: precisa do responsavel com um
+  // contato - e dele que se cobra e para ele que vai o laudo. Paciente
+  // reaproveitado ja traz o responsavel.
+  const origemOk =
+    modalidade === 'convenio'
+      ? cliente !== null
+      : pacienteExistente !== null ||
+        (tutorNome.trim() !== '' && (tutorTelefone.trim() !== '' || tutorEmail.trim() !== ''));
+  const valido = servicoId !== '' && origemOk && nome.trim() !== '';
 
   function alterarAmostra(i: number, campo: keyof Amostra, valor: string) {
     setAmostras((atual) => atual.map((a, j) => (i === j ? { ...a, [campo]: valor } : a)));
@@ -179,16 +238,30 @@ export function NovoCaso() {
     try {
       const caso = await api.post<CasoCriado>('/casos', {
         servicoId,
-        clienteId: cliente!.id,
-        ...(veterinario ? { veterinarioId: veterinario.id } : {}),
+        modalidade,
+        ...(modalidade === 'convenio' && cliente ? { clienteId: cliente.id } : {}),
+        ...(modalidade === 'convenio' && veterinario ? { veterinarioId: veterinario.id } : {}),
+        ...(modalidade === 'particular' && clinicaOrigem.trim()
+          ? { clinicaOrigem: clinicaOrigem.trim() }
+          : {}),
+        ...(modalidade === 'particular' && veterinarioInformado.trim()
+          ? { veterinarioInformado: veterinarioInformado.trim() }
+          : {}),
         prioridade,
         ...(entradaEm ? { entradaEm: new Date(entradaEm).toISOString() } : {}),
         paciente: {
+          // Reaproveitado: so o id - o cadastro do animal ja existe.
+          ...(pacienteExistente ? { id: pacienteExistente.id } : {}),
           nome: nome.trim(),
           ...(especieId ? { especieId } : {}),
+          ...(raca.trim() ? { raca: raca.trim() } : {}),
           ...(sexo ? { sexo } : {}),
+          ...(dataNascimento ? { dataNascimento } : {}),
+          ...(idadeInformada.trim() ? { idadeInformada: idadeInformada.trim() } : {}),
           ...(microchip.trim() ? { microchip: microchip.trim() } : {}),
           ...(tutorNome.trim() ? { tutorNome: tutorNome.trim() } : {}),
+          ...(tutorTelefone.trim() ? { tutorTelefone: tutorTelefone.trim() } : {}),
+          ...(tutorEmail.trim() ? { tutorEmail: tutorEmail.trim() } : {}),
         },
         ...(historicoClinico.trim() ? { historicoClinico: historicoClinico.trim() } : {}),
         amostras: amostras.map((a) => ({
@@ -284,6 +357,48 @@ export function NovoCaso() {
             </Stack>
           )}
 
+          {/* Documento do Hugo: "quem cadastra escolhe convênio ou particular no início". */}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: 'center' }}>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              value={modalidade}
+              onChange={(_, v: 'convenio' | 'particular' | null) => v && setModalidade(v)}
+            >
+              <ToggleButton value="convenio" sx={{ px: 2 }}>
+                Convênio
+              </ToggleButton>
+              <ToggleButton value="particular" sx={{ px: 2 }}>
+                Particular
+              </ToggleButton>
+            </ToggleButtonGroup>
+            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+              {modalidade === 'convenio'
+                ? 'Parceiro cadastrado: cobrado no fechamento do mês, laudo enviado a ele.'
+                : 'O responsável traz a amostra: cobrado na entrada, laudo enviado a ele.'}
+            </Typography>
+          </Stack>
+
+          {modalidade === 'particular' && (
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField
+                label="Clínica de origem"
+                value={clinicaOrigem}
+                onChange={(e) => setClinicaOrigem(e.target.value)}
+                sx={{ flex: 1 }}
+                helperText="Sem parceria — só o nome, como veio"
+              />
+              <TextField
+                label="Veterinário solicitante"
+                value={veterinarioInformado}
+                onChange={(e) => setVeterinarioInformado(e.target.value)}
+                sx={{ flex: 1 }}
+                helperText=" "
+              />
+            </Stack>
+          )}
+
+          {modalidade === 'convenio' && (
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <Autocomplete
               options={clientes}
@@ -291,7 +406,9 @@ export function NovoCaso() {
               onChange={(_, v) => setCliente(v)}
               getOptionLabel={(o) => o.nomeFantasia}
               sx={{ flex: 1 }}
-              renderInput={(params) => <TextField {...params} required label="Cliente" />}
+              renderInput={(params) => (
+                <TextField {...params} required={modalidade === 'convenio'} label="Cliente" />
+              )}
             />
 
             <Autocomplete
@@ -338,9 +455,66 @@ export function NovoCaso() {
               )}
             />
           </Stack>
+          )}
         </Secao>
 
-        <Secao titulo="Paciente">
+        <Secao
+          titulo="Paciente"
+          descricao="Já atendido? Busque por nome, responsável ou microchip e só insira o exame."
+        >
+          <Autocomplete
+            options={encontrados}
+            value={pacienteExistente}
+            onChange={(_, v) => usarPaciente(v)}
+            inputValue={buscaPaciente}
+            onInputChange={(_, v, motivo) => {
+              if (motivo !== 'reset') setBuscaPaciente(v);
+            }}
+            getOptionLabel={(o) => o.nome}
+            isOptionEqualToValue={(a, b) => a.id === b.id}
+            filterOptions={(x) => x}
+            noOptionsText={
+              buscaPaciente.trim().length < 2 ? 'Digite ao menos 2 letras' : 'Nenhum paciente com esse nome'
+            }
+            renderOption={(props, o) => (
+              <li {...props} key={o.id}>
+                <Box>
+                  <Typography sx={{ fontSize: 13.5, fontWeight: 500 }}>
+                    {o.nome}
+                    {o.especie ? ` · ${o.especie}` : ''}
+                    {o.raca ? ` · ${o.raca}` : ''}
+                  </Typography>
+                  <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
+                    {[
+                      o.tutorNome ? `Responsável: ${o.tutorNome}` : null,
+                      o.ultimoCaso
+                        ? `Último exame ${o.ultimoCaso}${
+                            o.ultimaEntrada
+                              ? ` em ${new Date(o.ultimaEntrada).toLocaleDateString('pt-BR')}`
+                              : ''
+                          }`
+                        : null,
+                      `${o.totalCasos} exame${o.totalCasos === 1 ? '' : 's'}`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Typography>
+                </Box>
+              </li>
+            )}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Paciente já atendido"
+                helperText={
+                  pacienteExistente
+                    ? `Cadastro reaproveitado — ${pacienteExistente.totalCasos} exame(s) anteriores. Os campos abaixo vêm dele.`
+                    : 'Opcional. Sem correspondência, preencha abaixo e o paciente é criado.'
+                }
+              />
+            )}
+          />
+
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <TextField
               required
@@ -377,7 +551,30 @@ export function NovoCaso() {
             </TextField>
           </Stack>
 
+          {/* Documento do Hugo: raça e idade faltavam; a idade vem na maioria das
+              requisições, a data de nascimento em algumas. */}
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <TextField
+              label="Raça"
+              value={raca}
+              onChange={(e) => setRaca(e.target.value)}
+              sx={{ flex: 1.4 }}
+            />
+            <TextField
+              label="Idade"
+              value={idadeInformada}
+              onChange={(e) => setIdadeInformada(e.target.value)}
+              placeholder="Ex.: 12 anos"
+              sx={{ flex: 1 }}
+            />
+            <TextField
+              type="date"
+              label="Nascimento"
+              value={dataNascimento}
+              onChange={(e) => setDataNascimento(e.target.value)}
+              slotProps={{ inputLabel: { shrink: true } }}
+              sx={{ flex: 1 }}
+            />
             <TextField
               label="Microchip"
               value={microchip}
@@ -387,11 +584,31 @@ export function NovoCaso() {
               // achado crítico: é o sinal clássico de troca de identidade.
               helperText="Identifica o paciente entre casos"
             />
+          </Stack>
+
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <TextField
-              label="Tutor"
+              label="Responsável"
               value={tutorNome}
               onChange={(e) => setTutorNome(e.target.value)}
+              required={modalidade === 'particular'}
+              sx={{ flex: 1.4 }}
+            />
+            <TextField
+              label="Telefone do responsável"
+              value={tutorTelefone}
+              onChange={(e) => setTutorTelefone(e.target.value)}
+              required={modalidade === 'particular' && !tutorEmail.trim()}
               sx={{ flex: 1 }}
+              helperText={modalidade === 'particular' ? 'Telefone ou e-mail: é dele que se cobra' : ' '}
+            />
+            <TextField
+              label="E-mail do responsável"
+              type="email"
+              value={tutorEmail}
+              onChange={(e) => setTutorEmail(e.target.value)}
+              sx={{ flex: 1 }}
+              helperText={modalidade === 'particular' ? 'Para onde vai o laudo' : ' '}
             />
           </Stack>
 

@@ -222,9 +222,24 @@ export interface Dossie {
     recebidoEm: string | null;
     triadoEm: string | null;
     resultadoTriagem: string | null;
+    /** Convênio × particular (documento do Hugo). */
+    modalidade: 'convenio' | 'particular';
+    clinicaOrigem: string | null;
+    veterinarioInformado: string | null;
   };
-  cliente: { nomeFantasia: string };
-  paciente: { nome: string; microchip: string | null };
+  cliente: { nomeFantasia: string; tipo: string };
+  paciente: {
+    id: string;
+    nome: string;
+    microchip: string | null;
+    especieId: string | null;
+    raca: string | null;
+    sexo: string | null;
+    dataNascimento: string | null;
+    idadeInformada: string | null;
+  };
+  /** Responsável pelo animal — no particular, quem paga e recebe o laudo. */
+  responsavel: { id: string; nome: string; telefone: string | null; email: string | null } | null;
   /**
    * A modalidade decide a forma da bancada de laudo (M12: interface adaptativa).
    * `exigeTriagem` (M01) entra na precondicao pre-analitica: servico que
@@ -327,6 +342,24 @@ export interface Termo {
 export interface CasoCriado {
   id: string;
   identificador: string;
+}
+
+/** Paciente já atendido, para "só inserir o exame" (documento do Hugo). */
+export interface PacienteEncontrado {
+  id: string;
+  nome: string;
+  especie: string | null;
+  raca: string | null;
+  sexo: string | null;
+  dataNascimento: string | null;
+  idadeInformada: string | null;
+  microchip: string | null;
+  tutorNome: string | null;
+  tutorTelefone: string | null;
+  tutorEmail: string | null;
+  ultimoCaso: string | null;
+  ultimaEntrada: string | null;
+  totalCasos: number;
 }
 
 // --- M09: processamento terceirizado ----------------------------------------
@@ -1181,6 +1214,8 @@ export interface VinculoDoCliente {
 
 export interface ClienteFicha extends Omit<ClienteLista, 'totalCasos'> {
   nomeAbreviado: string | null;
+  email: string | null;
+  telefone: string | null;
   observacoes: string | null;
   /** M20: tabela de preços que o cliente segue (laboratório, clínica, hospital…). */
   tabelaPrecoId: string | null;

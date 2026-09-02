@@ -57,7 +57,7 @@ export function PortalExames() {
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
         <TextField
-          label="Buscar por paciente, tutor ou registro"
+          label="Buscar por paciente, responsável ou registro"
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           sx={{ flex: 1 }}
@@ -114,7 +114,7 @@ export function PortalExames() {
                   </Typography>
                 </Stack>
                 <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
-                  {[e.servico, e.tutor && `Tutor: ${e.tutor}`, e.veterinario]
+                  {[e.servico, e.tutor && `Responsável: ${e.tutor}`, e.veterinario]
                     .filter(Boolean)
                     .join(' · ')}
                 </Typography>

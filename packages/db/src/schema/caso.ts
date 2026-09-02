@@ -15,6 +15,7 @@ import {
   colunasTenant,
   formaEntregaEnum,
   gravidadeNcEnum,
+  modalidadeCobrancaEnum,
   lateralidadeEnum,
   prioridadeEnum,
   resultadoTriagemEnum,
@@ -97,6 +98,16 @@ export const caso = pgTable(
      * assim. Nas demais, a obrigatoriedade e validada na aplicacao.
      */
     veterinarioId: uuid('veterinario_id').references(() => veterinario.id),
+    /**
+     * Convenio x particular (documento do Hugo). No particular o cliente e o
+     * pseudo-cliente "Particular" da instituicao (tipo `tutor_particular`):
+     * quem paga e recebe o laudo e o responsavel do paciente, e a clinica de
+     * origem e o veterinario solicitante ficam aqui como texto, porque nao
+     * ha parceria nem cadastro previo deles.
+     */
+    modalidade: modalidadeCobrancaEnum('modalidade').notNull().default('convenio'),
+    clinicaOrigem: text('clinica_origem'),
+    veterinarioInformado: text('veterinario_informado'),
     pacienteId: uuid('paciente_id')
       .notNull()
       .references(() => paciente.id),

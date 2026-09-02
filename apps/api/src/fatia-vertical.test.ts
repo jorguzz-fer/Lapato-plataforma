@@ -1339,6 +1339,8 @@ describe('cadastro de clientes e veterinários (M03)', () => {
       nomeFantasia: `Clínica Aurora ${marca}`,
       documento: `12.345.${marca}/0001-90`,
       tipo: 'clinica',
+      email: `aurora-${marca}@exemplo.test`,
+      telefone: '85 99999-0000',
       codigo: `A${marca.slice(-3)}`,
     });
     expect(cli.status, JSON.stringify(cli.body)).toBe(201);
@@ -1379,6 +1381,8 @@ describe('cadastro de clientes e veterinários (M03)', () => {
       nomeFantasia: `Outro Nome ${marca}`,
       documento: `12345${marca}000190`,
       tipo: 'clinica',
+      email: `outro-${marca}@exemplo.test`,
+      telefone: '85 99999-0001',
       codigo: `B${marca.slice(-3)}`,
     });
     expect(repetido.status).toBe(409);
@@ -1389,6 +1393,8 @@ describe('cadastro de clientes e veterinários (M03)', () => {
       nomeFantasia: `Outro Nome ${marca}`,
       documento: `12345${marca}000190`,
       tipo: 'clinica',
+      email: `outro-${marca}@exemplo.test`,
+      telefone: '85 99999-0001',
       codigo: `B${marca.slice(-3)}`,
       ignorarDuplicidade: true,
     });
@@ -1397,6 +1403,9 @@ describe('cadastro de clientes e veterinários (M03)', () => {
     // Código repetido é barrado mesmo com a confirmação: compõe o registro.
     const codigoRepetido = await req('POST', '/clientes', {
       nomeFantasia: 'Terceiro Nome',
+      documento: `99${marca}0001`,
+      email: `terceiro-${marca}@exemplo.test`,
+      telefone: '85 99999-0002',
       tipo: 'clinica',
       codigo: `A${marca.slice(-3)}`,
       ignorarDuplicidade: true,
@@ -4823,5 +4832,175 @@ describe('fechamento do período, produtividade e arquivo de laudos (M20 + M11)'
     await entrar('recepcao@lapato.local');
     const negado = await req('GET', '/laudos/busca?q=Thor');
     expect(negado.status).toBe(403);
+  });
+});
+
+/**
+ * Documento do Hugo (segunda review): convenio x particular, paciente
+ * reaproveitado entre exames, correcao da identificacao e o minimo do
+ * cadastro de cliente e veterinario.
+ */
+describe('documento do Hugo: cadastro, paciente reaproveitado e particular', () => {
+  const marca = Date.now().toString().slice(-6);
+  let servicoId: string;
+  let pacienteId: string;
+  let casoParticularId: string;
+  let clienteParticularId: string;
+  let ordemUmId: string;
+
+  test('cliente exige CNPJ, e-mail e telefone; veterinário exige CRMV', async () => {
+    await entrar('admin@lapato.local');
+
+    const semContato = await req('POST', '/clientes', {
+      nomeFantasia: `Sem Contato ${marca}`,
+      documento: `11${marca}0001`,
+      tipo: 'clinica',
+      codigo: `S${marca.slice(-3)}`,
+    });
+    expect(semContato.status).toBe(400);
+
+    const semCrmv = await req('POST', '/veterinarios', { nome: `Sem CRMV ${marca}` });
+    expect(semCrmv.status).toBe(400);
+  });
+
+  test('exame particular: sem responsável não entra; com ele, sigla PT e OS faturável na entrada', async () => {
+    await entrar('admin@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    servicoId = servicos.body.find((s: any) => s.codigo === 'HISTO').id;
+
+    const base = {
+      servicoId,
+      modalidade: 'particular',
+      amostras: [{ descricao: 'Nódulo cutâneo' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    };
+
+    // E dele que se cobra e para ele que vai o laudo: sem contato, nao entra.
+    const semResponsavel = await req('POST', '/casos', {
+      ...base,
+      paciente: { nome: `Bob ${marca}` },
+    });
+    expect(semResponsavel.status).toBe(400);
+    expect(semResponsavel.body.detail).toContain('responsável');
+
+    const criado = await req('POST', '/casos', {
+      ...base,
+      clinicaOrigem: 'Clínica do Bairro',
+      veterinarioInformado: 'Dr. Fulano',
+      paciente: {
+        nome: `Bob ${marca}`,
+        raca: 'Maltês',
+        idadeInformada: '12 anos',
+        tutorNome: `Maria Oliveira ${marca}`,
+        tutorTelefone: '11 99999-1234',
+      },
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    // A sigla do pseudo-cliente identifica o particular a olho nu.
+    expect(criado.body.identificador.startsWith('PT')).toBe(true);
+    casoParticularId = criado.body.id;
+
+    const dossie = await req('GET', `/casos/${casoParticularId}`);
+    expect(dossie.status).toBe(200);
+    expect(dossie.body.caso.modalidade).toBe('particular');
+    expect(dossie.body.caso.clinicaOrigem).toBe('Clínica do Bairro');
+    expect(dossie.body.caso.veterinarioInformado).toBe('Dr. Fulano');
+    expect(dossie.body.cliente.tipo).toBe('tutor_particular');
+    expect(dossie.body.responsavel.nome).toBe(`Maria Oliveira ${marca}`);
+    expect(dossie.body.paciente.raca).toBe('Maltês');
+    expect(dossie.body.paciente.idadeInformada).toBe('12 anos');
+    pacienteId = dossie.body.paciente.id;
+    clienteParticularId = dossie.body.cliente.id;
+
+    // O recebimento cria a OS; no particular ela ja nasce faturavel
+    // ("cobramos diretamente do tutor quando ele nos entrega a amostra").
+    const recebido = await req('POST', `/casos/${casoParticularId}/recebimento`, {
+      conferencia: dossie.body.recipientes.map((r: any) => ({
+        recipienteId: r.id,
+        quantidadeRecebida: 1,
+      })),
+    });
+    expect([200, 201], JSON.stringify(recebido.body)).toContain(recebido.status);
+
+    const ordem = await req('GET', `/ordens/casos/${casoParticularId}`);
+    expect(ordem.status).toBe(200);
+    expect(ordem.body.faturavelEm).not.toBeNull();
+    ordemUmId = ordem.body.id;
+  });
+
+  test('paciente já atendido: busca por responsável e "só inserir o exame"', async () => {
+    await entrar('admin@lapato.local');
+
+    const busca = await req('GET', `/pacientes?q=${encodeURIComponent(`Oliveira ${marca}`)}`);
+    expect(busca.status).toBe(200);
+    const achado = busca.body.find((p: any) => p.id === pacienteId);
+    expect(achado).toBeDefined();
+    expect(achado.tutorNome).toBe(`Maria Oliveira ${marca}`);
+    expect(achado.totalCasos).toBe(1);
+    expect(achado.ultimoCaso.startsWith('PT')).toBe(true);
+
+    // Segundo exame do mesmo animal: so o id do paciente - nada e redigitado.
+    const segundo = await req('POST', '/casos', {
+      servicoId,
+      modalidade: 'particular',
+      paciente: { id: pacienteId, nome: 'ignorado' },
+      amostras: [{ descricao: 'Segundo fragmento' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(segundo.status, JSON.stringify(segundo.body)).toBe(201);
+
+    const dossie = await req('GET', `/casos/${segundo.body.id}`);
+    expect(dossie.body.paciente.id).toBe(pacienteId);
+    expect(dossie.body.paciente.nome).toBe(`Bob ${marca}`);
+    expect(dossie.body.responsavel.nome).toBe(`Maria Oliveira ${marca}`);
+
+    const deNovo = await req('GET', `/pacientes?q=${encodeURIComponent(`Bob ${marca}`)}`);
+    expect(deNovo.body.find((p: any) => p.id === pacienteId).totalCasos).toBe(2);
+
+    // Uma fatura por exame particular: duas OSs juntas sao recusadas.
+    const recebido = await req('POST', `/casos/${segundo.body.id}/recebimento`, {
+      conferencia: dossie.body.recipientes.map((r: any) => ({
+        recipienteId: r.id,
+        quantidadeRecebida: 1,
+      })),
+    });
+    expect([200, 201]).toContain(recebido.status);
+    const ordemDois = await req('GET', `/ordens/casos/${segundo.body.id}`);
+    const juntas = await req('POST', '/financeiro/faturas', {
+      clienteId: clienteParticularId,
+      ordemIds: [ordemUmId, ordemDois.body.id],
+    });
+    expect(juntas.status).toBe(400);
+    expect(juntas.body.detail).toContain('um a um');
+  });
+
+  test('identificação do animal corrigida depois do cadastro', async () => {
+    await entrar('admin@lapato.local');
+
+    const r = await req('POST', `/pacientes/${pacienteId}`, {
+      sexo: 'macho',
+      idadeInformada: '13 anos',
+      tutorEmail: `maria-${marca}@exemplo.test`,
+    });
+    expect([200, 201], JSON.stringify(r.body)).toContain(r.status);
+
+    const dossie = await req('GET', `/casos/${casoParticularId}`);
+    expect(dossie.body.paciente.sexo).toBe('macho');
+    expect(dossie.body.paciente.idadeInformada).toBe('13 anos');
+    // A raca informada no cadastro nao foi tocada.
+    expect(dossie.body.paciente.raca).toBe('Maltês');
+    expect(dossie.body.responsavel.email).toBe(`maria-${marca}@exemplo.test`);
+    expect(dossie.body.responsavel.telefone).toBe('11 99999-1234');
+  });
+
+  test('convênio continua exigindo o cliente', async () => {
+    await entrar('admin@lapato.local');
+    const semCliente = await req('POST', '/casos', {
+      servicoId,
+      paciente: { nome: `Rex ${marca}` },
+      amostras: [{ descricao: 'Fragmento' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(semCliente.status).toBe(400);
   });
 });

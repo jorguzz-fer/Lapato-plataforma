@@ -68,7 +68,17 @@ interface OrdemFaturavel {
   casoIdentificador: string;
   clienteId: string;
   clienteNome: string;
+  /** Particular: a OS é cobrada do responsável, não do "cliente". */
+  modalidade: 'convenio' | 'particular';
+  responsavel: string | null;
   total: string;
+}
+
+/** Rótulo de quem paga: o cliente do convênio, ou o responsável no particular. */
+function pagadorDaOrdem(o: OrdemFaturavel): string {
+  return o.modalidade === 'particular' && o.responsavel
+    ? `Particular · ${o.responsavel}`
+    : o.clienteNome;
 }
 
 export function Financeiro({ permissoes }: { permissoes: string[] }) {
@@ -329,12 +339,14 @@ function DialogoNovaFatura({ aoFechar, aoSalvar }: { aoFechar: () => void; aoSal
 
   const porCliente = new Map<string, OrdemFaturavel[]>();
   for (const ordem of ordens) {
-    porCliente.set(ordem.clienteNome, [...(porCliente.get(ordem.clienteNome) ?? []), ordem]);
+    const rotulo = pagadorDaOrdem(ordem);
+    porCliente.set(rotulo, [...(porCliente.get(rotulo) ?? []), ordem]);
   }
 
-  // Todas as escolhidas precisam ser do mesmo cliente - a fatura é dele.
+  // Todas as escolhidas precisam ser do mesmo pagador - a fatura é dele. No
+  // particular cada responsável é um pagador, mesmo que o "cliente" seja um só.
   const clientesEscolhidos = new Set(
-    ordens.filter((o) => escolhidas.has(o.id)).map((o) => o.clienteNome),
+    ordens.filter((o) => escolhidas.has(o.id)).map(pagadorDaOrdem),
   );
 
   async function criar() {

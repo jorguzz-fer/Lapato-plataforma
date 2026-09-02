@@ -65,7 +65,7 @@ const TIPO_LABEL: Record<string, string> = {
   ong: 'ONG',
   centro_pesquisa: 'Centro de pesquisa',
   empresa: 'Empresa',
-  tutor_particular: 'Tutor particular',
+  tutor_particular: 'Responsável particular',
   outro: 'Outro',
 };
 
@@ -225,6 +225,8 @@ function DialogoNovoCliente({
   const [documento, setDocumento] = useState('');
   const [tipo, setTipo] = useState('clinica');
   const [codigo, setCodigo] = useState('');
+  const [email, setEmail] = useState('');
+  const [telefone, setTelefone] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [duplicidades, setDuplicidades] = useState<DuplicidadeCadastral[] | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -237,6 +239,8 @@ function DialogoNovoCliente({
         nomeFantasia: nomeFantasia.trim(),
         ...(razaoSocial.trim() ? { razaoSocial: razaoSocial.trim() } : {}),
         ...(documento.trim() ? { documento: documento.trim() } : {}),
+        ...(email.trim() ? { email: email.trim() } : {}),
+        ...(telefone.trim() ? { telefone: telefone.trim() } : {}),
         tipo,
         codigo: codigo.trim().toUpperCase(),
         ...(ignorarDuplicidade ? { ignorarDuplicidade: true } : {}),
@@ -244,6 +248,8 @@ function DialogoNovoCliente({
       setNomeFantasia('');
       setRazaoSocial('');
       setDocumento('');
+      setEmail('');
+      setTelefone('');
       setCodigo('');
       setDuplicidades(null);
       aoCriar();
@@ -280,6 +286,7 @@ function DialogoNovoCliente({
               label="CNPJ ou CPF"
               value={documento}
               onChange={(e) => setDocumento(e.target.value)}
+              required={tipo !== 'tutor_particular'}
               sx={{ flex: 1 }}
             />
             <TextField
@@ -295,6 +302,26 @@ function DialogoNovoCliente({
                 </MenuItem>
               ))}
             </TextField>
+          </Stack>
+          {/* Documento do Hugo: CNPJ, e-mail e telefone são o mínimo do cliente. */}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <TextField
+              label="E-mail"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required={tipo !== 'tutor_particular'}
+              sx={{ flex: 1.4 }}
+              helperText="Para onde vai o fechamento do mês"
+            />
+            <TextField
+              label="Telefone"
+              value={telefone}
+              onChange={(e) => setTelefone(e.target.value)}
+              required={tipo !== 'tutor_particular'}
+              sx={{ flex: 1 }}
+              helperText=" "
+            />
           </Stack>
           <TextField
             label="Código"
@@ -378,6 +405,8 @@ function FichaCliente({
   const [nomeFantasia, setNomeFantasia] = useState('');
   const [razaoSocial, setRazaoSocial] = useState('');
   const [documento, setDocumento] = useState('');
+  const [email, setEmail] = useState('');
+  const [telefone, setTelefone] = useState('');
   const [observacoes, setObservacoes] = useState('');
   const [tabelaPrecoId, setTabelaPrecoId] = useState('');
   const [tabelas, setTabelas] = useState<Array<{ id: string; nome: string }>>([]);
@@ -399,6 +428,8 @@ function FichaCliente({
         setNomeFantasia(f.nomeFantasia);
         setRazaoSocial(f.razaoSocial ?? '');
         setDocumento(f.documento ?? '');
+        setEmail(f.email ?? '');
+        setTelefone(f.telefone ?? '');
         setObservacoes(f.observacoes ?? '');
         setTabelaPrecoId(f.tabelaPrecoId ?? '');
       })
@@ -427,6 +458,8 @@ function FichaCliente({
         nomeFantasia: nomeFantasia.trim(),
         razaoSocial: razaoSocial.trim(),
         documento: documento.trim(),
+        email: email.trim(),
+        telefone: telefone.trim(),
         observacoes: observacoes.trim(),
         tabelaPrecoId: tabelaPrecoId || null,
       });
@@ -477,6 +510,21 @@ function FichaCliente({
                       label="CNPJ ou CPF"
                       value={documento}
                       onChange={(e) => setDocumento(e.target.value)}
+                      sx={{ flex: 1 }}
+                    />
+                  </Stack>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                    <TextField
+                      label="E-mail"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      sx={{ flex: 1.4 }}
+                    />
+                    <TextField
+                      label="Telefone"
+                      value={telefone}
+                      onChange={(e) => setTelefone(e.target.value)}
                       sx={{ flex: 1 }}
                     />
                   </Stack>

@@ -5,10 +5,12 @@ import {
   caso,
   cliente,
   itemOrdemServico,
+  itemTabelaPreco,
   macroscopia,
   ordemServico,
   precoCliente,
   servico,
+  tabelaPreco,
   type Transacao,
 } from '@lapato/db';
 import {
@@ -271,9 +273,11 @@ export class OrdensService {
   }
 
   /**
-   * Preco vigente para o par cliente x servico: acordo personalizado quando
-   * existe, tabela padrao quando nao. So e consultado no momento em que um
-   * item ENTRA na ordem - nunca para reler itens antigos.
+   * Preco vigente para o par cliente x servico, nesta ordem: acordo
+   * individual do cliente > tabela de precos do cliente (laboratorio,
+   * clinica, hospital - segunda review) > valor padrao do servico. So e
+   * consultado no momento em que um item ENTRA na ordem - nunca para reler
+   * itens antigos.
    */
   private async precoVigente(
     tx: Transacao,
@@ -294,6 +298,21 @@ export class OrdensService {
       )
       .limit(1);
     if (acordo) return acordo.valor;
+
+    const [daTabela] = await tx
+      .select({ valor: itemTabelaPreco.valor })
+      .from(cliente)
+      .innerJoin(
+        itemTabelaPreco,
+        and(
+          eq(itemTabelaPreco.tabelaId, cliente.tabelaPrecoId),
+          eq(itemTabelaPreco.servicoId, servicoId),
+          eq(itemTabelaPreco.tenantId, ctx.tenantId),
+        ),
+      )
+      .where(and(eq(cliente.tenantId, ctx.tenantId), eq(cliente.id, clienteId)))
+      .limit(1);
+    if (daTabela) return daTabela.valor;
 
     const [padrao] = await tx
       .select({ valor: servico.valorPadrao })
@@ -646,23 +665,41 @@ export class OrdensService {
   // --- Precos ------------------------------------------------------------
 
   /**
-   * Tabela de precos do cliente: o catalogo inteiro, com o valor padrao e o
-   * acordo (quando ha). A tela mostra lado a lado - e o "tabela padrao ou
-   * personalizada" da review, sem duplicar catalogo.
+   * Precos do cliente: o catalogo inteiro com as tres camadas lado a lado -
+   * valor padrao, valor da tabela que o cliente segue e acordo individual. A
+   * tela mostra qual vence; o item de OS copia o vencedor no momento em que
+   * entra (M01: nao retroage).
    */
   async precosDoCliente(clienteId: string) {
     return this.db.executar(async (tx) => {
       const ctx = exigirContexto();
 
-      return tx
+      const [dono] = await tx
+        .select({ tabelaPrecoId: cliente.tabelaPrecoId, tabelaNome: tabelaPreco.nome })
+        .from(cliente)
+        .leftJoin(tabelaPreco, eq(tabelaPreco.id, cliente.tabelaPrecoId))
+        .where(and(eq(cliente.tenantId, ctx.tenantId), eq(cliente.id, clienteId)))
+        .limit(1);
+      if (!dono) throw new NotFoundException('Cliente não encontrado.');
+
+      const linhas = await tx
         .select({
           servicoId: servico.id,
           nome: servico.nome,
           codigo: servico.codigo,
           valorPadrao: servico.valorPadrao,
+          valorTabela: itemTabelaPreco.valor,
           valorCliente: precoCliente.valor,
         })
         .from(servico)
+        .leftJoin(
+          itemTabelaPreco,
+          and(
+            eq(itemTabelaPreco.servicoId, servico.id),
+            dono.tabelaPrecoId ? eq(itemTabelaPreco.tabelaId, dono.tabelaPrecoId) : sql`false`,
+            eq(itemTabelaPreco.tenantId, ctx.tenantId),
+          ),
+        )
         .leftJoin(
           precoCliente,
           and(
@@ -673,7 +710,189 @@ export class OrdensService {
         )
         .where(and(eq(servico.tenantId, ctx.tenantId), isNull(servico.inativadoEm)))
         .orderBy(asc(servico.nome));
+
+      return linhas.map((l) => ({ ...l, tabelaNome: dono.tabelaNome ?? null }));
     });
+  }
+
+  // --- Tabelas de preco (segunda review) -----------------------------------
+
+  async listarTabelas() {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      return tx
+        .select({
+          id: tabelaPreco.id,
+          nome: tabelaPreco.nome,
+          descricao: tabelaPreco.descricao,
+          inativadoEm: tabelaPreco.inativadoEm,
+          // Referencia externa literal (armadilha da subconsulta correlacionada).
+          clientes: sql<number>`(
+            select count(*)::int from cliente c where c.tabela_preco_id = tabela_preco.id
+          )`,
+        })
+        .from(tabelaPreco)
+        .where(eq(tabelaPreco.tenantId, ctx.tenantId))
+        // Ativas primeiro (NULL ordena por ultimo em ASC no Postgres), depois nome.
+        .orderBy(sql`${tabelaPreco.inativadoEm} is not null`, asc(tabelaPreco.nome));
+    });
+  }
+
+  /** So as ativas, para o formulario do cliente escolher. */
+  async opcoesDeTabela() {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      return tx
+        .select({ id: tabelaPreco.id, nome: tabelaPreco.nome })
+        .from(tabelaPreco)
+        .where(and(eq(tabelaPreco.tenantId, ctx.tenantId), isNull(tabelaPreco.inativadoEm)))
+        .orderBy(asc(tabelaPreco.nome));
+    });
+  }
+
+  async criarTabela(nome: string, descricao?: string) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      const limpo = nome.trim();
+
+      const [existente] = await tx
+        .select({ id: tabelaPreco.id })
+        .from(tabelaPreco)
+        .where(and(eq(tabelaPreco.tenantId, ctx.tenantId), eq(tabelaPreco.nome, limpo)))
+        .limit(1);
+      if (existente) throw new BadRequestException(`Já existe uma tabela chamada "${limpo}".`);
+
+      const [nova] = await tx
+        .insert(tabelaPreco)
+        .values({ tenantId: ctx.tenantId, nome: limpo, descricao: descricao?.trim() || null })
+        .returning({ id: tabelaPreco.id });
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'tabela_preco',
+        entidadeId: nova!.id,
+        acao: 'criar',
+        valorNovo: { nome: limpo },
+      });
+      return { id: nova!.id };
+    });
+  }
+
+  /** Renomear, descrever, inativar ou reativar. Inativar nao apaga (M01). */
+  async editarTabela(
+    id: string,
+    dados: { nome?: string; descricao?: string | null; ativa?: boolean },
+  ) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      const tabela = await this.exigirTabela(tx, id);
+
+      const mudancas: Partial<typeof tabelaPreco.$inferInsert> = {};
+      if (dados.nome !== undefined && dados.nome.trim() !== tabela.nome) {
+        const [colisao] = await tx
+          .select({ id: tabelaPreco.id })
+          .from(tabelaPreco)
+          .where(and(eq(tabelaPreco.tenantId, ctx.tenantId), eq(tabelaPreco.nome, dados.nome.trim())))
+          .limit(1);
+        if (colisao) throw new BadRequestException(`Já existe uma tabela chamada "${dados.nome.trim()}".`);
+        mudancas.nome = dados.nome.trim();
+      }
+      if (dados.descricao !== undefined) mudancas.descricao = dados.descricao?.trim() || null;
+      if (dados.ativa !== undefined) {
+        mudancas.inativadoEm = dados.ativa ? null : new Date();
+        mudancas.inativadoPor = dados.ativa ? null : ctx.usuarioId;
+      }
+      if (Object.keys(mudancas).length === 0) return { ok: true };
+
+      await tx
+        .update(tabelaPreco)
+        .set({ ...mudancas, atualizadoEm: new Date() })
+        .where(and(eq(tabelaPreco.tenantId, ctx.tenantId), eq(tabelaPreco.id, id)));
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'tabela_preco',
+        entidadeId: id,
+        acao: 'editar',
+        valorAnterior: { nome: tabela.nome, inativadoEm: tabela.inativadoEm },
+        valorNovo: mudancas as Record<string, unknown>,
+      });
+      return { ok: true };
+    });
+  }
+
+  /** Catalogo inteiro com o valor padrao e o valor desta tabela ao lado. */
+  async itensDaTabela(tabelaId: string) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      await this.exigirTabela(tx, tabelaId);
+
+      return tx
+        .select({
+          servicoId: servico.id,
+          nome: servico.nome,
+          codigo: servico.codigo,
+          valorPadrao: servico.valorPadrao,
+          valorTabela: itemTabelaPreco.valor,
+        })
+        .from(servico)
+        .leftJoin(
+          itemTabelaPreco,
+          and(
+            eq(itemTabelaPreco.servicoId, servico.id),
+            eq(itemTabelaPreco.tabelaId, tabelaId),
+            eq(itemTabelaPreco.tenantId, ctx.tenantId),
+          ),
+        )
+        .where(and(eq(servico.tenantId, ctx.tenantId), isNull(servico.inativadoEm)))
+        .orderBy(asc(servico.nome));
+    });
+  }
+
+  /** Define ou remove (valor nulo) o preco de um servico na tabela. */
+  async definirItemTabela(tabelaId: string, servicoId: string, valor: number | null) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      await this.exigirTabela(tx, tabelaId);
+
+      if (valor == null) {
+        await tx
+          .delete(itemTabelaPreco)
+          .where(
+            and(
+              eq(itemTabelaPreco.tenantId, ctx.tenantId),
+              eq(itemTabelaPreco.tabelaId, tabelaId),
+              eq(itemTabelaPreco.servicoId, servicoId),
+            ),
+          );
+        return { ok: true };
+      }
+
+      await tx
+        .insert(itemTabelaPreco)
+        .values({ tenantId: ctx.tenantId, tabelaId, servicoId, valor: valor.toFixed(2) })
+        .onConflictDoUpdate({
+          target: [itemTabelaPreco.tenantId, itemTabelaPreco.tabelaId, itemTabelaPreco.servicoId],
+          set: { valor: valor.toFixed(2), atualizadoEm: new Date() },
+        });
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'item_tabela_preco',
+        entidadeId: tabelaId,
+        acao: 'definir',
+        valorNovo: { servicoId, valor: valor.toFixed(2) },
+      });
+      return { ok: true };
+    });
+  }
+
+  private async exigirTabela(tx: Transacao, id: string) {
+    const ctx = exigirContexto();
+    const [tabela] = await tx
+      .select({ id: tabelaPreco.id, nome: tabelaPreco.nome, inativadoEm: tabelaPreco.inativadoEm })
+      .from(tabelaPreco)
+      .where(and(eq(tabelaPreco.tenantId, ctx.tenantId), eq(tabelaPreco.id, id)))
+      .limit(1);
+    if (!tabela) throw new NotFoundException('Tabela de preços não encontrada.');
+    return tabela;
   }
 
   /** Define ou remove (valor nulo) o acordo do cliente para um servico. */

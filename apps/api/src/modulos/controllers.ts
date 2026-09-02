@@ -1032,7 +1032,14 @@ export class ClientesController {
   async editar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
     await this.clientes.editarCliente(
       id,
-      validarCorpo(clienteSchema.partial().omit({ codigo: true, ignorarDuplicidade: true }), corpo),
+      validarCorpo(
+        clienteSchema
+          .partial()
+          .omit({ codigo: true, ignorarDuplicidade: true })
+          // M20: tabela de precos que o cliente segue; nulo volta ao valor padrao.
+          .extend({ tabelaPrecoId: z.string().uuid().nullable().optional() }),
+        corpo,
+      ),
     );
     return { ok: true };
   }
@@ -2928,7 +2935,69 @@ export class PrecosController {
     const dados = validarCorpo(precoClienteSchema, corpo);
     return this.ordens.definirPrecoCliente(clienteId, dados.servicoId, dados.valor);
   }
+
+  // --- Tabelas de preco (segunda review) ----------------------------------
+
+  @Get('tabelas')
+  @ExigePermissao(PERMISSOES.PRECO_GERENCIAR)
+  @ApiOperation({
+    summary: 'Tabelas de preço da instituição',
+    description:
+      'Laboratório, clínica, hospital… — os serviços são os mesmos, só o valor muda. ' +
+      'O cliente aponta para uma tabela; o acordo individual continua vencendo.',
+  })
+  async tabelas() {
+    return this.ordens.listarTabelas();
+  }
+
+  @Get('tabelas/opcoes')
+  @ExigePermissao(PERMISSOES.CLIENTE_VISUALIZAR)
+  @ApiOperation({ summary: 'Tabelas ativas, para o cadastro do cliente escolher' })
+  async opcoesDeTabela() {
+    return this.ordens.opcoesDeTabela();
+  }
+
+  @Post('tabelas')
+  @ExigePermissao(PERMISSOES.PRECO_GERENCIAR)
+  @ApiOperation({ summary: 'Cria uma tabela de preço' })
+  async criarTabela(@Body() corpo: unknown) {
+    const dados = validarCorpo(tabelaPrecoSchema, corpo);
+    return this.ordens.criarTabela(dados.nome, dados.descricao);
+  }
+
+  @Post('tabelas/:id')
+  @ExigePermissao(PERMISSOES.PRECO_GERENCIAR)
+  @ApiOperation({ summary: 'Renomeia, descreve, inativa ou reativa uma tabela (M01: nunca exclui)' })
+  async editarTabela(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    return this.ordens.editarTabela(id, validarCorpo(edicaoTabelaPrecoSchema, corpo));
+  }
+
+  @Get('tabelas/:id/itens')
+  @ExigePermissao(PERMISSOES.PRECO_GERENCIAR)
+  @ApiOperation({ summary: 'Catálogo inteiro com o valor padrão e o valor da tabela ao lado' })
+  async itensDaTabela(@Param('id', ParseUUIDPipe) id: string) {
+    return this.ordens.itensDaTabela(id);
+  }
+
+  @Post('tabelas/:id/itens')
+  @ExigePermissao(PERMISSOES.PRECO_GERENCIAR)
+  @ApiOperation({ summary: 'Define ou remove (valor nulo) o preço de um serviço na tabela' })
+  async definirItemTabela(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(precoClienteSchema, corpo);
+    return this.ordens.definirItemTabela(id, dados.servicoId, dados.valor);
+  }
 }
+
+const tabelaPrecoSchema = z.object({
+  nome: z.string().min(2).max(80),
+  descricao: z.string().max(300).optional(),
+});
+
+const edicaoTabelaPrecoSchema = z.object({
+  nome: z.string().min(2).max(80).optional(),
+  descricao: z.string().max(300).nullable().optional(),
+  ativa: z.boolean().optional(),
+});
 
 const novaFaturaSchema = z.object({
   clienteId: z.string().uuid(),

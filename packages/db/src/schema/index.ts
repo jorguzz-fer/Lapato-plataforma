@@ -27,4 +27,5 @@ export * from './necropsia.js';
 export * from './bioteca.js';
 export * from './logistica.js';
 export * from './ordens.js';
+export * from './precos.js';
 export * from './financeiro.js';

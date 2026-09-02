@@ -1170,6 +1170,9 @@ export interface VinculoDoCliente {
 export interface ClienteFicha extends Omit<ClienteLista, 'totalCasos'> {
   nomeAbreviado: string | null;
   observacoes: string | null;
+  /** M20: tabela de preços que o cliente segue (laboratório, clínica, hospital…). */
+  tabelaPrecoId: string | null;
+  tabelaPrecoNome: string | null;
   vinculos: VinculoDoCliente[];
   casos: Array<{ id: string; identificador: string; paciente: string | null; criadoEm: string }>;
 }

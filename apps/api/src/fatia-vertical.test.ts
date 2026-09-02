@@ -3949,6 +3949,91 @@ describe('ordem de serviço: do recebimento ao despacho (M20 parcial)', () => {
     const tabela = await req('GET', `/precos/clientes/${clienteId}`);
     expect(tabela.body.find((l: any) => l.servicoId === servicoId).valorCliente).toBeNull();
   });
+
+  test('tabela do perfil do cliente vence o padrão; o acordo individual vence a tabela', async () => {
+    /**
+     * Segunda review (Roberta): "os serviços são os mesmos, só varia o valor —
+     * laboratório é um valor, clínica outro, hospital outro". Preço fechado.
+     * Resolução: acordo individual > tabela do cliente > valor padrão.
+     */
+    async function ordemDeUmCasoNovo(): Promise<number> {
+      await entrar('recepcao@lapato.local');
+      const criado = await req('POST', '/casos', {
+        servicoId,
+        clienteId,
+        paciente: { nome: `Tabela ${Date.now().toString().slice(-5)}` },
+        amostras: [{ descricao: 'Fragmento' }],
+        recipientes: [{ quantidadeDeclarada: 1 }],
+      });
+      expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+      await entrar('tecnico@lapato.local');
+      const dossie = await req('GET', `/casos/${criado.body.id}`);
+      await req('POST', `/casos/${criado.body.id}/recebimento`, {
+        conferencia: dossie.body.recipientes.map((r: any) => ({
+          recipienteId: r.id,
+          quantidadeRecebida: 1,
+        })),
+      });
+      const ordem = await req('GET', `/ordens/casos/${criado.body.id}`);
+      return Number(ordem.body.itens[0].valorUnitario);
+    }
+
+    await entrar('admin@lapato.local');
+    const nome = `Clínica ${Date.now()}`;
+    const criada = await req('POST', '/precos/tabelas', { nome });
+    expect(criada.status, JSON.stringify(criada.body)).toBe(201);
+    const tabelaId = criada.body.id;
+    // Nome é único por instituição.
+    const repetida = await req('POST', '/precos/tabelas', { nome });
+    expect(repetida.status).toBe(400);
+
+    const item = await req('POST', `/precos/tabelas/${tabelaId}/itens`, { servicoId, valor: 100 });
+    expect(item.status, JSON.stringify(item.body)).toBe(201);
+    const itens = await req('GET', `/precos/tabelas/${tabelaId}/itens`);
+    expect(Number(itens.body.find((i: any) => i.servicoId === servicoId).valorTabela)).toBe(100);
+
+    // Sem tabela e sem acordo (o teste anterior removeu): vale o padrão, 150.
+    expect(await ordemDeUmCasoNovo()).toBe(150);
+
+    // O cliente passa a seguir a tabela.
+    await entrar('admin@lapato.local');
+    const vinculo = await req('POST', `/clientes/${clienteId}`, { tabelaPrecoId: tabelaId });
+    expect(vinculo.status, JSON.stringify(vinculo.body)).toBe(201);
+    const ficha = await req('GET', `/clientes/${clienteId}`);
+    expect(ficha.body.tabelaPrecoId).toBe(tabelaId);
+    const precos = await req('GET', `/precos/clientes/${clienteId}`);
+    const linha = precos.body.find((l: any) => l.servicoId === servicoId);
+    expect(Number(linha.valorTabela)).toBe(100);
+    expect(linha.valorCliente).toBeNull();
+    const listadas = await req('GET', '/precos/tabelas');
+    expect(listadas.body.find((t: any) => t.id === tabelaId).clientes).toBe(1);
+
+    // Tabela vence o padrão.
+    expect(await ordemDeUmCasoNovo()).toBe(100);
+
+    // Acordo individual vence a tabela.
+    await entrar('admin@lapato.local');
+    await req('POST', `/precos/clientes/${clienteId}`, { servicoId, valor: 90 });
+    expect(await ordemDeUmCasoNovo()).toBe(90);
+
+    // Limpeza: remove o acordo; inativa a tabela (M01: nunca exclui) — e
+    // inativa não pode mais ser atribuída, embora quem já a segue continue.
+    await entrar('admin@lapato.local');
+    await req('POST', `/precos/clientes/${clienteId}`, { servicoId, valor: null });
+    const inativar = await req('POST', `/precos/tabelas/${tabelaId}`, { ativa: false });
+    expect(inativar.status).toBe(201);
+    const opcoes = await req('GET', '/precos/tabelas/opcoes');
+    expect(opcoes.body.some((t: any) => t.id === tabelaId)).toBe(false);
+    const outroCliente = (await req('GET', '/catalogo/clientes')).body.find(
+      (c: any) => c.id !== clienteId,
+    );
+    if (outroCliente) {
+      const recusado = await req('POST', `/clientes/${outroCliente.id}`, { tabelaPrecoId: tabelaId });
+      expect(recusado.status).toBe(400);
+    }
+    const desvinculo = await req('POST', `/clientes/${clienteId}`, { tabelaPrecoId: null });
+    expect(desvinculo.status, JSON.stringify(desvinculo.body)).toBe(201);
+  });
 });
 
 describe('financeiro padrão: fatura, livro e fluxo de caixa (M20 parcial)', () => {

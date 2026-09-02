@@ -72,12 +72,13 @@ const FLAGS_SERVICO = [
 
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
 
-type Aba = 'servicos' | 'tabelas' | 'unidades' | 'locais' | 'etiquetas' | 'calendario';
+type Aba = 'servicos' | 'precos' | 'tabelas' | 'unidades' | 'locais' | 'etiquetas' | 'calendario';
 
 export function Administracao({ permissoes }: { permissoes: string[] }) {
   const [aba, setAba] = useState<Aba>('servicos');
 
   const podeConfig = permissoes.includes('config:editar');
+  const podePrecos = permissoes.includes('preco:gerenciar');
   const podeTabelas = permissoes.includes('tabela_mestre:gerenciar');
   const podeUnidades = permissoes.includes('unidade:gerenciar');
 
@@ -97,6 +98,7 @@ export function Administracao({ permissoes }: { permissoes: string[] }) {
         sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
       >
         <Tab value="servicos" label="Serviços" />
+        {podePrecos && <Tab value="precos" label="Tabelas de preço" />}
         <Tab value="tabelas" label="Tabelas mestres" />
         <Tab value="unidades" label="Unidades e setores" />
         <Tab value="locais" label="Locais físicos" />
@@ -109,6 +111,7 @@ export function Administracao({ permissoes }: { permissoes: string[] }) {
       {aba === 'unidades' && <AbaUnidades podeEditar={podeUnidades} />}
       {aba === 'locais' && <AbaLocais podeEditar={podeUnidades} />}
       {aba === 'etiquetas' && <AbaEtiquetas podeEditar={podeConfig} />}
+      {aba === 'precos' && podePrecos && <AbaTabelasPreco />}
       {aba === 'calendario' && <AbaCalendario podeEditar={podeConfig} />}
     </Box>
   );
@@ -1310,3 +1313,249 @@ function AbaEtiquetas({ podeEditar }: { podeEditar: boolean }) {
   );
 }
 
+// --- tabelas de preco (M20, segunda review) ------------------------------------
+
+interface TabelaPreco {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  inativadoEm: string | null;
+  clientes: number;
+}
+
+interface ItemTabela {
+  servicoId: string;
+  nome: string;
+  codigo: string;
+  valorPadrao: string | null;
+  valorTabela: string | null;
+}
+
+/**
+ * "Se ele for laboratorio, e um valor; clinica, outro; hospital, outro" - os
+ * servicos sao os mesmos, so o valor muda. Aqui a instituicao mantem essas
+ * poucas tabelas; o cliente escolhe a dele no cadastro. Inativar nao apaga
+ * (M01): a tabela some da escolha, nao do historico.
+ */
+function AbaTabelasPreco() {
+  const [tabelas, setTabelas] = useState<TabelaPreco[]>([]);
+  const [aberta, setAberta] = useState<TabelaPreco | null>(null);
+  const [novoNome, setNovoNome] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const [carregado, setCarregado] = useState(false);
+
+  const carregar = useCallback(() => {
+    api
+      .get<TabelaPreco[]>('/precos/tabelas')
+      .then(setTabelas)
+      .catch(() => setErro('Não foi possível carregar as tabelas de preço.'))
+      .finally(() => setCarregado(true));
+  }, []);
+
+  useEffect(carregar, [carregar]);
+
+  async function agir(fn: () => Promise<unknown>, mensagem: string) {
+    setOcupado(true);
+    setErro(null);
+    try {
+      await fn();
+      carregar();
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : mensagem);
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  if (!carregado) return <Skeleton variant="rounded" height={200} />;
+
+  return (
+    <Stack spacing={1.5}>
+      {erro && <Alert severity="error">{erro}</Alert>}
+      <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+        Os serviços são os mesmos para todo cliente; o que muda é o valor. Crie uma tabela por
+        perfil (laboratório, clínica, hospital…) e escolha a tabela no cadastro do cliente. O
+        acordo individual, quando existe, vence a tabela; sem tabela vale o valor padrão do serviço.
+      </Typography>
+
+      <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+        <TextField
+          size="small"
+          label="Nova tabela"
+          placeholder="Ex.: Clínica"
+          value={novoNome}
+          onChange={(e) => setNovoNome(e.target.value)}
+          sx={{ width: 260 }}
+        />
+        <Button
+          size="small"
+          variant="contained"
+          startIcon={<AddOutlined />}
+          disabled={ocupado || novoNome.trim().length < 2}
+          onClick={() =>
+            void agir(async () => {
+              await api.post('/precos/tabelas', { nome: novoNome.trim() });
+              setNovoNome('');
+            }, 'Não foi possível criar a tabela.')
+          }
+        >
+          Criar
+        </Button>
+      </Stack>
+
+      {tabelas.length === 0 && (
+        <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+          Nenhuma tabela ainda. Comece por uma — os valores entram serviço a serviço.
+        </Typography>
+      )}
+
+      {tabelas.map((t) => (
+        <Card key={t.id} sx={{ p: 2, opacity: t.inativadoEm ? 0.6 : 1 }}>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={2}
+            sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{t.nome}</Typography>
+                {t.inativadoEm && <Chip size="small" label="Inativa" />}
+              </Stack>
+              <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                {t.clientes === 0
+                  ? 'Nenhum cliente usa esta tabela'
+                  : `${t.clientes} cliente(s) seguem esta tabela`}
+                {t.descricao ? ` · ${t.descricao}` : ''}
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
+              <Button size="small" variant="outlined" onClick={() => setAberta(t)}>
+                Valores
+              </Button>
+              <Button
+                size="small"
+                color={t.inativadoEm ? 'primary' : 'inherit'}
+                disabled={ocupado}
+                onClick={() =>
+                  void agir(
+                    () => api.post(`/precos/tabelas/${t.id}`, { ativa: Boolean(t.inativadoEm) }),
+                    'Não foi possível alterar a tabela.',
+                  )
+                }
+              >
+                {t.inativadoEm ? 'Reativar' : 'Inativar'}
+              </Button>
+            </Stack>
+          </Stack>
+        </Card>
+      ))}
+
+      {aberta && (
+        <DialogoValoresTabela
+          tabela={aberta}
+          aoFechar={() => {
+            setAberta(null);
+            carregar();
+          }}
+        />
+      )}
+    </Stack>
+  );
+}
+
+function DialogoValoresTabela({ tabela, aoFechar }: { tabela: TabelaPreco; aoFechar: () => void }) {
+  const [itens, setItens] = useState<ItemTabela[]>([]);
+  const [edicao, setEdicao] = useState<Record<string, string>>({});
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const [carregado, setCarregado] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<ItemTabela[]>(`/precos/tabelas/${tabela.id}/itens`)
+      .then((r) => {
+        setItens(r);
+        setEdicao(Object.fromEntries(r.map((i) => [i.servicoId, i.valorTabela ?? ''])));
+      })
+      .catch(() => setErro('Não foi possível carregar os valores.'))
+      .finally(() => setCarregado(true));
+  }, [tabela.id]);
+
+  async function salvar() {
+    setOcupado(true);
+    setErro(null);
+    try {
+      for (const item of itens) {
+        const texto = (edicao[item.servicoId] ?? '').trim().replace(',', '.');
+        const valor = texto === '' ? null : Number(texto);
+        if (valor !== null && (!Number.isFinite(valor) || valor < 0)) {
+          throw new Error(`Valor inválido para ${item.nome}.`);
+        }
+        const original = item.valorTabela === null ? null : Number(item.valorTabela);
+        if (valor === original) continue;
+        await api.post(`/precos/tabelas/${tabela.id}/itens`, { servicoId: item.servicoId, valor });
+      }
+      aoFechar();
+    } catch (err) {
+      setErro(
+        err instanceof ErroApi ? err.detalhe : err instanceof Error ? err.message : 'Não foi possível salvar.',
+      );
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <Dialog open onClose={aoFechar} fullWidth maxWidth="sm">
+      <DialogTitle sx={{ fontSize: 16 }}>Valores — {tabela.nome}</DialogTitle>
+      <DialogContent>
+        {erro && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {erro}
+          </Alert>
+        )}
+        {!carregado ? (
+          <Skeleton variant="rounded" height={200} />
+        ) : (
+          <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+            <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+              Campo vazio = o serviço não tem preço nesta tabela e cai no valor padrão. Vale para
+              ordens novas; itens já lançados não mudam.
+            </Typography>
+            {itens.map((i) => (
+              <Stack
+                key={i.servicoId}
+                direction="row"
+                spacing={2}
+                sx={{ alignItems: 'center', justifyContent: 'space-between' }}
+              >
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{i.nome}</Typography>
+                  <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                    Padrão: {i.valorPadrao != null ? formatarReais(i.valorPadrao) : 'sem preço'}
+                  </Typography>
+                </Box>
+                <TextField
+                  size="small"
+                  label="Valor (R$)"
+                  value={edicao[i.servicoId] ?? ''}
+                  onChange={(e) => setEdicao((a) => ({ ...a, [i.servicoId]: e.target.value }))}
+                  sx={{ width: 140, flexShrink: 0 }}
+                />
+              </Stack>
+            ))}
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={aoFechar} disabled={ocupado}>
+          Cancelar
+        </Button>
+        <Button variant="contained" onClick={() => void salvar()} disabled={ocupado}>
+          Salvar
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}

@@ -379,6 +379,17 @@ function FichaCliente({
   const [razaoSocial, setRazaoSocial] = useState('');
   const [documento, setDocumento] = useState('');
   const [observacoes, setObservacoes] = useState('');
+  const [tabelaPrecoId, setTabelaPrecoId] = useState('');
+  const [tabelas, setTabelas] = useState<Array<{ id: string; nome: string }>>([]);
+
+  // M20 (segunda review): laboratorio, clinica, hospital... - o cliente aponta
+  // para uma tabela; o acordo individual (dialogo de precos) segue vencendo.
+  useEffect(() => {
+    api
+      .get<Array<{ id: string; nome: string }>>('/precos/tabelas/opcoes')
+      .then(setTabelas)
+      .catch(() => setTabelas([]));
+  }, []);
 
   const recarregarFicha = useCallback(() => {
     api
@@ -389,6 +400,7 @@ function FichaCliente({
         setRazaoSocial(f.razaoSocial ?? '');
         setDocumento(f.documento ?? '');
         setObservacoes(f.observacoes ?? '');
+        setTabelaPrecoId(f.tabelaPrecoId ?? '');
       })
       .catch(() => setErro('Não foi possível carregar a ficha.'));
   }, [id]);
@@ -416,6 +428,7 @@ function FichaCliente({
         razaoSocial: razaoSocial.trim(),
         documento: documento.trim(),
         observacoes: observacoes.trim(),
+        tabelaPrecoId: tabelaPrecoId || null,
       });
       setEditando(false);
     }, 'Não foi possível salvar.');
@@ -468,6 +481,20 @@ function FichaCliente({
                     />
                   </Stack>
                   <TextField
+                    select
+                    label="Tabela de preço"
+                    value={tabelaPrecoId}
+                    onChange={(e) => setTabelaPrecoId(e.target.value)}
+                    helperText="Laboratório, clínica, hospital… O acordo individual, quando existe, vence a tabela."
+                  >
+                    <MenuItem value="">Valor padrão dos serviços</MenuItem>
+                    {tabelas.map((t) => (
+                      <MenuItem key={t.id} value={t.id}>
+                        {t.nome}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
                     label="Observações administrativas"
                     value={observacoes}
                     onChange={(e) => setObservacoes(e.target.value)}
@@ -479,6 +506,7 @@ function FichaCliente({
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} sx={{ mt: 0.5 }}>
                   <Detalhe rotulo="Razão social" valor={ficha.razaoSocial ?? '—'} />
                   <Detalhe rotulo="CNPJ / CPF" valor={ficha.documento ?? '—'} />
+                  <Detalhe rotulo="Tabela de preço" valor={ficha.tabelaPrecoNome ?? 'Valor padrão'} />
                   <Detalhe
                     rotulo="Cadastrado em"
                     valor={new Date(ficha.criadoEm).toLocaleDateString('pt-BR')}
@@ -737,6 +765,9 @@ interface LinhaPreco {
   nome: string;
   codigo: string;
   valorPadrao: string | null;
+  /** Valor na tabela que o cliente segue (nulo sem tabela ou sem o servico nela). */
+  valorTabela: string | null;
+  tabelaNome: string | null;
   valorCliente: string | null;
 }
 
@@ -803,8 +834,9 @@ function DialogoPrecos({ clienteId, aoFechar }: { clienteId: string; aoFechar: (
         ) : (
           <Stack spacing={1.5} sx={{ mt: 0.5 }}>
             <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
-              Campo vazio = tabela padrão. O acordo vale para ordens novas; itens já
-              lançados não mudam.
+              Campo vazio = sem acordo: vale a tabela do cliente
+              {linhas[0]?.tabelaNome ? ` (${linhas[0].tabelaNome})` : ''} e, sem ela, o valor padrão.
+              O acordo vale para ordens novas; itens já lançados não mudam.
             </Typography>
             {linhas.map((l) => (
               <Stack
@@ -817,6 +849,9 @@ function DialogoPrecos({ clienteId, aoFechar }: { clienteId: string; aoFechar: (
                   <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{l.nome}</Typography>
                   <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
                     Padrão: {l.valorPadrao != null ? formatarReais(l.valorPadrao) : 'sem preço'}
+                    {l.tabelaNome
+                      ? ` · ${l.tabelaNome}: ${l.valorTabela != null ? formatarReais(l.valorTabela) : 'sem preço'}`
+                      : ''}
                   </Typography>
                 </Box>
                 <TextField

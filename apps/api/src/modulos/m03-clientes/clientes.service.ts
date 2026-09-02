@@ -12,6 +12,7 @@ import {
   veterinario,
   vinculoVeterinarioCliente,
   type Transacao,
+  tabelaPreco,
 } from '@lapato/db';
 import type { StatusCliente, TipoCliente } from '@lapato/shared';
 import { DbService } from '../../core/db/db.service.js';
@@ -26,6 +27,8 @@ export interface DadosCliente {
   codigo: string;
   nomeAbreviado?: string;
   observacoes?: string;
+  /** M20: tabela de precos que o cliente segue; nulo = valor padrao. */
+  tabelaPrecoId?: string | null;
 }
 
 export interface DadosVeterinario {
@@ -117,6 +120,7 @@ export class ClientesService {
   }
 
   async editarCliente(id: string, dados: Partial<DadosCliente>): Promise<void> {
+    const ctx = exigirContexto();
     return this.db.executar(async (tx) => {
       const atual = await this.buscarCliente(tx, id);
 
@@ -129,6 +133,22 @@ export class ClientesService {
       if (dados.nomeAbreviado !== undefined)
         mudancas.nomeAbreviado = dados.nomeAbreviado.trim() || null;
       if (dados.observacoes !== undefined) mudancas.observacoes = dados.observacoes.trim() || null;
+      if (dados.tabelaPrecoId !== undefined) {
+        if (dados.tabelaPrecoId) {
+          const [tabela] = await tx
+            .select({ id: tabelaPreco.id, inativadoEm: tabelaPreco.inativadoEm })
+            .from(tabelaPreco)
+            .where(
+              and(eq(tabelaPreco.tenantId, ctx.tenantId), eq(tabelaPreco.id, dados.tabelaPrecoId)),
+            )
+            .limit(1);
+          if (!tabela) throw new BadRequestException('Tabela de preços não encontrada.');
+          if (tabela.inativadoEm) {
+            throw new BadRequestException('Tabela de preços inativa não pode ser atribuída.');
+          }
+        }
+        mudancas.tabelaPrecoId = dados.tabelaPrecoId;
+      }
 
       /**
        * O codigo fica FORA da edicao comum de proposito: ele compoe o registro
@@ -306,7 +326,15 @@ export class ClientesService {
         .orderBy(desc(caso.criadoEm))
         .limit(20);
 
-      return { ...dados, vinculos, casos };
+      const [tabela] = dados.tabelaPrecoId
+        ? await tx
+            .select({ nome: tabelaPreco.nome })
+            .from(tabelaPreco)
+            .where(and(eq(tabelaPreco.tenantId, ctx.tenantId), eq(tabelaPreco.id, dados.tabelaPrecoId)))
+            .limit(1)
+        : [];
+
+      return { ...dados, tabelaPrecoNome: tabela?.nome ?? null, vinculos, casos };
     });
   }
 

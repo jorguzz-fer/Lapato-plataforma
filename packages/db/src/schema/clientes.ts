@@ -16,6 +16,7 @@ import {
   statusClienteEnum,
   tipoClienteEnum,
 } from './_comum.js';
+import { tabelaPreco } from './precos.js';
 
 /**
  * M03 - Cadastro de Clientes e Veterinarios.
@@ -55,6 +56,15 @@ export const cliente = pgTable(
      * perde vinculo.
      */
     fundidoEmId: uuid('fundido_em_id'),
+
+    /**
+     * M20: tabela de precos que o cliente segue (Laboratorio, Clinica,
+     * Hospital...). Nulo = valor padrao do servico. O acordo individual em
+     * `preco_cliente` vence a tabela.
+     */
+    tabelaPrecoId: uuid('tabela_preco_id').references(() => tabelaPreco.id, {
+      onDelete: 'set null',
+    }),
 
     observacoes: text('observacoes'),
     ...colunasTempo,

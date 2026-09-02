@@ -237,7 +237,10 @@ export interface Dossie {
   amostras: Array<{
     id: string;
     identificador: string;
+    letra: string;
+    recipienteId: string | null;
     descricao: string | null;
+    regiaoAnatomica: string | null;
     lateralidade: string;
     resultadoTriagem: string | null;
     /** Preenchido quando a macroscopia da amostra foi concluída — é o que libera o recorte. */
@@ -246,6 +249,11 @@ export interface Dossie {
   recipientes: Array<{
     id: string;
     identificador: string;
+    /** Nomes (termos do M01), para a conferência ler o que foi declarado. */
+    tipo: string | null;
+    fixador: string | null;
+    identificacaoExterna: string | null;
+    observacoes: string | null;
     quantidadeDeclarada: number | null;
     quantidadeRecebida: number | null;
   }>;

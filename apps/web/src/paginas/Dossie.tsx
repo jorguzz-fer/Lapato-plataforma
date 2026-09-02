@@ -6,6 +6,7 @@ import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
+import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import Card from '@mui/material/Card';
 import Chip from '@mui/material/Chip';
@@ -109,6 +110,14 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
             <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>Serviço</Typography>
             <Typography sx={{ fontSize: 13.5 }}>{dados.servico.nome}</Typography>
           </Box>
+
+          {/* Segunda review: para qual patologista foi a lâmina. */}
+          <DestinoDaLamina
+            casoId={dados.caso.id}
+            atual={dados.patologistaResponsavel}
+            podeAtribuir={permissoes.includes('fluxo:atribuir_responsavel')}
+            aoMudar={() => api.get<DadosDossie>(`/casos/${dados.caso.id}`).then(setDados)}
+          />
 
           <Stack
             direction="row"
@@ -403,6 +412,83 @@ function Campo({ rotulo, valor }: { rotulo: string; valor: string }) {
     <Box>
       <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{rotulo}</Typography>
       <Typography sx={{ fontSize: 13.5 }}>{valor}</Typography>
+    </Box>
+  );
+}
+
+/**
+ * "Para quem foi a lamina" (segunda review). Mostra o patologista responsavel
+ * e, para quem despacha, deixa escolher ou trocar - "as vezes um patologista
+ * passa um caso pro outro" (Hugo). O seletor so lista usuarios com perfil de
+ * patologista: laudador nao e um cadastro a parte, e um usuario do M02.
+ */
+function DestinoDaLamina({
+  casoId,
+  atual,
+  podeAtribuir,
+  aoMudar,
+}: {
+  casoId: string;
+  atual: { id: string; nome: string } | null;
+  podeAtribuir: boolean;
+  aoMudar: () => Promise<unknown>;
+}) {
+  const [opcoes, setOpcoes] = useState<Array<{ id: string; nome: string }>>([]);
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+
+  useEffect(() => {
+    if (podeAtribuir) {
+      api
+        .get<Array<{ id: string; nome: string }>>('/usuarios/patologistas')
+        .then(setOpcoes)
+        .catch(() => setOpcoes([]));
+    }
+  }, [podeAtribuir]);
+
+  async function atribuir(usuarioId: string) {
+    if (!usuarioId || usuarioId === atual?.id) return;
+    setOcupado(true);
+    setErro(null);
+    try {
+      await api.post(`/casos/${casoId}/patologista`, { usuarioId });
+      await aoMudar();
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível atribuir.');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <Box sx={{ minWidth: 180 }}>
+      <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>Patologista</Typography>
+      {podeAtribuir ? (
+        <TextField
+          select
+          size="small"
+          variant="standard"
+          value={atual?.id ?? ''}
+          disabled={ocupado}
+          onChange={(e) => void atribuir(e.target.value)}
+          error={Boolean(erro)}
+          helperText={erro ?? undefined}
+          sx={{ minWidth: 180, '& .MuiInputBase-input': { fontSize: 13.5, py: 0.25 } }}
+        >
+          <MenuItem value="" disabled>
+            {atual ? atual.nome : 'Escolher…'}
+          </MenuItem>
+          {opcoes.map((o) => (
+            <MenuItem key={o.id} value={o.id}>
+              {o.nome}
+            </MenuItem>
+          ))}
+        </TextField>
+      ) : (
+        <Typography sx={{ fontSize: 13.5, color: atual ? 'text.primary' : 'text.secondary' }}>
+          {atual?.nome ?? 'Ainda não destinada'}
+        </Typography>
+      )}
     </Box>
   );
 }

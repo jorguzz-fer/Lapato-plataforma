@@ -42,3 +42,14 @@ describe('primeiro nome', () => {
     expect(primeiroNome(null)).toBe('');
   });
 });
+
+describe('primeiroNome pula o título', () => {
+  test('"Dra. Marina Costa" cumprimenta a Marina, não a "Dra."', () => {
+    expect(primeiroNome('Dra. Marina Costa')).toBe('Marina');
+    expect(primeiroNome('Dr Hugo Orsini')).toBe('Hugo');
+    expect(primeiroNome('Prof. Dra. Ana Lima')).toBe('Ana');
+    expect(primeiroNome('Marina')).toBe('Marina');
+    // Só o título, sem nome: devolve o que há.
+    expect(primeiroNome('Dra.')).toBe('Dra.');
+  });
+});

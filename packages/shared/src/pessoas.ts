@@ -39,6 +39,13 @@ export function iniciaisDe(nome: string | null | undefined): string {
  * tela depois do login, e ela nao pode depender de a API ja ter subido com o
  * campo novo.
  */
+/** Titulos que antecedem o nome e nao sao nome: "Bom dia, Dra." nao cumprimenta ninguem. */
+const TITULOS = new Set(['dr', 'dra', 'prof', 'profa', 'sr', 'sra', 'srta', 'mv', 'med']);
+
 export function primeiroNome(nome: string | null | undefined): string {
-  return (nome ?? '').trim().split(/\s+/)[0] ?? '';
+  const partes = (nome ?? '').trim().split(/\s+/).filter(Boolean);
+  const semTitulo = partes.filter(
+    (parte, i) => !(i < partes.length - 1 && TITULOS.has(parte.replace(/\.$/, '').toLowerCase())),
+  );
+  return semTitulo[0] ?? partes[0] ?? '';
 }

@@ -174,6 +174,33 @@ export class CasosController {
     return this.casos.criar(validarCorpo(novoCasoSchema, corpo));
   }
 
+  @Post('bipagem')
+  @ExigePermissao(PERMISSOES.LAUDO_EDITAR)
+  @ApiOperation({
+    summary: 'Bipar a lâmina: o caso passa a ser de quem bipou',
+    description:
+      'Aceita o identificador do caso, do cassete, do bloco ou da lâmina (o código de ' +
+      'barras da etiqueta). Atribui o caso ao patologista da sessão.',
+  })
+  async bipar(@Body() corpo: unknown) {
+    const dados = validarCorpo(z.object({ codigo: z.string().min(3).max(60) }), corpo);
+    return this.casos.biparParaMim(dados.codigo);
+  }
+
+  @Post(':id/patologista')
+  @ExigePermissao(PERMISSOES.FLUXO_ATRIBUIR_RESPONSAVEL)
+  @ApiOperation({
+    summary: 'Para qual patologista vai a lâmina',
+    description:
+      'Registra o destino do material depois da macroscopia. Só usuário com perfil ' +
+      'de patologista; reatribuir é permitido e fica na linha do tempo.',
+  })
+  async atribuirPatologista(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(z.object({ usuarioId: z.string().uuid() }), corpo);
+    await this.casos.atribuirPatologista(id, dados.usuarioId);
+    return { ok: true };
+  }
+
   @Post(':id/recebimento')
   @ExigePermissao(PERMISSOES.MATERIAL_RECEBER)
   @ApiOperation({
@@ -826,6 +853,13 @@ const edicaoUsuarioSchema = z.object({
 export class UsuariosController {
   constructor(private readonly usuarios: UsuariosService) {}
 
+  @Get('patologistas')
+  @ExigePermissao(PERMISSOES.CASO_VISUALIZAR)
+  @ApiOperation({ summary: 'Patologistas ativos — o seletor de destino da lâmina' })
+  async patologistas() {
+    return this.usuarios.listarPatologistas();
+  }
+
   @Get('perfis')
   @ExigePermissao(PERMISSOES.USUARIO_VISUALIZAR)
   @ApiOperation({ summary: 'Perfis disponíveis para atribuição (M02 seção 9)' })
@@ -1263,7 +1297,7 @@ export class SolicitacoesController {
   @ExigePermissao(PERMISSOES.SOLICITACAO_VISUALIZAR)
   @ApiOperation({ summary: 'Fila de solicitações por subaba (M10 seção 51)' })
   async listar(@Query('aba') aba?: string) {
-    const valida = ['abertas', 'vencidas', 'concluidas', 'todas'].includes(aba ?? '');
+    const valida = ['abertas', 'minhas', 'vencidas', 'concluidas', 'todas'].includes(aba ?? '');
     return this.solicitacoes.listar(valida ? (aba as AbaSolicitacoes) : 'abertas');
   }
 

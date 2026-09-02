@@ -52,7 +52,7 @@ export interface NovaPendencia {
 }
 
 /** Subabas da tela principal (M10 secao 51). */
-export type AbaSolicitacoes = 'abertas' | 'vencidas' | 'concluidas' | 'todas';
+export type AbaSolicitacoes = 'abertas' | 'minhas' | 'vencidas' | 'concluidas' | 'todas';
 
 const STATUS_ABERTOS: StatusSolicitacao[] = [
   'criada',
@@ -459,6 +459,14 @@ export class SolicitacoesService {
 
     const filtros = [eq(solicitacao.tenantId, ctx.tenantId)];
     if (aba === 'abertas') filtros.push(inArray(solicitacao.status, STATUS_ABERTOS));
+    // Segunda review (Hugo): o que o patologista pediu nao pode se perder -
+    // "ele solicitou uma coloracao especial... isso aparece para ele na tela".
+    if (aba === 'minhas') {
+      filtros.push(
+        inArray(solicitacao.status, STATUS_ABERTOS),
+        eq(solicitacao.solicitantePorId, ctx.usuarioId),
+      );
+    }
     if (aba === 'concluidas')
       filtros.push(inArray(solicitacao.status, ['concluida', 'recusada', 'cancelada']));
     if (aba === 'vencidas') {

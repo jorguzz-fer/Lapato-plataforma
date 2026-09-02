@@ -191,7 +191,7 @@ function App() {
         path="/painel"
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Rastreamento e Gestão de Fluxo">
-            <Painel nomeCompleto={sessao.nomeCompleto} />
+            <Painel nomeCompleto={sessao.nomeCompleto} permissoes={sessao.permissoes} />
           </Shell>
         }
       />

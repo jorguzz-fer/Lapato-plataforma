@@ -126,6 +126,11 @@ export const PERFIS: Array<{
       PERMISSOES.FLUXO_VISUALIZAR,
       PERMISSOES.PROCESSAMENTO_VISUALIZAR,
       PERMISSOES.PROCESSAMENTO_ENVIAR_LOTE,
+      /**
+       * Segunda review: depois da macroscopia a lamina sai para um patologista
+       * laudar, e a bancada precisa dizer PARA QUEM. E o tecnico que despacha.
+       */
+      PERMISSOES.FLUXO_ATRIBUIR_RESPONSAVEL,
       PERMISSOES.SOLICITACAO_VISUALIZAR,
       /**
        * M10 secao 52: a caixa do tecnico sao as ordens tecnicas - recortes,
@@ -183,6 +188,8 @@ export const PERFIS: Array<{
       PERMISSOES.LAUDO_LIBERAR,
       PERMISSOES.LAUDO_ADENDO,
       PERMISSOES.LAUDO_VER_NOTA_INTERNA,
+      /** Hugo: "as vezes um patologista passa um caso pro outro". */
+      PERMISSOES.FLUXO_ATRIBUIR_RESPONSAVEL,
       PERMISSOES.SOLICITACAO_VISUALIZAR,
       PERMISSOES.SOLICITACAO_CRIAR,
       /**

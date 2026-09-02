@@ -1,15 +1,21 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, getTableColumns } from 'drizzle-orm';
+import { and, eq, getTableColumns, inArray } from 'drizzle-orm';
 import {
   amostra,
+  bloco,
   caso,
+  cassete,
   cliente,
   estadoCaso,
   historicoClinico,
+  lamina,
   paciente,
+  perfil,
   recipiente,
   servico,
   tutor,
+  usuario,
+  usuarioPerfil,
   type Transacao,
   macroscopia,
 } from '@lapato/db';
@@ -283,6 +289,20 @@ export class CasosService {
 
       if (!registro) throw new NotFoundException('Caso não encontrado.');
 
+      // Para quem foi a lamina (segunda review): o responsavel do laudo, quando ja escolhido.
+      const [patologistaResponsavel] = registro.caso.patologistaResponsavelId
+        ? await tx
+            .select({ id: usuario.id, nome: usuario.nomeCompleto })
+            .from(usuario)
+            .where(
+              and(
+                eq(usuario.tenantId, ctx.tenantId),
+                eq(usuario.id, registro.caso.patologistaResponsavelId),
+              ),
+            )
+            .limit(1)
+        : [];
+
       // Com o estado da macroscopia: e o que decide se a amostra aceita recorte.
       const amostras = await tx
         .select({ ...getTableColumns(amostra), macroscopiaConcluidaEm: macroscopia.concluidaEm })
@@ -304,8 +324,138 @@ export class CasosService {
 
       const linhaDoTempo = await this.eventos.linhaDoTempo(tx, casoId);
 
-      return { ...registro, amostras, recipientes, historicos, linhaDoTempo };
+      return {
+        ...registro,
+        patologistaResponsavel: patologistaResponsavel ?? null,
+        amostras,
+        recipientes,
+        historicos,
+        linhaDoTempo,
+      };
     });
+  }
+
+  /**
+   * Para qual patologista vai a lamina (segunda review).
+   *
+   * "Depois da macroscopia a lamina sai para alguem laudar; a gente precisa
+   * rastrear para quem foi enviada." O destino e um usuario com perfil de
+   * patologista - cadastro paralelo de "laudador" nao existe (M02): sao os
+   * mesmos usuarios, com acesso restrito ao que o perfil da.
+   *
+   * Grava no caso (M11: `patologistaResponsavelId`) e no estado do fluxo
+   * (`responsavelId`, que e o que a fila "meus casos" do M07 le). Hugo:
+   * "as vezes um patologista passa um caso pro outro" - reatribuir e normal e
+   * fica na linha do tempo.
+   */
+  async atribuirPatologista(casoId: string, usuarioId: string): Promise<void> {
+    const ctx = exigirContexto();
+
+    await this.db.executar(async (tx) => {
+      const [alvo] = await tx
+        .select({ id: caso.id, atual: caso.patologistaResponsavelId })
+        .from(caso)
+        .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.id, casoId)))
+        .limit(1);
+      if (!alvo) throw new NotFoundException('Caso não encontrado.');
+
+      const [destino] = await tx
+        .select({ id: usuario.id, nome: usuario.nomeCompleto, status: usuario.status })
+        .from(usuario)
+        .innerJoin(usuarioPerfil, eq(usuarioPerfil.usuarioId, usuario.id))
+        .innerJoin(perfil, eq(perfil.id, usuarioPerfil.perfilId))
+        .where(
+          and(
+            eq(usuario.tenantId, ctx.tenantId),
+            eq(usuario.id, usuarioId),
+            inArray(perfil.chave, ['patologista', 'patologista_revisor']),
+          ),
+        )
+        .limit(1);
+      if (!destino) {
+        throw new BadRequestException(
+          'Só usuário com perfil de patologista pode receber a lâmina para laudar.',
+        );
+      }
+      if (destino.status !== 'ativo') {
+        throw new BadRequestException(`${destino.nome} não está ativo(a) no sistema.`);
+      }
+
+      const agora = new Date();
+      await tx
+        .update(caso)
+        .set({ patologistaResponsavelId: usuarioId, atualizadoEm: agora })
+        .where(eq(caso.id, casoId));
+      await tx
+        .update(estadoCaso)
+        .set({ responsavelId: usuarioId, atualizadoEm: agora })
+        .where(and(eq(estadoCaso.tenantId, ctx.tenantId), eq(estadoCaso.casoId, casoId)));
+
+      await this.eventos.publicar(tx, {
+        tipo: 'caso.patologista_atribuido',
+        casoId,
+        moduloOrigem: MODULOS.M05_RECEBIMENTO,
+        objetoTipo: 'usuario',
+        objetoId: usuarioId,
+        payload: { patologista: destino.nome, anterior: alvo.atual, reatribuicao: alvo.atual != null },
+      });
+    });
+  }
+
+  /**
+   * Bipagem (Hugo): "abre o login daquele patologista e vai so bipando as
+   * laminas dele - pa, pa, pa - nao precisa escrever nada". O codigo de barras
+   * da etiqueta carrega o identificador do cassete; a lamina herda o do bloco,
+   * que herda o do cassete, que carrega o do caso. Qualquer um deles resolve o
+   * caso, e o caso passa a ser de quem bipou.
+   */
+  async biparParaMim(codigo: string): Promise<{ casoId: string; identificador: string }> {
+    const ctx = exigirContexto();
+    const limpo = codigo.trim().toUpperCase();
+    if (!limpo) throw new BadRequestException('Bipe ou digite o código da lâmina.');
+
+    const casoId = await this.db.executar(async (tx) => {
+      const [direto] = await tx
+        .select({ id: caso.id })
+        .from(caso)
+        .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.identificador, limpo)))
+        .limit(1);
+      if (direto) return direto.id;
+
+      const [porCassete] = await tx
+        .select({ casoId: cassete.casoId })
+        .from(cassete)
+        .where(and(eq(cassete.tenantId, ctx.tenantId), eq(cassete.identificador, limpo)))
+        .limit(1);
+      if (porCassete) return porCassete.casoId;
+
+      const [porBloco] = await tx
+        .select({ casoId: bloco.casoId })
+        .from(bloco)
+        .where(and(eq(bloco.tenantId, ctx.tenantId), eq(bloco.identificador, limpo)))
+        .limit(1);
+      if (porBloco) return porBloco.casoId;
+
+      const [porLamina] = await tx
+        .select({ casoId: lamina.casoId })
+        .from(lamina)
+        .where(and(eq(lamina.tenantId, ctx.tenantId), eq(lamina.identificador, limpo)))
+        .limit(1);
+      if (porLamina) return porLamina.casoId;
+
+      throw new NotFoundException(`Nenhum caso, cassete, bloco ou lâmina com o código "${limpo}".`);
+    });
+
+    await this.atribuirPatologista(casoId, ctx.usuarioId);
+
+    const [registro] = await this.db.executar((tx) =>
+      tx
+        .select({ identificador: caso.identificador })
+        .from(caso)
+        .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.id, casoId)))
+        .limit(1),
+    );
+    return { casoId, identificador: registro!.identificador };
   }
 
   // --- internos ------------------------------------------------------------

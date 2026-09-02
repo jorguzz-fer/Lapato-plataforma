@@ -230,6 +230,8 @@ export interface Dossie {
    */
   servico: { nome: string; modalidade: string; exigeTriagem: boolean };
   estado: { etapa: string; previsaoLiberacao: string | null; bloqueado: boolean } | null;
+  /** Para quem foi a lâmina (segunda review) — nulo enquanto ninguém a destinou. */
+  patologistaResponsavel: { id: string; nome: string } | null;
   amostras: Array<{
     id: string;
     identificador: string;

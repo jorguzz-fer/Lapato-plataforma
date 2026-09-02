@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
+import TextField from '@mui/material/TextField';
 import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -13,7 +16,7 @@ import ErrorOutline from '@mui/icons-material/ErrorOutlineOutlined';
 import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
 import { primeiroNome } from '@lapato/shared';
-import { api, type Painel as DadosPainel, type ItemDeAtencao } from '../api';
+import { api, ErroApi, type Painel as DadosPainel, type ItemDeAtencao } from '../api';
 
 /**
  * Tela de chegada.
@@ -243,7 +246,73 @@ function Serie({ dias: todos }: { dias: DadosPainel['serie'] }) {
   );
 }
 
-export function Painel({ nomeCompleto }: { nomeCompleto: string }) {
+/**
+ * Bipagem (segunda review, Hugo): "abre o login daquele patologista e vai so
+ * bipando as laminas dele". O leitor de codigo de barras digita o
+ * identificador e manda Enter; o caso vira dele e a tela ja abre o dossie.
+ */
+function BiparLamina() {
+  const navegar = useNavigate();
+  const [codigo, setCodigo] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+
+  async function bipar() {
+    if (codigo.trim().length < 3) return;
+    setOcupado(true);
+    setErro(null);
+    try {
+      const r = await api.post<{ casoId: string; identificador: string }>('/casos/bipagem', {
+        codigo: codigo.trim(),
+      });
+      setCodigo('');
+      navegar(`/casos/${r.casoId}`);
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível localizar a lâmina.');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <Card sx={{ p: 2 }}>
+      <Typography sx={{ fontSize: 13.5, fontWeight: 600, mb: 0.5 }}>Bipar lâmina</Typography>
+      <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1.5 }}>
+        Leia o código de barras da etiqueta (ou digite o identificador do caso, cassete, bloco ou
+        lâmina). O caso passa a ser seu e abre em seguida.
+      </Typography>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+        <TextField
+          size="small"
+          placeholder="CV-000342/26-A1"
+          value={codigo}
+          onChange={(e) => setCodigo(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void bipar();
+          }}
+          slotProps={{
+            htmlInput: {
+              'aria-label': 'Código da lâmina',
+              style: { fontFamily: 'ui-monospace, Menlo, monospace' },
+            },
+          }}
+          sx={{ flex: 1, maxWidth: 360 }}
+          autoFocus
+        />
+        <Button variant="contained" size="small" disabled={ocupado || codigo.trim().length < 3} onClick={() => void bipar()} sx={{ height: 40 }}>
+          Assumir
+        </Button>
+      </Stack>
+      {erro && (
+        <Alert severity="error" sx={{ mt: 1.5 }}>
+          {erro}
+        </Alert>
+      )}
+    </Card>
+  );
+}
+
+export function Painel({ nomeCompleto, permissoes }: { nomeCompleto: string; permissoes: string[] }) {
   const [dados, setDados] = useState<DadosPainel | null>(null);
   const [carregando, setCarregando] = useState(true);
   const agora = useMemo(() => new Date(), []);
@@ -295,6 +364,8 @@ export function Painel({ nomeCompleto }: { nomeCompleto: string }) {
         </Stack>
       ) : (
         <Stack spacing={3}>
+          {permissoes.includes('laudo:editar') && <BiparLamina />}
+
           <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', gap: 1.5 }}>
             <Numero
               valor={String(dados.volumetria.emAndamento)}

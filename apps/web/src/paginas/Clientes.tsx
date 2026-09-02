@@ -25,6 +25,7 @@ import {
   type ClienteLista,
   type DuplicidadeCadastral,
   type VeterinarioLista,
+  type ConviteCadastroCliente,
 } from '../api';
 import {
   BotaoAtivacao,
@@ -452,6 +453,27 @@ function FichaCliente({
     }
   }
 
+  /**
+   * Documento do Hugo: o cliente preenche a propria ficha pelo link. O
+   * caminho vem da API; a URL completa e montada aqui com a origem da tela,
+   * para copiar e mandar por WhatsApp ou e-mail.
+   */
+  const [linkGerado, setLinkGerado] = useState<{ url: string; expiraEm: string } | null>(null);
+  const [copiado, setCopiado] = useState(false);
+  async function gerarLink() {
+    setOcupado(true);
+    setErro(null);
+    try {
+      const r = await api.post<ConviteCadastroCliente>(`/clientes/${id}/convite-cadastro`);
+      setLinkGerado({ url: `${window.location.origin}${r.caminho}`, expiraEm: r.expiraEm });
+      setCopiado(false);
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível gerar o link.');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
   function salvarEdicao() {
     void agir(async () => {
       await api.post(`/clientes/${id}`, {
@@ -673,6 +695,9 @@ function FichaCliente({
                   }}
                 />
                 <Button onClick={() => setEditando(true)}>Editar</Button>
+                <Button onClick={() => void gerarLink()} disabled={ocupado || inativo}>
+                  Link de autocadastro
+                </Button>
               </>
             )}
             {podeGerenciarPrecos && !editando && (
@@ -698,6 +723,39 @@ function FichaCliente({
           {precificando && (
             <DialogoPrecos clienteId={id} aoFechar={() => setPrecificando(false)} />
           )}
+
+          <Dialog open={linkGerado !== null} onClose={() => setLinkGerado(null)} fullWidth maxWidth="sm">
+            <DialogTitle>Link de autocadastro</DialogTitle>
+            <DialogContent>
+              <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+                <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+                  Envie ao cliente. Vale uma única vez e expira em{' '}
+                  {linkGerado ? new Date(linkGerado.expiraEm).toLocaleDateString('pt-BR') : ''}. Ele só
+                  vê e preenche os dados da própria empresa — preços e veterinários seguem aqui.
+                </Typography>
+                <TextField
+                  value={linkGerado?.url ?? ''}
+                  fullWidth
+                  size="small"
+                  slotProps={{ input: { readOnly: true, sx: { fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12 } } }}
+                  onFocus={(e) => e.target.select()}
+                />
+                <Button
+                  variant="contained"
+                  onClick={() => {
+                    if (!linkGerado) return;
+                    void navigator.clipboard?.writeText(linkGerado.url).then(() => setCopiado(true));
+                  }}
+                  sx={{ alignSelf: 'flex-start' }}
+                >
+                  {copiado ? 'Copiado' : 'Copiar link'}
+                </Button>
+              </Stack>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setLinkGerado(null)}>Fechar</Button>
+            </DialogActions>
+          </Dialog>
 
           {vinculando && (
             <DialogoVincular

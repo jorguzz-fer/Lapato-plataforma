@@ -34,6 +34,7 @@ import { Administracao } from './paginas/Administracao';
 import { Usuarios } from './paginas/Usuarios';
 import { Dossie } from './paginas/Dossie';
 import { ValidarLaudo } from './paginas/ValidarLaudo';
+import { CadastroCliente } from './paginas/CadastroCliente';
 import { ShellPortal } from './portal/ShellPortal';
 import { PortalPainel } from './portal/PortalPainel';
 import { PortalExames } from './portal/PortalExames';
@@ -425,6 +426,8 @@ createRoot(document.getElementById('root')!).render(
         <BrowserRouter>
           <Routes>
             <Route path="/validar/:tenantSlug/:codigo" element={<ValidarLaudo />} />
+            {/* Autocadastro do cliente pelo link: sem sessão, como a validação. */}
+            <Route path="/cadastro-cliente/:tenantSlug/:token" element={<CadastroCliente />} />
             <Route path="*" element={<App />} />
           </Routes>
         </BrowserRouter>

@@ -887,6 +887,44 @@ export class LaudosController {
 // Validacao publica de laudo (M11 secao 88)
 // ---------------------------------------------------------------------------
 
+const autocadastroSchema = z.object({
+  nomeFantasia: z.string().min(1, 'Informe o nome.').max(160),
+  razaoSocial: z.string().max(200).optional(),
+  documento: z.string().min(11, 'Informe o CNPJ.').max(30),
+  email: z.string().email('E-mail inválido.'),
+  telefone: z.string().min(8, 'Informe o telefone.').max(40),
+});
+
+/**
+ * Autocadastro do cliente pelo link (documento do Hugo). Rota anonima, como a
+ * validacao do laudo: o tenant vem no caminho, o token e o unico segredo, e o
+ * teto de entrada impede varredura.
+ */
+@Controller('cadastro-cliente')
+export class AutocadastroClienteController {
+  constructor(private readonly clientes: ClientesService) {}
+
+  @Publica()
+  @LimiteEntrada()
+  @Get(':tenantSlug/:token')
+  @ApiOperation({ summary: 'Dados atuais do cliente para o link de autocadastro' })
+  async ler(@Param('tenantSlug') tenantSlug: string, @Param('token') token: string) {
+    return this.clientes.lerConvitePublico(tenantSlug, token);
+  }
+
+  @Publica()
+  @LimiteEntrada()
+  @Post(':tenantSlug/:token')
+  @ApiOperation({ summary: 'O cliente preenche a própria ficha; o link se consome' })
+  async concluir(
+    @Param('tenantSlug') tenantSlug: string,
+    @Param('token') token: string,
+    @Body() corpo: unknown,
+  ) {
+    return this.clientes.concluirConvitePublico(tenantSlug, token, validarCorpo(autocadastroSchema, corpo));
+  }
+}
+
 /**
  * Fora de `/laudos` de proposito: e a unica rota do modulo sem sessao, e
  * misturá-la ao controller autenticado tornaria facil esquecer o `@Publica()`
@@ -1230,6 +1268,18 @@ export class ClientesController {
       ),
     );
     return { ok: true };
+  }
+
+  @Post(':id/convite-cadastro')
+  @ExigePermissao(PERMISSOES.CLIENTE_EDITAR)
+  @ApiOperation({
+    summary: 'Gera o link para o próprio cliente preencher a ficha',
+    description:
+      'Token de uso único, sete dias de validade, só o hash guardado. O cliente preenche nome, ' +
+      'razão social, CNPJ, e-mail e telefone — preços e veterinários seguem internos.',
+  })
+  async conviteCadastro(@Param('id', ParseUUIDPipe) id: string) {
+    return this.clientes.gerarConviteCadastro(id);
   }
 
   @Post(':id/inativacao')

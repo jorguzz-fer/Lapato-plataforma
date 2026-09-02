@@ -5138,3 +5138,79 @@ describe('documento do Hugo: entrada, etiquetas, fila da macro e preço por faix
     expect(naFila.entradaEm).toBeTruthy();
   });
 });
+
+/**
+ * Documento do Hugo: link para o proprio cliente preencher a ficha. Rota
+ * anonima com token de uso unico e validade; so os dados do cliente passam.
+ */
+describe('documento do Hugo: link de autocadastro do cliente', () => {
+  const marca = Date.now().toString().slice(-6);
+  let clienteId: string;
+  let caminho: string;
+
+  test('quem edita clientes gera o link; o token nunca volta do banco', async () => {
+    await entrar('admin@lapato.local');
+    const cli = await req('POST', '/clientes', {
+      nomeFantasia: `Clínica Link ${marca}`,
+      documento: `55${marca}0001`,
+      email: `link-${marca}@exemplo.test`,
+      telefone: '85 97777-0000',
+      tipo: 'clinica',
+      codigo: `L${marca.slice(-3)}`,
+    });
+    expect(cli.status, JSON.stringify(cli.body)).toBe(201);
+    clienteId = cli.body.id;
+
+    const convite = await req('POST', `/clientes/${clienteId}/convite-cadastro`);
+    expect(convite.status, JSON.stringify(convite.body)).toBe(201);
+    expect(convite.body.caminho).toMatch(/^\/cadastro-cliente\/[a-z0-9-]+\/[A-Za-z0-9_-]{40,}$/);
+    expect(new Date(convite.body.expiraEm).getTime()).toBeGreaterThan(Date.now());
+    caminho = convite.body.caminho;
+
+    // Patologista nao mexe em cliente (Hugo: "cliente, essas coisas, ele nao tem acesso").
+    await entrar('patologista@lapato.local');
+    const negado = await req('POST', `/clientes/${clienteId}/convite-cadastro`);
+    expect([401, 403]).toContain(negado.status);
+  });
+
+  test('o link abre sem sessão, mostra só os dados do cliente e se consome no envio', async () => {
+    const [, , tenantSlug, token] = caminho.split('/');
+
+    // Sem sessao nenhuma.
+    const aberto = await fetch(`${servidor}${BASE}/cadastro-cliente/${tenantSlug}/${token}`);
+    expect(aberto.status).toBe(200);
+    const dados = await aberto.json();
+    expect(dados.cliente.nomeFantasia).toBe(`Clínica Link ${marca}`);
+    expect(Object.keys(dados.cliente).sort()).toEqual(
+      ['documento', 'email', 'nomeFantasia', 'razaoSocial', 'telefone'],
+    );
+
+    const enviado = await fetch(`${servidor}${BASE}/cadastro-cliente/${tenantSlug}/${token}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        nomeFantasia: `Clínica Link ${marca} Ltda`,
+        razaoSocial: `Clínica Link ${marca} Serviços Veterinários Ltda`,
+        documento: `55.${marca}/0001-01`,
+        email: `contato-${marca}@exemplo.test`,
+        telefone: '85 97777-1111',
+      }),
+    });
+    expect(enviado.status, await enviado.text()).toBe(201);
+
+    // Uso unico: o mesmo link nao abre nem envia de novo.
+    expect((await fetch(`${servidor}${BASE}/cadastro-cliente/${tenantSlug}/${token}`)).status).toBe(410);
+
+    // Token errado e slug errado respondem igual, sem enumerar.
+    expect((await fetch(`${servidor}${BASE}/cadastro-cliente/${tenantSlug}/${token.slice(0, -2)}xx`)).status).toBe(404);
+    expect((await fetch(`${servidor}${BASE}/cadastro-cliente/nao-existe/${token}`)).status).toBe(404);
+
+    // O que o cliente preencheu esta na ficha.
+    await entrar('admin@lapato.local');
+    const ficha = await req('GET', `/clientes/${clienteId}`);
+    expect(ficha.body.nomeFantasia).toBe(`Clínica Link ${marca} Ltda`);
+    expect(ficha.body.email).toBe(`contato-${marca}@exemplo.test`);
+    expect(ficha.body.telefone).toBe('85 97777-1111');
+    expect(ficha.body.documento).toBe(`55${marca}000101`);
+  });
+});

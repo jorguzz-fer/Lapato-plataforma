@@ -1,14 +1,5 @@
 import { relations } from 'drizzle-orm';
-import {
-  boolean,
-  date,
-  index,
-  pgTable,
-  text,
-  timestamp,
-  unique,
-  uuid,
-} from 'drizzle-orm/pg-core';
+import { boolean, date, index, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 import {
   colunasInativacao,
   colunasTempo,
@@ -110,6 +101,37 @@ export const clienteEndereco = pgTable(
     ...colunasTempo,
   },
   (t) => [index('idx_cliente_endereco').on(t.tenantId, t.clienteId)],
+);
+
+/**
+ * Convite de autocadastro (documento do Hugo): "e importante podermos enviar o
+ * link para preenchimento das infos dessa pagina pela propria empresa". O
+ * cliente preenche SO os dados dele (nome, razao social, CNPJ, e-mail,
+ * telefone); precos e veterinarios seguem internos.
+ *
+ * Blueprint secao 6: rota publica com token de uso unico, com validade, e so
+ * o HASH guardado - vazamento do banco nao abre nenhum convite. O que foi
+ * alterado fica registrado no proprio convite (`dadosAnteriores`), porque a
+ * rota nao tem usuario de sessao para a auditoria comum.
+ */
+export const conviteCadastroCliente = pgTable(
+  'convite_cadastro_cliente',
+  {
+    ...colunasTenant,
+    clienteId: uuid('cliente_id')
+      .notNull()
+      .references(() => cliente.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull().unique(),
+    expiraEm: timestamp('expira_em', { withTimezone: true }).notNull(),
+    usadoEm: timestamp('usado_em', { withTimezone: true }),
+    criadoPorId: uuid('criado_por_id'),
+    dadosAnteriores: jsonb('dados_anteriores').$type<Record<string, unknown>>(),
+    ...colunasTempo,
+  },
+  (t) => [
+    index('idx_convite_cadastro_cliente').on(t.tenantId, t.clienteId),
+    index('idx_convite_cadastro_token').on(t.tokenHash),
+  ],
 );
 
 export const clienteContato = pgTable(

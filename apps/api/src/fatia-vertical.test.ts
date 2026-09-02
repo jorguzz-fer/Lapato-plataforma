@@ -318,7 +318,9 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
     servicoId = servicos.body.find((s: any) => s.codigo === 'HISTO').id;
 
     const clientes = await req('GET', '/catalogo/clientes');
-    clienteId = clientes.body[0].id;
+    // O cliente da base (código CV): a asserção do identificador depende dele,
+    // e a ordem da lista muda conforme outros testes cadastram clientes.
+    clienteId = (clientes.body.find((c: any) => c.codigo === 'CV') ?? clientes.body[0]).id;
 
     const r = await req('POST', '/casos', {
       servicoId,
@@ -4006,6 +4008,13 @@ describe('financeiro padrão: fatura, livro e fluxo de caixa (M20 parcial)', () 
     servicoCitoId = servicos.body.find((s: any) => s.codigo === 'CITO').id;
     const clientes = await req('GET', '/catalogo/clientes');
     clienteId = clientes.body[0].id;
+    // A citologia da base não tem valor padrão: sem acordo, a fatura seria de
+    // R$ 0 e o teste do caixa não teria entrada para conferir.
+    const acordoCito = await req('POST', `/precos/clientes/${clienteId}`, {
+      servicoId: servicoCitoId,
+      valor: 80,
+    });
+    expect(acordoCito.status, JSON.stringify(acordoCito.body)).toBe(201);
 
     // Histopatologia recebida mas sem macroscopia concluída não entra na fatura.
     await entrar('recepcao@lapato.local');

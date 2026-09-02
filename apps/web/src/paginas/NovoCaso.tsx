@@ -98,6 +98,12 @@ export function NovoCaso() {
   const [cliente, setCliente] = useState<ClienteResumo | null>(null);
   const [veterinario, setVeterinario] = useState<VeterinarioResumo | null>(null);
   const [prioridade, setPrioridade] = useState<Prioridade>('rotina');
+  /**
+   * Data de entrada do material (segunda review): volume grande chega hoje e
+   * e cadastrado amanha - o prazo conta da entrada, nao do cadastro.
+   * `datetime-local` sem fuso; converte para ISO no envio.
+   */
+  const [entradaEm, setEntradaEm] = useState(agoraLocal());
 
   const [nome, setNome] = useState('');
   const [especieId, setEspecieId] = useState('');
@@ -176,6 +182,7 @@ export function NovoCaso() {
         clienteId: cliente!.id,
         ...(veterinario ? { veterinarioId: veterinario.id } : {}),
         prioridade,
+        ...(entradaEm ? { entradaEm: new Date(entradaEm).toISOString() } : {}),
         paciente: {
           nome: nome.trim(),
           ...(especieId ? { especieId } : {}),
@@ -254,6 +261,16 @@ export function NovoCaso() {
                 </MenuItem>
               ))}
             </TextField>
+
+            <TextField
+              type="datetime-local"
+              label="Entrada do material"
+              value={entradaEm}
+              onChange={(e) => setEntradaEm(e.target.value)}
+              sx={{ flex: 1 }}
+              slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: agoraLocal() } }}
+              helperText="Quando chegou ao laboratório — o prazo conta daqui."
+            />
           </Stack>
 
           {etapasPrevistas.length > 0 && (
@@ -609,4 +626,12 @@ function Remover({
       </span>
     </Tooltip>
   );
+}
+
+/** Agora, no formato do `datetime-local` (sem segundos, hora local). */
+function agoraLocal(): string {
+  const d = new Date();
+  d.setSeconds(0, 0);
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
 }

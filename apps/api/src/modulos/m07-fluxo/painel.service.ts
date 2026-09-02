@@ -130,10 +130,11 @@ export class PainelService {
       const [entradas] = await tx
         .select({ total: count() })
         .from(caso)
-        .where(and(eq(caso.tenantId, ctx.tenantId), gte(caso.cadastradoEm, inicioDeHoje)));
+        .where(and(eq(caso.tenantId, ctx.tenantId), gte(caso.entradaEm, inicioDeHoje)));
 
       /**
-       * Tempo medio em DIAS CORRIDOS, nao uteis.
+       * Tempo medio em DIAS CORRIDOS, nao uteis, contado da ENTRADA do material
+       * (segunda review) - e quanto tempo a peca passou aqui dentro.
        *
        * O prazo contratual do M01 conta dias uteis, e o painel nao esta
        * medindo prazo: esta medindo quanto tempo o material passou aqui
@@ -143,7 +144,7 @@ export class PainelService {
         .select({
           dias: sql<
             number | null
-          >`avg(extract(epoch from (${estadoCaso.entrouNaEtapaEm} - ${caso.cadastradoEm})) / 86400)::float8`,
+          >`avg(extract(epoch from (${estadoCaso.entrouNaEtapaEm} - ${caso.entradaEm})) / 86400)::float8`,
         })
         .from(estadoCaso)
         .innerJoin(caso, eq(caso.id, estadoCaso.casoId))
@@ -168,11 +169,11 @@ export class PainelService {
 
       const entradasPorDia = await tx
         .select({
-          dia: sql<string>`to_char((${caso.cadastradoEm} at time zone ${fuso})::date, 'YYYY-MM-DD')`,
+          dia: sql<string>`to_char((${caso.entradaEm} at time zone ${fuso})::date, 'YYYY-MM-DD')`,
           total: count(),
         })
         .from(caso)
-        .where(and(eq(caso.tenantId, ctx.tenantId), gte(caso.cadastradoEm, inicioDaSerie)))
+        .where(and(eq(caso.tenantId, ctx.tenantId), gte(caso.entradaEm, inicioDaSerie)))
         /**
          * `group by 1`, e nao a expressao repetida.
          *

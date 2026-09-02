@@ -670,6 +670,16 @@ const novaVersaoSchema = z.object({
 export class LaudosController {
   constructor(private readonly laudos: LaudosService) {}
 
+  @Get('busca')
+  @ExigePermissao(PERMISSOES.LAUDO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Arquivo de laudos: busca por paciente, cliente, responsável, palavra-chave, lâmina ou OS',
+    description: 'Um termo, procurado na versão corrente de cada laudo e nas referências do caso.',
+  })
+  async buscar(@Query('q') q?: string) {
+    return this.laudos.buscar(q ?? '');
+  }
+
   @Get('casos/:casoId')
   @ExigePermissao(PERMISSOES.LAUDO_VISUALIZAR)
   @ApiOperation({
@@ -3063,6 +3073,16 @@ const edicaoTabelaPrecoSchema = z.object({
   ativa: z.boolean().optional(),
 });
 
+/** Período do fechamento: `YYYY-MM-DD` ou ISO; `ate` exclusivo. */
+const periodoSchema = z
+  .object({
+    de: z.string().min(10),
+    ate: z.string().min(10),
+    clienteId: z.string().uuid().optional(),
+  })
+  .refine((p) => !Number.isNaN(Date.parse(p.de)) && !Number.isNaN(Date.parse(p.ate)), 'Datas inválidas.')
+  .refine((p) => Date.parse(p.ate) > Date.parse(p.de), '`ate` precisa ser depois de `de`.');
+
 const novaFaturaSchema = z.object({
   clienteId: z.string().uuid(),
   ordemIds: z.array(z.string().uuid()).min(1, 'Escolha ao menos uma OS faturável.'),
@@ -3089,6 +3109,47 @@ export class FinanceiroController {
   })
   async resumo() {
     return this.financeiro.resumo();
+  }
+
+  @Get('fechamento')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Fechamento do período por cliente',
+    description:
+      'Exames com ENTRADA entre `de` (inclusive) e `ate` (exclusivo), agrupados por ' +
+      'cliente com subtotal — o relatório do dia 1º. Cada linha diz o status da OS.',
+  })
+  async fechamento(
+    @Query('de') de?: string,
+    @Query('ate') ate?: string,
+    @Query('clienteId') clienteId?: string,
+  ) {
+    const p = validarCorpo(periodoSchema, { de, ate, clienteId });
+    return this.financeiro.fechamento(new Date(p.de), new Date(p.ate), p.clienteId);
+  }
+
+  @Get('fechamento/pdf')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_VISUALIZAR)
+  @Header('Content-Type', 'application/pdf')
+  @ApiOperation({ summary: 'O fechamento em PDF — o que vai por e-mail para o cliente' })
+  async fechamentoPdf(
+    @Query('de') de?: string,
+    @Query('ate') ate?: string,
+    @Query('clienteId') clienteId?: string,
+  ) {
+    const p = validarCorpo(periodoSchema, { de, ate, clienteId });
+    const bytes = await this.financeiro.fechamentoPdf(new Date(p.de), new Date(p.ate), p.clienteId);
+    return new StreamableFile(bytes, {
+      disposition: `inline; filename="fechamento-${p.de.slice(0, 10)}.pdf"`,
+    });
+  }
+
+  @Get('produtividade')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_VISUALIZAR)
+  @ApiOperation({ summary: 'Laudos liberados por patologista no período, e a fila de cada um' })
+  async produtividade(@Query('de') de?: string, @Query('ate') ate?: string) {
+    const p = validarCorpo(periodoSchema, { de, ate });
+    return this.financeiro.produtividade(new Date(p.de), new Date(p.ate));
   }
 
   @Get('faturas')

@@ -14,6 +14,7 @@ import { TrocarSenha } from './paginas/TrocarSenha';
 import { CadastrarMfa } from './paginas/CadastrarMfa';
 import { Painel } from './paginas/Painel';
 import { CentralDeCasos } from './paginas/CentralDeCasos';
+import { ArquivoDeLaudos } from './paginas/ArquivoDeLaudos';
 import { NovoCaso } from './paginas/NovoCaso';
 import { Recebimento } from './paginas/Recebimento';
 import { Triagem } from './paginas/Triagem';
@@ -304,6 +305,14 @@ function App() {
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Ordens de Serviço">
             <OrdensDeServico />
+          </Shell>
+        }
+      />
+      <Route
+        path="/laudos"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Laudos">
+            <ArquivoDeLaudos />
           </Shell>
         }
       />

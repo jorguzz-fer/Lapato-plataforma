@@ -7,7 +7,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import {
   amostra,
   avaliacaoCitologica,
@@ -26,6 +26,7 @@ import {
   servico,
   tenant,
   termo,
+  usuario,
   veterinario,
   type Transacao,
 } from '@lapato/db';
@@ -1141,6 +1142,76 @@ export class LaudosService {
     return registro;
   }
 
+  /**
+   * Arquivo de laudos (segunda review, Hugo): "busca dos laudos pelo
+   * paciente, pelo cliente, pelo nome do responsavel, por uma palavra-chave -
+   * carcinoma -, pela lamina, pela OS". Uma caixa so; o termo e procurado em
+   * tudo isso, na versao corrente de cada laudo. Quem pode ver laudo ve o
+   * arquivo inteiro - Hugo liberou: "nao tem problema ele acessar laudos de
+   * outros patologistas".
+   */
+  async buscar(termo: string) {
+    const ctx = exigirContexto();
+    const q = termo.trim();
+    if (q.length < 2) return [];
+    const padrao = `%${q}%`;
+
+    return this.db.executar(async (tx) => {
+      const patologista = usuario;
+      const linhas = await tx
+        .select({
+          casoId: caso.id,
+          identificador: caso.identificador,
+          paciente: paciente.nome,
+          cliente: cliente.nomeFantasia,
+          veterinario: veterinario.nome,
+          patologista: patologista.nomeCompleto,
+          status: laudo.status,
+          liberadoEm: laudo.liberadoEm,
+          versao: laudoVersao.versao,
+          conclusao: laudoVersao.conclusao,
+          entradaEm: caso.entradaEm,
+        })
+        .from(laudo)
+        .innerJoin(
+          laudoVersao,
+          and(eq(laudoVersao.laudoId, laudo.id), eq(laudoVersao.versao, laudo.versaoAtual)),
+        )
+        .innerJoin(caso, eq(caso.id, laudo.casoId))
+        .innerJoin(paciente, eq(paciente.id, caso.pacienteId))
+        .innerJoin(cliente, eq(cliente.id, caso.clienteId))
+        .leftJoin(veterinario, eq(veterinario.id, caso.veterinarioId))
+        .leftJoin(patologista, eq(patologista.id, laudo.patologistaId))
+        .where(
+          and(
+            eq(laudo.tenantId, ctx.tenantId),
+            or(
+              ilike(caso.identificador, padrao),
+              ilike(paciente.nome, padrao),
+              ilike(cliente.nomeFantasia, padrao),
+              ilike(veterinario.nome, padrao),
+              ilike(patologista.nomeCompleto, padrao),
+              ilike(laudoVersao.conclusao, padrao),
+              ilike(laudoVersao.descricaoMicroscopica, padrao),
+              ilike(laudoVersao.comentarios, padrao),
+              // Lamina e OS: referencias externas literais na subconsulta
+              // (armadilha documentada no M19/M20).
+              sql`exists (select 1 from lamina l where l.caso_id = caso.id and l.identificador ilike ${padrao})`,
+              sql`exists (select 1 from ordem_servico o where o.caso_id = caso.id and o.identificador ilike ${padrao})`,
+            ),
+          ),
+        )
+        .orderBy(sql`${laudo.liberadoEm} desc nulls last`, desc(caso.entradaEm))
+        .limit(50);
+
+      return linhas.map((l) => ({
+        ...l,
+        // Um trecho da conclusao ao redor do termo, para bater o olho.
+        trecho: trechoAoRedor(l.conclusao, q),
+      }));
+    });
+  }
+
   private async versaoCorrente(tx: Transacao, laudoId: string) {
     const ctx = exigirContexto();
     const [versao] = await tx
@@ -1176,4 +1247,13 @@ export class LaudosService {
       casoIdentificador: linha.casoIdentificador,
     };
   }
+}
+
+function trechoAoRedor(texto: string | null, termo: string): string | null {
+  if (!texto) return null;
+  const i = texto.toLowerCase().indexOf(termo.toLowerCase());
+  if (i < 0) return texto.length > 160 ? `${texto.slice(0, 160)}…` : texto;
+  const ini = Math.max(0, i - 60);
+  const fim = Math.min(texto.length, i + termo.length + 100);
+  return `${ini > 0 ? '…' : ''}${texto.slice(ini, fim)}${fim < texto.length ? '…' : ''}`;
 }

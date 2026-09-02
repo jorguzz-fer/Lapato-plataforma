@@ -72,7 +72,7 @@ interface OrdemFaturavel {
 }
 
 export function Financeiro({ permissoes }: { permissoes: string[] }) {
-  const [aba, setAba] = useState<'visao' | 'faturas' | 'lancamentos'>('visao');
+  const [aba, setAba] = useState<'visao' | 'faturas' | 'lancamentos' | 'fechamento'>('visao');
   const podeLancar = permissoes.includes('financeiro:lancar');
 
   return (
@@ -89,11 +89,13 @@ export function Financeiro({ permissoes }: { permissoes: string[] }) {
         <Tab value="visao" label="Visão" sx={{ fontSize: 13.5, minHeight: 42 }} />
         <Tab value="faturas" label="Faturas" sx={{ fontSize: 13.5, minHeight: 42 }} />
         <Tab value="lancamentos" label="Lançamentos" sx={{ fontSize: 13.5, minHeight: 42 }} />
+        <Tab value="fechamento" label="Fechamento" sx={{ fontSize: 13.5, minHeight: 42 }} />
       </Tabs>
 
       {aba === 'visao' && <Visao />}
       {aba === 'faturas' && <Faturas podeLancar={podeLancar} />}
       {aba === 'lancamentos' && <Lancamentos podeLancar={podeLancar} />}
+      {aba === 'fechamento' && <Fechamento />}
     </Box>
   );
 }
@@ -809,5 +811,234 @@ function DialogoLancamento({ aoFechar, aoSalvar }: { aoFechar: () => void; aoSal
         </Button>
       </DialogActions>
     </Dialog>
+  );
+}
+
+// --- fechamento do periodo (segunda review) ----------------------------------
+
+interface LinhaFechamento {
+  casoId: string;
+  casoIdentificador: string;
+  entradaEm: string;
+  paciente: string;
+  servico: string;
+  ordemId: string | null;
+  ordemIdentificador: string | null;
+  status: string | null;
+  faturavelEm: string | null;
+  faturaIdentificador: string | null;
+  total: string | null;
+  retrabalhos: number;
+}
+
+interface Fechamento {
+  de: string;
+  ate: string;
+  total: number;
+  clientes: Array<{
+    clienteId: string;
+    clienteNome: string;
+    subtotal: number;
+    casos: number;
+    semOrdem: number;
+    naoFaturaveis: number;
+    itens: LinhaFechamento[];
+  }>;
+}
+
+interface Produtividade {
+  patologistas: Array<{
+    patologistaId: string;
+    nome: string;
+    laudosLiberados: number;
+    casosEmAberto: number;
+  }>;
+}
+
+const BASE_API = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
+
+/** Primeiro dia do mes e primeiro dia do mes seguinte, em `YYYY-MM-DD` local. */
+function mesCorrente(): { de: string; ate: string } {
+  const hoje = new Date();
+  const de = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const ate = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1);
+  const iso = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { de: iso(de), ate: iso(ate) };
+}
+
+/**
+ * O fechamento do dia 1 (Roberta): "todos os exames, valor e subtotal, para
+ * todos os clientes", cortado pela ENTRADA do material. O PDF e o que vai por
+ * e-mail; o envio automatico depende de servidor de e-mail e fica para depois.
+ * Embaixo, a produtividade por patologista (Hugo: pagamento mensal, alguem
+ * pode receber por producao).
+ */
+function Fechamento() {
+  const [periodo, setPeriodo] = useState(mesCorrente());
+  const [dados, setDados] = useState<Fechamento | null>(null);
+  const [produtividade, setProdutividade] = useState<Produtividade | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(false);
+
+  const carregar = useCallback(() => {
+    if (!periodo.de || !periodo.ate) return;
+    setCarregando(true);
+    setErro(null);
+    const consulta = `de=${periodo.de}&ate=${periodo.ate}`;
+    Promise.all([
+      api.get<Fechamento>(`/financeiro/fechamento?${consulta}`),
+      api.get<Produtividade>(`/financeiro/produtividade?${consulta}`),
+    ])
+      .then(([f, p]) => {
+        setDados(f);
+        setProdutividade(p);
+      })
+      .catch((err) =>
+        setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível montar o fechamento.'),
+      )
+      .finally(() => setCarregando(false));
+  }, [periodo]);
+
+  useEffect(carregar, [carregar]);
+
+  return (
+    <Stack spacing={2}>
+      <Card sx={{ p: 2 }}>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          sx={{ alignItems: { sm: 'center' } }}
+        >
+          <TextField
+            type="date"
+            size="small"
+            label="Entrada de"
+            value={periodo.de}
+            onChange={(e) => setPeriodo((a) => ({ ...a, de: e.target.value }))}
+            slotProps={{ inputLabel: { shrink: true } }}
+          />
+          <TextField
+            type="date"
+            size="small"
+            label="até (exclusivo)"
+            value={periodo.ate}
+            onChange={(e) => setPeriodo((a) => ({ ...a, ate: e.target.value }))}
+            slotProps={{ inputLabel: { shrink: true } }}
+            helperText="Use o 1º dia do mês seguinte para fechar o mês inteiro."
+          />
+          <Box sx={{ flex: 1 }} />
+          <Button
+            variant="contained"
+            size="small"
+            disabled={!dados || dados.clientes.length === 0}
+            onClick={() =>
+              window.open(
+                `${BASE_API}/financeiro/fechamento/pdf?de=${periodo.de}&ate=${periodo.ate}`,
+                '_blank',
+              )
+            }
+          >
+            Baixar PDF
+          </Button>
+        </Stack>
+      </Card>
+
+      {erro && <Alert severity="error">{erro}</Alert>}
+      {carregando && !dados && <Skeleton variant="rounded" height={200} />}
+
+      {dados && dados.clientes.length === 0 && (
+        <Typography sx={{ fontSize: 13.5, color: 'text.secondary' }}>
+          Nenhum exame com entrada no período.
+        </Typography>
+      )}
+
+      {dados?.clientes.map((c) => (
+        <Card key={c.clienteId} sx={{ p: 2 }}>
+          <Stack
+            direction="row"
+            sx={{ alignItems: 'baseline', justifyContent: 'space-between', mb: 1 }}
+          >
+            <Box>
+              <Typography sx={{ fontSize: 14, fontWeight: 700 }}>{c.clienteNome}</Typography>
+              <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                {c.casos} exame(s)
+                {c.naoFaturaveis > 0 ? ` · ${c.naoFaturaveis} ainda não faturável(is)` : ''}
+                {c.semOrdem > 0 ? ` · ${c.semOrdem} sem OS (não recebido)` : ''}
+              </Typography>
+            </Box>
+            <Typography sx={{ ...MONO, fontSize: 16, fontWeight: 700 }}>
+              {formatarReais(c.subtotal)}
+            </Typography>
+          </Stack>
+          <Stack divider={<Divider flexItem />} spacing={0.75}>
+            {c.itens.map((i) => (
+              <Stack
+                key={i.casoId}
+                direction="row"
+                spacing={2}
+                sx={{ alignItems: 'center', justifyContent: 'space-between' }}
+              >
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 13 }}>
+                    <Box
+                      component="span"
+                      sx={{ ...MONO, fontSize: 12.5, color: 'primary.main', fontWeight: 600 }}
+                    >
+                      {i.casoIdentificador}
+                    </Box>
+                    {' · '}
+                    {i.paciente} · {i.servico}
+                  </Typography>
+                  <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
+                    entrada {new Date(i.entradaEm).toLocaleDateString('pt-BR')}
+                    {i.ordemIdentificador ? ` · ${i.ordemIdentificador}` : ' · sem OS'}
+                    {i.status ? ` · ${i.status}` : ''}
+                    {i.faturaIdentificador ? ` · ${i.faturaIdentificador}` : ''}
+                    {i.retrabalhos > 0 ? ` · ${i.retrabalhos} retrabalho(s) não cobrado(s)` : ''}
+                  </Typography>
+                </Box>
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 0 }}>
+                  {i.ordemId && !i.faturavelEm && i.status !== 'cancelada' && (
+                    <Chip size="small" variant="outlined" label="ainda não faturável" />
+                  )}
+                  <Typography sx={{ ...MONO, fontSize: 13 }}>
+                    {i.status === 'cancelada' ? '—' : formatarReais(i.total ?? 0)}
+                  </Typography>
+                </Stack>
+              </Stack>
+            ))}
+          </Stack>
+        </Card>
+      ))}
+
+      {dados && dados.clientes.length > 0 && (
+        <Stack direction="row" sx={{ justifyContent: 'flex-end' }}>
+          <Typography sx={{ ...MONO, fontSize: 18, fontWeight: 700 }}>
+            Total do período: {formatarReais(dados.total)}
+          </Typography>
+        </Stack>
+      )}
+
+      <Card sx={{ p: 2 }}>
+        <Typography sx={{ fontSize: 14, fontWeight: 700 }}>Produtividade por patologista</Typography>
+        <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1 }}>
+          Laudos liberados no período e casos destinados ainda em aberto.
+        </Typography>
+        {produtividade && produtividade.patologistas.length === 0 && (
+          <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>Nada no período.</Typography>
+        )}
+        <Stack divider={<Divider flexItem />} spacing={0.75}>
+          {produtividade?.patologistas.map((p) => (
+            <Stack key={p.patologistaId} direction="row" sx={{ justifyContent: 'space-between' }}>
+              <Typography sx={{ fontSize: 13.5 }}>{p.nome}</Typography>
+              <Typography sx={{ ...MONO, fontSize: 13 }}>
+                {p.laudosLiberados} liberado(s) · {p.casosEmAberto} em aberto
+              </Typography>
+            </Stack>
+          ))}
+        </Stack>
+      </Card>
+    </Stack>
   );
 }

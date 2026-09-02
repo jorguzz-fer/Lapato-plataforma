@@ -1,14 +1,27 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, inArray, isNotNull, notInArray, sql } from 'drizzle-orm';
+import PDFDocument from 'pdfkit';
+import { and, asc, desc, eq, gte, inArray, isNotNull, lt, notInArray, sql } from 'drizzle-orm';
 import {
+  caso,
   cliente,
   fatura,
   itemOrdemServico,
   lancamentoFinanceiro,
+  laudo,
   ordemServico,
+  paciente,
+  servico,
+  tenant,
+  usuario,
   type Transacao,
 } from '@lapato/db';
-import { MODULOS, totalDaOrdem, type StatusFatura, type TipoLancamento } from '@lapato/shared';
+import {
+  MODULOS,
+  formatarReais,
+  totalDaOrdem,
+  type StatusFatura,
+  type TipoLancamento,
+} from '@lapato/shared';
 import { DbService } from '../../core/db/db.service.js';
 import { EventosService } from '../../core/eventos/eventos.service.js';
 import { AuditoriaService } from '../../core/auditoria/auditoria.service.js';
@@ -476,6 +489,250 @@ export class FinanceiroService {
         })),
         aReceber: { quantidade: aReceber!.quantidade, valor: Number(aReceber!.valor) },
         aFaturar: { quantidade: aFaturar!.quantidade, valor: Number(aFaturar!.valor) },
+      };
+    });
+  }
+
+  // --- Fechamento mensal (segunda review) --------------------------------
+
+  /**
+   * O fechamento que a Roberta faz no dia 1: "um relatorio com todos os
+   * exames, valor e subtotal, para todos os clientes". O corte e pela DATA DE
+   * ENTRADA do material ("o que chegou no laboratorio entre o dia 1 e o dia
+   * 31"), nao pela fatura - e o que o cliente reconhece.
+   *
+   * `ate` e exclusivo: passe o primeiro dia do mes seguinte. Cada linha diz o
+   * status da OS para o financeiro enxergar o que ainda nao esta faturavel
+   * (macroscopia pendente) e o retrabalho, que consta e nao cobra.
+   */
+  async fechamento(de: Date, ate: Date, clienteId?: string) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+
+      const linhas = await tx
+        .select({
+          clienteId: cliente.id,
+          clienteNome: cliente.nomeFantasia,
+          casoId: caso.id,
+          casoIdentificador: caso.identificador,
+          entradaEm: caso.entradaEm,
+          paciente: paciente.nome,
+          servico: servico.nome,
+          ordemId: ordemServico.id,
+          ordemIdentificador: ordemServico.identificador,
+          status: ordemServico.status,
+          faturavelEm: ordemServico.faturavelEm,
+          faturaIdentificador: fatura.identificador,
+          // Referencias externas literais (armadilha da subconsulta correlacionada).
+          total: sql<string>`coalesce((
+            select sum(round(i.quantidade * i.valor_unitario * (1 - i.desconto_percentual / 100), 2))
+            from item_ordem_servico i where i.ordem_id = ordem_servico.id
+          ), 0)::text`,
+          retrabalhos: sql<number>`(
+            select count(*)::int from item_ordem_servico i
+            where i.ordem_id = ordem_servico.id and i.retrabalho
+          )`,
+        })
+        .from(caso)
+        .innerJoin(cliente, eq(cliente.id, caso.clienteId))
+        .innerJoin(paciente, eq(paciente.id, caso.pacienteId))
+        .innerJoin(servico, eq(servico.id, caso.servicoId))
+        .leftJoin(ordemServico, eq(ordemServico.casoId, caso.id))
+        .leftJoin(fatura, eq(fatura.id, ordemServico.faturaId))
+        .where(
+          and(
+            eq(caso.tenantId, ctx.tenantId),
+            gte(caso.entradaEm, de),
+            lt(caso.entradaEm, ate),
+            ...(clienteId ? [eq(caso.clienteId, clienteId)] : []),
+          ),
+        )
+        .orderBy(asc(cliente.nomeFantasia), asc(caso.entradaEm));
+
+      const porCliente = new Map<
+        string,
+        {
+          clienteId: string;
+          clienteNome: string;
+          subtotal: number;
+          casos: number;
+          semOrdem: number;
+          naoFaturaveis: number;
+          itens: typeof linhas;
+        }
+      >();
+      for (const linha of linhas) {
+        const grupo = porCliente.get(linha.clienteId) ?? {
+          clienteId: linha.clienteId,
+          clienteNome: linha.clienteNome,
+          subtotal: 0,
+          casos: 0,
+          semOrdem: 0,
+          naoFaturaveis: 0,
+          itens: [],
+        };
+        grupo.casos += 1;
+        if (!linha.ordemId) grupo.semOrdem += 1;
+        else if (!linha.faturavelEm && linha.status !== 'cancelada') grupo.naoFaturaveis += 1;
+        if (linha.status !== 'cancelada') grupo.subtotal += Number(linha.total ?? 0);
+        grupo.itens.push(linha);
+        porCliente.set(linha.clienteId, grupo);
+      }
+
+      const clientes = [...porCliente.values()].map((g) => ({
+        ...g,
+        subtotal: Math.round(g.subtotal * 100) / 100,
+      }));
+      return {
+        de: de.toISOString(),
+        ate: ate.toISOString(),
+        total: Math.round(clientes.reduce((acc, c) => acc + c.subtotal, 0) * 100) / 100,
+        clientes,
+      };
+    });
+  }
+
+  /** O mesmo fechamento em PDF - e o que vai por e-mail para cada cliente. */
+  async fechamentoPdf(de: Date, ate: Date, clienteId?: string): Promise<Buffer> {
+    const dados = await this.fechamento(de, ate, clienteId);
+    const [instituicao] = await this.db.executar((tx) => {
+      const ctx = exigirContexto();
+      return tx.select({ nome: tenant.nomeFantasia }).from(tenant).where(eq(tenant.id, ctx.tenantId)).limit(1);
+    });
+
+    const doc = new PDFDocument({
+      size: 'A4',
+      margins: { top: 50, bottom: 50, left: 50, right: 50 },
+      // Titulo em ASCII de proposito: com acento o pdfkit grava UTF-16 e o
+      // texto deixa de ser localizavel nos metadados.
+      info: { Title: 'Fechamento do periodo', Author: instituicao?.nome ?? 'LAPATO' },
+    });
+    const partes: Buffer[] = [];
+    doc.on('data', (p: Buffer) => partes.push(p));
+    const pronto = new Promise<Buffer>((resolve) => doc.on('end', () => resolve(Buffer.concat(partes))));
+
+    const data = (d: Date | string) => new Date(d).toLocaleDateString('pt-BR');
+    const fim = new Date(ate.getTime() - 1);
+
+    doc.fontSize(9).fillColor('#666').text((instituicao?.nome ?? '').toUpperCase());
+    doc.moveDown(0.3);
+    doc.fontSize(16).fillColor('#000').font('Helvetica-Bold').text('Fechamento do período');
+    doc.font('Helvetica').fontSize(10).fillColor('#444')
+      .text(`Exames com entrada de ${data(de)} a ${data(fim)} · gerado em ${new Date().toLocaleString('pt-BR')}`);
+    doc.moveDown(1);
+
+    for (const c of dados.clientes) {
+      if (doc.y > 700) doc.addPage();
+      doc.fontSize(12).fillColor('#000').font('Helvetica-Bold').text(c.clienteNome);
+      doc.font('Helvetica').fontSize(9).fillColor('#444')
+        .text(`${c.casos} exame(s)${c.naoFaturaveis ? ` · ${c.naoFaturaveis} ainda não faturável(is)` : ''}`);
+      doc.moveDown(0.4);
+
+      const x0 = 50;
+      const colunas = [x0, x0 + 70, x0 + 150, x0 + 290, x0 + 400];
+      doc.fontSize(8.5).fillColor('#666')
+        .text('Entrada', colunas[0]!, doc.y, { continued: true, width: 70 })
+        .text('Registro', colunas[1]!, doc.y, { continued: true, width: 80 })
+        .text('Paciente', colunas[2]!, doc.y, { continued: true, width: 140 })
+        .text('Serviço', colunas[3]!, doc.y, { continued: true, width: 110 })
+        .text('Valor', colunas[4]!, doc.y, { width: 95, align: 'right' });
+      doc.moveDown(0.2);
+
+      for (const i of c.itens) {
+        if (doc.y > 760) doc.addPage();
+        const valor = i.status === 'cancelada' ? 'cancelada' : formatarReais(i.total ?? 0);
+        const nota = !i.ordemId ? ' (sem OS)' : !i.faturavelEm && i.status !== 'cancelada' ? ' *' : '';
+        doc.fontSize(9).fillColor('#000')
+          .text(data(i.entradaEm), colunas[0]!, doc.y, { continued: true, width: 70 })
+          .text(i.casoIdentificador, colunas[1]!, doc.y, { continued: true, width: 80 })
+          .text(i.paciente, colunas[2]!, doc.y, { continued: true, width: 140 })
+          .text(i.servico, colunas[3]!, doc.y, { continued: true, width: 110 })
+          .text(valor + nota, colunas[4]!, doc.y, { width: 95, align: 'right' });
+      }
+      doc.moveDown(0.3);
+      doc.fontSize(10).font('Helvetica-Bold')
+        .text(`Subtotal ${c.clienteNome}: ${formatarReais(c.subtotal)}`, x0, doc.y, { width: 495, align: 'right' });
+      doc.font('Helvetica');
+      doc.moveDown(1);
+    }
+
+    if (dados.clientes.length === 0) {
+      doc.fontSize(10).fillColor('#444').text('Nenhum exame com entrada no período.');
+    } else {
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#000')
+        .text(`Total do período: ${formatarReais(dados.total)}`, 50, doc.y, { width: 495, align: 'right' });
+      doc.font('Helvetica').fontSize(8).fillColor('#666').moveDown(0.5)
+        .text('* OS ainda não faturável (macroscopia pendente). Retrabalho consta na OS com valor zero e não é cobrado.');
+    }
+
+    doc.end();
+    return pronto;
+  }
+
+  /**
+   * Produtividade por patologista (Hugo: "de repente a gente pode ter alguem
+   * que receba produtividade"; Roberta: o pagamento e mensal). Conta laudos
+   * LIBERADOS no periodo por quem assinou o laudo, e os casos destinados que
+   * ainda nao sairam - a fila de cada um.
+   */
+  async produtividade(de: Date, ate: Date) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+
+      const liberados = await tx
+        .select({
+          patologistaId: laudo.patologistaId,
+          nome: usuario.nomeCompleto,
+          laudos: sql<number>`count(*)::int`,
+        })
+        .from(laudo)
+        .innerJoin(usuario, eq(usuario.id, laudo.patologistaId))
+        .where(
+          and(
+            eq(laudo.tenantId, ctx.tenantId),
+            isNotNull(laudo.liberadoEm),
+            gte(laudo.liberadoEm, de),
+            lt(laudo.liberadoEm, ate),
+          ),
+        )
+        .groupBy(laudo.patologistaId, usuario.nomeCompleto)
+        .orderBy(desc(sql`count(*)`));
+
+      const emAberto = await tx
+        .select({
+          patologistaId: caso.patologistaResponsavelId,
+          nome: usuario.nomeCompleto,
+          casos: sql<number>`count(*)::int`,
+        })
+        .from(caso)
+        .innerJoin(usuario, eq(usuario.id, caso.patologistaResponsavelId))
+        .leftJoin(laudo, eq(laudo.casoId, caso.id))
+        .where(
+          and(
+            eq(caso.tenantId, ctx.tenantId),
+            isNotNull(caso.patologistaResponsavelId),
+            sql`${laudo.liberadoEm} is null`,
+            sql`${caso.canceladoEm} is null`,
+          ),
+        )
+        .groupBy(caso.patologistaResponsavelId, usuario.nomeCompleto);
+
+      const porId = new Map<string, { patologistaId: string; nome: string; laudosLiberados: number; casosEmAberto: number }>();
+      for (const l of liberados) {
+        if (!l.patologistaId) continue;
+        porId.set(l.patologistaId, { patologistaId: l.patologistaId, nome: l.nome, laudosLiberados: l.laudos, casosEmAberto: 0 });
+      }
+      for (const a of emAberto) {
+        if (!a.patologistaId) continue;
+        const atual = porId.get(a.patologistaId) ?? { patologistaId: a.patologistaId, nome: a.nome, laudosLiberados: 0, casosEmAberto: 0 };
+        atual.casosEmAberto = a.casos;
+        porId.set(a.patologistaId, atual);
+      }
+      return {
+        de: de.toISOString(),
+        ate: ate.toISOString(),
+        patologistas: [...porId.values()].sort((x, y) => y.laudosLiberados - x.laudosLiberados),
       };
     });
   }

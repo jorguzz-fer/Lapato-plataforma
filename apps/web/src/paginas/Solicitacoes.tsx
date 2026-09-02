@@ -116,7 +116,7 @@ const STATUS_ABERTOS = [
 
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
 
-type Aba = 'abertas' | 'pendencias' | 'vencidas' | 'concluidas';
+type Aba = 'abertas' | 'minhas' | 'pendencias' | 'vencidas' | 'concluidas';
 
 interface Props {
   permissoes: string[];
@@ -203,6 +203,8 @@ export function Solicitacoes({ permissoes }: Props) {
         sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
       >
         <Tab value="abertas" label="Abertas" />
+        {/* Segunda review: o que EU pedi não pode se perder (coloração especial, recorte). */}
+        <Tab value="minhas" label="Minhas" />
         <Tab value="pendencias" label="Pendências" />
         <Tab value="vencidas" label="Vencidas" />
         <Tab value="concluidas" label="Encerradas" />

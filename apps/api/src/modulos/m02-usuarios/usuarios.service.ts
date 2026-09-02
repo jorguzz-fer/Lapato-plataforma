@@ -93,6 +93,31 @@ export class UsuariosService {
     );
   }
 
+  /**
+   * Quem pode receber lamina para laudar (segunda review): usuarios ativos
+   * com perfil de patologista. Lista enxuta, so id e nome - e um seletor, nao
+   * a tela de usuarios.
+   */
+  async listarPatologistas(): Promise<Array<{ id: string; nome: string }>> {
+    const ctx = exigirContexto();
+
+    return this.db.executar((tx) =>
+      tx
+        .selectDistinct({ id: usuario.id, nome: usuario.nomeCompleto })
+        .from(usuario)
+        .innerJoin(usuarioPerfil, eq(usuarioPerfil.usuarioId, usuario.id))
+        .innerJoin(perfil, eq(perfil.id, usuarioPerfil.perfilId))
+        .where(
+          and(
+            eq(usuario.tenantId, ctx.tenantId),
+            eq(usuario.status, 'ativo'),
+            inArray(perfil.chave, ['patologista', 'patologista_revisor']),
+          ),
+        )
+        .orderBy(asc(usuario.nomeCompleto)),
+    );
+  }
+
   /** Perfis disponiveis para atribuicao (M02 secao 9). */
   async listarPerfis(): Promise<unknown[]> {
     const ctx = exigirContexto();

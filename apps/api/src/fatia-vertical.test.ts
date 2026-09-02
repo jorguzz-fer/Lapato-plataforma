@@ -4504,3 +4504,118 @@ describe('cobrança no momento certo: macroscopia concluída fatura, recorte nã
     expect(eventos).toHaveLength(1);
   });
 });
+
+describe('para quem foi a lâmina: destino, bipagem e fila do patologista (M05 + M07 + M10)', () => {
+  /**
+   * Segunda review. Roberta: "essa lâmina a gente precisa rastrear quando foi
+   * enviada, para quem foi enviada". Hugo: "abre o login daquele patologista
+   * e vai só bipando as lâminas dele". E o que ele pediu não pode se perder:
+   * "ele solicitou uma coloração especial... isso aparece para ele na tela".
+   */
+  let casoId: string;
+  let casoIdentificador: string;
+  let patologistaId: string;
+
+  test('o técnico destina a lâmina a um patologista; recepção não pode ser destino', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: any) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: 'Destino da lâmina' },
+      amostras: [{ descricao: 'Nódulo' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    casoId = criado.body.id;
+    casoIdentificador = criado.body.identificador;
+    await levarAteBancada(casoId);
+
+    await entrar('tecnico@lapato.local');
+    const antes = await req('GET', `/casos/${casoId}`);
+    expect(antes.body.patologistaResponsavel).toBeNull();
+
+    // O seletor lista só quem tem perfil de patologista.
+    const patologistas = await req('GET', '/usuarios/patologistas');
+    expect(patologistas.status, JSON.stringify(patologistas.body)).toBe(200);
+    expect(patologistas.body.length).toBeGreaterThan(0);
+    patologistaId = patologistas.body[0].id;
+
+    await entrar('admin@lapato.local');
+    const usuarios = await req('GET', '/usuarios');
+    const recepcao = usuarios.body.find((u: any) => u.email === 'recepcao@lapato.local');
+    expect(patologistas.body.some((p: any) => p.id === recepcao.id)).toBe(false);
+
+    await entrar('tecnico@lapato.local');
+    const recusado = await req('POST', `/casos/${casoId}/patologista`, { usuarioId: recepcao.id });
+    expect(recusado.status).toBe(400);
+
+    const destinado = await req('POST', `/casos/${casoId}/patologista`, { usuarioId: patologistaId });
+    expect(destinado.status, JSON.stringify(destinado.body)).toBe(201);
+
+    const dossie = await req('GET', `/casos/${casoId}`);
+    expect(dossie.body.patologistaResponsavel.id).toBe(patologistaId);
+    expect(dossie.body.linhaDoTempo.map((e: any) => e.tipo)).toContain('caso.patologista_atribuido');
+  });
+
+  test('o caso aparece na fila do patologista destinado', async () => {
+    await entrar('patologista@lapato.local');
+    const eu = (await req('GET', '/usuarios/patologistas')).body.find(
+      (p: any) => p.id === patologistaId,
+    );
+    expect(eu).toBeTruthy();
+
+    const fila = await req('GET', '/fluxo/casos?minhaFila=true');
+    expect(fila.status, JSON.stringify(fila.body)).toBe(200);
+    expect(fila.body.some((c: any) => c.id === casoId || c.casoId === casoId)).toBe(true);
+  });
+
+  test('bipar a etiqueta do cassete faz o caso ser de quem bipou', async () => {
+    // Um cassete para ter um codigo de barras real (o da etiqueta do M09).
+    await entrar('patologista@lapato.local');
+    const amostraId = (await req('GET', `/casos/${casoId}`)).body.amostras[0].id;
+    const macro = await req('POST', `/macroscopia/amostras/${amostraId}`);
+    await req('POST', `/macroscopia/${macro.body.id}`, { cassetes: [{ tecidoOrigem: 'Nódulo' }] });
+    const cassetes = await req('GET', `/macroscopia/casos/${casoId}/cassetes`);
+    const codigo = cassetes.body[0].identificador;
+    expect(codigo).toMatch(/-A\d+$/);
+
+    // Técnico não lauda: não bipa para si.
+    await entrar('tecnico@lapato.local');
+    const semPermissao = await req('POST', '/casos/bipagem', { codigo });
+    expect(semPermissao.status).toBe(403);
+
+    await entrar('patologista@lapato.local');
+    const desconhecido = await req('POST', '/casos/bipagem', { codigo: 'XX-999999/99' });
+    expect(desconhecido.status).toBe(404);
+
+    const bipado = await req('POST', '/casos/bipagem', { codigo });
+    expect(bipado.status, JSON.stringify(bipado.body)).toBe(201);
+    expect(bipado.body.casoId).toBe(casoId);
+    expect(bipado.body.identificador).toBe(casoIdentificador);
+
+    // O identificador do proprio caso tambem resolve, em minusculas inclusive.
+    const pelaCaso = await req('POST', '/casos/bipagem', { codigo: casoIdentificador.toLowerCase() });
+    expect(pelaCaso.status).toBe(201);
+  });
+
+  test('o que o patologista pediu aparece em "minhas" — e só para ele', async () => {
+    await entrar('patologista@lapato.local');
+    const pedido = await req('POST', '/solicitacoes', {
+      casoId,
+      tipo: 'coloracao_especial',
+      descricao: 'Tricrômico de Masson',
+      justificativa: 'Avaliar fibrose.',
+    });
+    expect(pedido.status, JSON.stringify(pedido.body)).toBe(201);
+
+    const minhas = await req('GET', '/solicitacoes?aba=minhas');
+    expect(minhas.status).toBe(200);
+    expect(minhas.body.some((s: any) => s.id === pedido.body.id)).toBe(true);
+
+    await entrar('tecnico@lapato.local');
+    const doTecnico = await req('GET', '/solicitacoes?aba=minhas');
+    expect(doTecnico.body.some((s: any) => s.id === pedido.body.id)).toBe(false);
+  });
+});

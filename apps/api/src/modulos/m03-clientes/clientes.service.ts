@@ -1,14 +1,18 @@
+import { createHash, randomBytes } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  GoneException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import {
   caso,
   cliente,
+  conviteCadastroCliente,
   paciente,
+  tenant,
   veterinario,
   vinculoVeterinarioCliente,
   type Transacao,
@@ -343,6 +347,169 @@ export class ClientesService {
 
       return { ...dados, tabelaPrecoNome: tabela?.nome ?? null, vinculos, casos };
     });
+  }
+
+  // --- autocadastro do cliente (documento do Hugo) --------------------------
+
+  /**
+   * Gera o link de autocadastro: token de 32 bytes, so o hash guardado, sete
+   * dias de validade, uso unico. Devolve o CAMINHO (o front monta a URL com a
+   * origem) e a validade, para quem envia saber o que esta mandando.
+   */
+  async gerarConviteCadastro(clienteId: string): Promise<{ caminho: string; expiraEm: Date }> {
+    const ctx = exigirContexto();
+    return this.db.executar(async (tx) => {
+      const alvo = await this.buscarCliente(tx, clienteId);
+      if (alvo.inativadoEm) throw new BadRequestException('Cliente inativo não recebe convite.');
+
+      const [instituicao] = await this.db.raw
+        .select({ slug: tenant.slug })
+        .from(tenant)
+        .where(eq(tenant.id, ctx.tenantId))
+        .limit(1);
+      if (!instituicao) throw new NotFoundException('Instituição não encontrada.');
+
+      const tokenBruto = randomBytes(32).toString('base64url');
+      const expiraEm = new Date(Date.now() + 7 * 24 * 3_600_000);
+      await tx.insert(conviteCadastroCliente).values({
+        tenantId: ctx.tenantId,
+        clienteId,
+        tokenHash: hashDoToken(tokenBruto),
+        expiraEm,
+        criadoPorId: ctx.usuarioId,
+      });
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'cliente',
+        entidadeId: clienteId,
+        acao: 'convite_cadastro',
+        valorNovo: { expiraEm: expiraEm.toISOString() },
+      });
+
+      return { caminho: `/cadastro-cliente/${instituicao.slug}/${tokenBruto}`, expiraEm };
+    });
+  }
+
+  /** O que o cliente ve ao abrir o link: so os dados dele, nunca preco ou veterinario. */
+  async lerConvitePublico(tenantSlug: string, tokenBruto: string) {
+    const { tenantId, convite } = await this.resolverConvite(tenantSlug, tokenBruto);
+    return this.db.executarComTenant(tenantId, async (tx) => {
+      const [instituicao] = await this.db.raw
+        .select({ nome: tenant.nomeFantasia })
+        .from(tenant)
+        .where(eq(tenant.id, tenantId))
+        .limit(1);
+      const [dados] = await tx
+        .select({
+          nomeFantasia: cliente.nomeFantasia,
+          razaoSocial: cliente.razaoSocial,
+          documento: cliente.documento,
+          email: cliente.email,
+          telefone: cliente.telefone,
+        })
+        .from(cliente)
+        .where(and(eq(cliente.tenantId, tenantId), eq(cliente.id, convite.clienteId)))
+        .limit(1);
+      if (!dados) throw new NotFoundException('Convite não encontrado.');
+      return { instituicao: instituicao?.nome ?? '', expiraEm: convite.expiraEm, cliente: dados };
+    });
+  }
+
+  /** O cliente preenche e o convite se consome; o que havia antes fica no convite. */
+  async concluirConvitePublico(
+    tenantSlug: string,
+    tokenBruto: string,
+    dados: {
+      nomeFantasia: string;
+      razaoSocial?: string;
+      documento: string;
+      email: string;
+      telefone: string;
+    },
+  ): Promise<{ ok: true }> {
+    const { tenantId, convite } = await this.resolverConvite(tenantSlug, tokenBruto);
+    return this.db.executarComTenant(tenantId, async (tx) => {
+      const [atual] = await tx
+        .select({
+          nomeFantasia: cliente.nomeFantasia,
+          razaoSocial: cliente.razaoSocial,
+          documento: cliente.documento,
+          email: cliente.email,
+          telefone: cliente.telefone,
+        })
+        .from(cliente)
+        .where(and(eq(cliente.tenantId, tenantId), eq(cliente.id, convite.clienteId)))
+        .limit(1);
+      if (!atual) throw new NotFoundException('Convite não encontrado.');
+
+      const agora = new Date();
+      // Uso unico: marca antes de escrever, e so segue se ninguem marcou antes.
+      const consumido = await tx
+        .update(conviteCadastroCliente)
+        .set({ usadoEm: agora, dadosAnteriores: atual, atualizadoEm: agora })
+        .where(
+          and(
+            eq(conviteCadastroCliente.id, convite.id),
+            eq(conviteCadastroCliente.tenantId, tenantId),
+            isNull(conviteCadastroCliente.usadoEm),
+          ),
+        )
+        .returning({ id: conviteCadastroCliente.id });
+      if (consumido.length === 0) throw new GoneException('Este link já foi usado.');
+
+      await tx
+        .update(cliente)
+        .set({
+          nomeFantasia: dados.nomeFantasia.trim(),
+          razaoSocial: dados.razaoSocial?.trim() || null,
+          documento: dados.documento.replace(/\D/g, ''),
+          email: dados.email.trim().toLowerCase(),
+          telefone: dados.telefone.trim(),
+          atualizadoEm: agora,
+        })
+        .where(and(eq(cliente.tenantId, tenantId), eq(cliente.id, convite.clienteId)));
+
+      return { ok: true as const };
+    });
+  }
+
+  /**
+   * Resolve slug + token ao convite valido. Tudo que falha responde 404 igual:
+   * slug errado, token errado, expirado - sem enumerar o que existe. Usado
+   * responde 410, porque quem chegou ate ali tinha o link certo.
+   */
+  private async resolverConvite(tenantSlug: string, tokenBruto: string) {
+    const [instituicao] = await this.db.raw
+      .select({ id: tenant.id })
+      .from(tenant)
+      .where(and(eq(tenant.slug, tenantSlug), isNull(tenant.inativadoEm)))
+      .limit(1);
+    if (!instituicao || !tokenBruto || tokenBruto.length < 20) {
+      throw new NotFoundException('Convite não encontrado.');
+    }
+
+    const convite = await this.db.executarComTenant(instituicao.id, async (tx) => {
+      const [c] = await tx
+        .select({
+          id: conviteCadastroCliente.id,
+          clienteId: conviteCadastroCliente.clienteId,
+          expiraEm: conviteCadastroCliente.expiraEm,
+          usadoEm: conviteCadastroCliente.usadoEm,
+        })
+        .from(conviteCadastroCliente)
+        .where(
+          and(
+            eq(conviteCadastroCliente.tenantId, instituicao.id),
+            eq(conviteCadastroCliente.tokenHash, hashDoToken(tokenBruto)),
+          ),
+        )
+        .limit(1);
+      return c ?? null;
+    });
+    if (!convite) throw new NotFoundException('Convite não encontrado.');
+    if (convite.usadoEm) throw new GoneException('Este link já foi usado.');
+    if (convite.expiraEm.getTime() < Date.now()) throw new NotFoundException('Convite não encontrado.');
+    return { tenantId: instituicao.id, convite };
   }
 
   // --- veterinarios ---------------------------------------------------------
@@ -717,4 +884,9 @@ export class ClientesService {
     if (!linha) throw new NotFoundException('Veterinário não encontrado.');
     return linha;
   }
+}
+
+/** Mesmo principio da sessao: guarda-se o hash, nunca o token. */
+function hashDoToken(tokenBruto: string): string {
+  return createHash('sha256').update(tokenBruto).digest('hex');
 }

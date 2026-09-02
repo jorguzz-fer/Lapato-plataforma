@@ -1230,6 +1230,25 @@ export interface VinculoDoCliente {
   terminoEm: string | null;
 }
 
+/** Link de autocadastro do cliente (documento do Hugo): caminho + validade. */
+export interface ConviteCadastroCliente {
+  caminho: string;
+  expiraEm: string;
+}
+
+/** O que o cliente vê ao abrir o link — só os dados dele. */
+export interface AutocadastroCliente {
+  instituicao: string;
+  expiraEm: string;
+  cliente: {
+    nomeFantasia: string;
+    razaoSocial: string | null;
+    documento: string | null;
+    email: string | null;
+    telefone: string | null;
+  };
+}
+
 export interface ClienteFicha extends Omit<ClienteLista, 'totalCasos'> {
   nomeAbreviado: string | null;
   email: string | null;

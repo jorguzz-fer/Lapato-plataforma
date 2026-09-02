@@ -42,6 +42,7 @@ import { CatalogoController } from './modulos/m01-administracao/catalogo.control
 import {
   CasosController,
   PacientesController,
+  AutocadastroClienteController,
   ClientesController,
   FluxoController,
   PainelController,
@@ -109,6 +110,7 @@ import {
     VeterinariosController,
     CasosController,
   PacientesController,
+  AutocadastroClienteController,
     TriagemController,
     MacroscopiaController,
     ProcessamentoController,

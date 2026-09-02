@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, notInArray, sql } from 'drizzle-orm';
 import {
   cliente,
   fatura,
@@ -38,15 +38,17 @@ export class FinanceiroService {
   // --- Faturas -----------------------------------------------------------
 
   /**
-   * Cria a fatura agrupando OSs DESPACHADAS do cliente.
+   * Cria a fatura agrupando OSs FATURAVEIS do cliente.
    *
-   * So despachada entra: aberta ainda muda de valor, conferida ainda nao
-   * passou pela saida. E o "a partir desse momento ja pode ir pra fatura" da
-   * review - o despacho e o portao.
+   * O portao e `faturavelEm` (segunda review): a OS fica faturavel ao
+   * concluir a macroscopia - ou na entrada, para servico sem macroscopia.
+   * Nem o despacho nem a liberacao do laudo entram na conta: um jogaria o
+   * fim de mes para o mes seguinte, o outro cobraria antes de saber quantas
+   * pecas sao.
    */
   async criarFatura(clienteId: string, ordemIds: string[]) {
     if (ordemIds.length === 0) {
-      throw new BadRequestException('Escolha ao menos uma Ordem de Serviço despachada.');
+      throw new BadRequestException('Escolha ao menos uma Ordem de Serviço faturável.');
     }
 
     return this.db.executar(async (tx) => {
@@ -57,6 +59,7 @@ export class FinanceiroService {
           id: ordemServico.id,
           status: ordemServico.status,
           clienteId: ordemServico.clienteId,
+          faturavelEm: ordemServico.faturavelEm,
         })
         .from(ordemServico)
         .where(and(eq(ordemServico.tenantId, ctx.tenantId), inArray(ordemServico.id, ordemIds)));
@@ -65,9 +68,15 @@ export class FinanceiroService {
         throw new NotFoundException('Alguma das ordens não foi encontrada.');
       }
       for (const ordem of ordens) {
-        if (ordem.status !== 'despachada') {
+        if (ordem.status === 'faturada' || ordem.status === 'cancelada') {
           throw new BadRequestException(
-            'Só Ordem de Serviço despachada pode ser faturada — as demais ainda mudam de valor.',
+            `Ordem já ${ordem.status} não entra em outra fatura.`,
+          );
+        }
+        if (!ordem.faturavelEm) {
+          throw new BadRequestException(
+            'Só Ordem de Serviço faturável entra na fatura — ela fica faturável ao concluir ' +
+              'a macroscopia (ou na entrada, quando o serviço não tem macroscopia).',
           );
         }
         if (ordem.clienteId !== clienteId) {
@@ -259,7 +268,11 @@ export class FinanceiroService {
     });
   }
 
-  /** Cancelar a fatura devolve as ordens a `despachada` - elas podem ser refaturadas. */
+  /**
+   * Cancelar a fatura devolve cada ordem ao marco operacional em que estava
+   * (despachada, conferida ou aberta) - `faturavelEm` fica, entao elas podem
+   * ser refaturadas na hora.
+   */
   async cancelarFatura(faturaId: string, motivo: string) {
     if (!motivo.trim()) throw new BadRequestException('Cancelamento de fatura exige motivo.');
 
@@ -280,7 +293,14 @@ export class FinanceiroService {
 
       await tx
         .update(ordemServico)
-        .set({ status: 'despachada', faturaId: null, atualizadoEm: agora })
+        .set({
+          status: sql`(case
+            when ${ordemServico.despachadaEm} is not null then 'despachada'
+            when ${ordemServico.conferidaEm} is not null then 'conferida'
+            else 'aberta' end)::status_ordem_servico`,
+          faturaId: null,
+          atualizadoEm: agora,
+        })
         .where(and(eq(ordemServico.tenantId, ctx.tenantId), eq(ordemServico.faturaId, faturaId)));
 
       await this.eventos.publicar(tx, {
@@ -391,7 +411,7 @@ export class FinanceiroService {
   /**
    * A visao de chegada do financeiro: fluxo de caixa dos ultimos meses, o
    * contas a receber (emitidas nao pagas) e o que ja pode ser faturado
-   * (despachadas sem fatura).
+   * (faturaveis sem fatura).
    */
   async resumo() {
     return this.db.executar(async (tx) => {
@@ -439,7 +459,13 @@ export class FinanceiroService {
           )), 0)::text`,
         })
         .from(ordemServico)
-        .where(and(eq(ordemServico.tenantId, ctx.tenantId), eq(ordemServico.status, 'despachada')));
+        .where(
+          and(
+            eq(ordemServico.tenantId, ctx.tenantId),
+            isNotNull(ordemServico.faturavelEm),
+            notInArray(ordemServico.status, ['faturada', 'cancelada']),
+          ),
+        );
 
       return {
         meses: meses.map((m) => ({

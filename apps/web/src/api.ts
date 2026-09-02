@@ -236,6 +236,8 @@ export interface Dossie {
     descricao: string | null;
     lateralidade: string;
     resultadoTriagem: string | null;
+    /** Preenchido quando a macroscopia da amostra foi concluída — é o que libera o recorte. */
+    macroscopiaConcluidaEm: string | null;
   }>;
   recipientes: Array<{
     id: string;

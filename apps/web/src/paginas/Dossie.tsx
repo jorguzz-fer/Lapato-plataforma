@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
+import TextField from '@mui/material/TextField';
 import Card from '@mui/material/Card';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
@@ -15,7 +21,7 @@ import FactCheckOutlined from '@mui/icons-material/FactCheckOutlined';
 import ScienceOutlined from '@mui/icons-material/ScienceOutlined';
 import BiotechOutlined from '@mui/icons-material/BiotechOutlined';
 import { EVENTO_LABEL, type TipoEvento } from '@lapato/shared';
-import { api, type Dossie as DadosDossie } from '../api';
+import { api, ErroApi, type Dossie as DadosDossie } from '../api';
 import { GaleriaDoCaso } from './imagens/GaleriaDoCaso';
 import { OrdemDoCaso } from './ordens/OrdemDoCaso';
 
@@ -316,6 +322,17 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
                     label={`triagem: ${a.resultadoTriagem.replaceAll('_', ' ')}`}
                   />
                 )}
+                {a.macroscopiaConcluidaEm && (
+                  <Chip size="small" variant="outlined" color="success" label="macroscopia concluída" />
+                )}
+                {/* Review: "em cada uma das amostras tem recorte" - so depois da macro concluida. */}
+                {a.macroscopiaConcluidaEm && permissoes.includes('solicitacao:criar') && id && (
+                  <BotaoRecorte
+                    amostraId={a.id}
+                    identificador={a.identificador}
+                    aoConcluir={() => api.get<DadosDossie>(`/casos/${id}`).then(setDados)}
+                  />
+                )}
               </Stack>
             ))}
           </Stack>
@@ -387,5 +404,84 @@ function Campo({ rotulo, valor }: { rotulo: string; valor: string }) {
       <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{rotulo}</Typography>
       <Typography sx={{ fontSize: 13.5 }}>{valor}</Typography>
     </Box>
+  );
+}
+
+/**
+ * Recorte (M08, segunda review): o patologista leu a lamina e a amostragem
+ * nao foi representativa. Reabre a macroscopia da amostra, registra a
+ * solicitacao e lanca o retrabalho na OS sem cobranca; o prazo do laudo nao
+ * reinicia. O motivo e obrigatorio porque e ele que explica o custo no
+ * fechamento do mes.
+ */
+function BotaoRecorte({
+  amostraId,
+  identificador,
+  aoConcluir,
+}: {
+  amostraId: string;
+  identificador: string;
+  aoConcluir: () => Promise<unknown>;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [motivo, setMotivo] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+
+  async function solicitar() {
+    setOcupado(true);
+    setErro(null);
+    try {
+      await api.post(`/macroscopia/amostras/${amostraId}/recorte`, { motivo: motivo.trim() });
+      setAberto(false);
+      setMotivo('');
+      await aoConcluir();
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível solicitar o recorte.');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <>
+      <Button size="small" color="warning" onClick={() => setAberto(true)}>
+        Recorte
+      </Button>
+      <Dialog open={aberto} onClose={() => setAberto(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontSize: 16 }}>Recorte da amostra {identificador}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+            {erro && <Alert severity="error">{erro}</Alert>}
+            <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+              Reabre a macroscopia para nova amostragem. Não é cobrado do cliente — entra na OS
+              como retrabalho, com valor zero — e o prazo do laudo continua o mesmo.
+            </Typography>
+            <TextField
+              label="Motivo"
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              multiline
+              minRows={2}
+              fullWidth
+              helperText="Ex.: amostra não representativa da lesão descrita."
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAberto(false)} disabled={ocupado}>
+            Voltar
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            disabled={ocupado || motivo.trim().length < 3}
+            onClick={() => void solicitar()}
+          >
+            Solicitar recorte
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }

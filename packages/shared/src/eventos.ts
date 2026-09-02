@@ -46,6 +46,7 @@ export const TIPO_EVENTO = [
   // M08 Macroscopia
   'macroscopia.iniciada',
   'macroscopia.concluida',
+  'macroscopia.recorte_solicitado',
   'cassetes.gerados',
   // M09 Processamento
   'lote.enviado',
@@ -94,6 +95,7 @@ export const TIPO_EVENTO = [
   'imagem.anexada',
   // M20 Financeiro (parcial) - Ordem de Servico
   'os.criada',
+  'os.faturavel',
   'os.conferida',
   'os.despachada',
   'os.cancelada',
@@ -170,6 +172,7 @@ export const EVENTO_LABEL: Record<TipoEvento, string> = {
   'nao_conformidade.registrada': 'Não conformidade registrada',
   'macroscopia.iniciada': 'Macroscopia iniciada',
   'macroscopia.concluida': 'Macroscopia concluída',
+  'macroscopia.recorte_solicitado': 'Recorte solicitado — nova macroscopia sem cobrança',
   'cassetes.gerados': 'Cassetes gerados',
   'lote.enviado': 'Lote enviado ao processamento',
   'cassetes.recebidos_parceiro': 'Cassetes confirmados pelo laboratório de apoio',
@@ -206,6 +209,7 @@ export const EVENTO_LABEL: Record<TipoEvento, string> = {
   'historico.complementado': 'Histórico clínico complementado pelo cliente',
   'imagem.anexada': 'Imagem anexada ao caso',
   'os.criada': 'Ordem de Serviço criada',
+  'os.faturavel': 'Ordem de Serviço pronta para faturar',
   'os.conferida': 'Ordem de Serviço conferida',
   'os.despachada': 'Ordem de Serviço despachada',
   'os.cancelada': 'Ordem de Serviço cancelada',

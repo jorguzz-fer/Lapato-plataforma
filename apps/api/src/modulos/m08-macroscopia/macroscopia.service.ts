@@ -24,6 +24,8 @@ import { GuardianService } from '../../core/guardian/guardian.service.js';
 import { CopilotoFactory } from '../../core/ia/copiloto.provider.js';
 import { SugestoesService } from '../../core/ia/sugestoes.service.js';
 import { FluxoService } from '../m07-fluxo/fluxo.service.js';
+import { OrdensService } from '../m20-ordens/ordens.service.js';
+import { SolicitacoesService } from '../m10-solicitacoes/solicitacoes.service.js';
 import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
 
 export interface DadosMacroscopia {
@@ -74,6 +76,8 @@ export class MacroscopiaService {
     private readonly guardian: GuardianService,
     private readonly sugestoes: SugestoesService,
     private readonly copiloto: CopilotoFactory,
+    private readonly ordens: OrdensService,
+    private readonly solicitacoes: SolicitacoesService,
   ) {}
 
   async iniciar(amostraId: string): Promise<{ id: string }> {
@@ -291,6 +295,94 @@ export class MacroscopiaService {
       });
 
       await this.fluxo.processarEvento(tx, registro.casoId, 'macroscopia.concluida');
+
+      /**
+       * Segunda review: "finalizou a macroscopia, pode fechar a OS e gerar
+       * fatura" - so aqui se sabe quantas pecas sao. O M20 decide se todas as
+       * amostras do caso ja passaram (idempotente para o recorte).
+       */
+      await this.ordens.marcarFaturavelSeCompleta(tx, registro.casoId);
+    });
+  }
+
+  /**
+   * Recorte: o patologista leu a lamina e a amostragem nao foi representativa.
+   *
+   * O que a review fixou: (1) volta-se ao material remanescente e faz-se
+   * NOVA macroscopia da mesma amostra; (2) o cliente nao paga - "o erro foi
+   * nosso" - mas o retrabalho CONSTA na OS, com valor zero, para o fechamento
+   * do mes enxergar o custo; (3) "o espaco para liberacao do laudo e o mesmo":
+   * o prazo nao reinicia, nada e suspenso.
+   *
+   * Reabrir a ficha (em vez de criar outra) mantem uma macroscopia por
+   * amostra; a historia fica na linha do tempo - concluida, recorte
+   * solicitado, concluida de novo - que e onde o M07 manda a historia ficar.
+   * Os cassetes ja gerados sao objetos fisicos e permanecem; os novos entram
+   * na segunda conclusao.
+   */
+  async solicitarRecorte(
+    amostraId: string,
+    motivo: string,
+  ): Promise<{ solicitacaoId: string; identificador: string }> {
+    const ctx = exigirContexto();
+    if (!motivo.trim()) {
+      throw new BadRequestException(
+        'Recorte exige motivo: é ele que explica, no fechamento do mês, o custo não cobrado.',
+      );
+    }
+
+    return this.db.executar(async (tx) => {
+      const [registro] = await tx
+        .select({
+          id: macroscopia.id,
+          casoId: macroscopia.casoId,
+          concluidaEm: macroscopia.concluidaEm,
+          amostraIdentificador: amostra.identificador,
+        })
+        .from(macroscopia)
+        .innerJoin(amostra, eq(amostra.id, macroscopia.amostraId))
+        .where(and(eq(macroscopia.tenantId, ctx.tenantId), eq(macroscopia.amostraId, amostraId)))
+        .limit(1);
+      if (!registro) throw new NotFoundException('A amostra ainda não tem macroscopia.');
+      if (!registro.concluidaEm) {
+        throw new BadRequestException(
+          'A macroscopia desta amostra ainda está aberta — não há o que recortar.',
+        );
+      }
+
+      await tx
+        .update(macroscopia)
+        .set({ concluidaEm: null, atualizadoEm: new Date() })
+        .where(eq(macroscopia.id, registro.id));
+
+      // M10 e dono da demanda: o pedido vira solicitacao, com numero e rastro.
+      const solicitacao = await this.solicitacoes.criarEmTransacao(tx, {
+        casoId: registro.casoId,
+        tipo: 'recorte',
+        descricao: `Recorte da amostra ${registro.amostraIdentificador}: ${motivo.trim()}`,
+        justificativa: 'Amostragem não representativa — retrabalho do laboratório, sem cobrança.',
+        objetoTipo: 'amostra',
+        objetoId: amostraId,
+        setorResponsavel: 'macroscopia',
+      });
+
+      await this.ordens.registrarRetrabalho(
+        tx,
+        registro.casoId,
+        `Recorte — amostra ${registro.amostraIdentificador} (${solicitacao.identificador})`,
+      );
+
+      await this.eventos.publicar(tx, {
+        tipo: 'macroscopia.recorte_solicitado',
+        casoId: registro.casoId,
+        moduloOrigem: MODULOS.M08_MACROSCOPIA,
+        objetoTipo: 'amostra',
+        objetoId: amostraId,
+        payload: { motivo: motivo.trim(), solicitacao: solicitacao.identificador },
+      });
+
+      // Sem `processarEvento` e sem suspensao de prazo, de proposito.
+      return { solicitacaoId: solicitacao.id, identificador: solicitacao.identificador };
     });
   }
 

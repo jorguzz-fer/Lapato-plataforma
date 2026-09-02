@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, getTableColumns } from 'drizzle-orm';
 import {
   amostra,
   caso,
@@ -11,6 +11,7 @@ import {
   servico,
   tutor,
   type Transacao,
+  macroscopia,
 } from '@lapato/db';
 import {
   MODULOS,
@@ -282,9 +283,11 @@ export class CasosService {
 
       if (!registro) throw new NotFoundException('Caso não encontrado.');
 
+      // Com o estado da macroscopia: e o que decide se a amostra aceita recorte.
       const amostras = await tx
-        .select()
+        .select({ ...getTableColumns(amostra), macroscopiaConcluidaEm: macroscopia.concluidaEm })
         .from(amostra)
+        .leftJoin(macroscopia, eq(macroscopia.amostraId, amostra.id))
         .where(and(eq(amostra.tenantId, ctx.tenantId), eq(amostra.casoId, casoId)));
 
       const recipientes = await tx

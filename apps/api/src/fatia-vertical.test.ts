@@ -3895,13 +3895,18 @@ describe('ordem de serviço: do recebimento ao despacho (M20 parcial)', () => {
     const conferencia = await req('POST', `/ordens/${ordemId}/conferencia`, {});
     expect(conferencia.status, JSON.stringify(conferencia.body)).toBe(201);
 
-    // Conferida congela: a recepção não mexe mais nos itens.
+    /**
+     * Segunda review (Hugo): conferida NÃO congela. "Às vezes ele pede uma
+     * coisa, nós fizemos, depois de finalizado ele pede para adicionar mais
+     * alguma coisa — margem, coloração." Faz e manda; o item entra até a
+     * fatura.
+     */
     await entrar('recepcao@lapato.local');
     const tarde = await req('POST', `/ordens/${ordemId}/itens`, {
-      descricao: 'Item atrasado',
+      descricao: 'Coloração especial pedida depois',
       valorUnitario: 10,
     });
-    expect(tarde.status).toBe(400);
+    expect(tarde.status, JSON.stringify(tarde.body)).toBe(201);
 
     await entrar('tecnico@lapato.local');
     const despacho = await req('POST', `/ordens/${ordemId}/despacho`, {});
@@ -3909,10 +3914,15 @@ describe('ordem de serviço: do recebimento ao despacho (M20 parcial)', () => {
 
     const ordem = await req('GET', `/ordens/casos/${casoId}`);
     expect(ordem.body.status).toBe('despachada');
+    // Despachar não é o portão da fatura: HISTO sem macroscopia concluída segue não faturável.
+    expect(ordem.body.faturavelEm).toBeNull();
 
     const fila = await req('GET', '/ordens?status=despachada');
     expect(fila.status).toBe(200);
     expect(fila.body.some((o: any) => o.id === ordemId)).toBe(true);
+
+    const faturaveis = await req('GET', '/ordens?faturaveis=1');
+    expect(faturaveis.body.some((o: any) => o.id === ordemId)).toBe(false);
   });
 
   test('mudar o preço depois não retroage sobre a ordem', async () => {
@@ -3943,21 +3953,27 @@ describe('financeiro padrão: fatura, livro e fluxo de caixa (M20 parcial)', () 
   /**
    * O restante do combinado da review: "lançamentos, entrada e saída,
    * balanço, fluxo de caixa, essas coisas padrões". A fatura agrupa OSs
-   * DESPACHADAS - o despacho é o portão ("a partir desse momento já pode ir
-   * pra fatura") - e o pagamento espelha um lançamento de ENTRADA automático
-   * e travado no livro, para o caixa e o contas a receber contarem a mesma
-   * história.
+   * FATURÁVEIS - segunda review: o portão é a macroscopia concluída, ou a
+   * entrada para serviço sem macroscopia - e o pagamento espelha um
+   * lançamento de ENTRADA automático e travado no livro, para o caixa e o
+   * contas a receber contarem a mesma história.
    */
   let casoId: string;
   let ordemId: string;
   let faturaId: string;
   let clienteId: string;
   let servicoId: string;
+  let servicoCitoId: string;
 
+  /**
+   * Citologia não tem macroscopia: a OS já nasce faturável na entrada. É o
+   * caminho curto para uma ordem faturável nos testes de fatura; o caminho
+   * pela macroscopia é provado no bloco do M08.
+   */
   async function despacharUmaOrdem(): Promise<{ casoId: string; ordemId: string }> {
     await entrar('recepcao@lapato.local');
     const criado = await req('POST', '/casos', {
-      servicoId,
+      servicoId: servicoCitoId,
       clienteId,
       paciente: { nome: `Fatura ${Date.now().toString().slice(-5)}` },
       amostras: [{ descricao: 'Fragmento' }],
@@ -3975,20 +3991,23 @@ describe('financeiro padrão: fatura, livro e fluxo de caixa (M20 parcial)', () 
     });
 
     const ordem = await req('GET', `/ordens/casos/${criado.body.id}`);
+    expect(ordem.body.faturavelEm).toBeTruthy();
+    expect(ordem.body.faturavelOrigem).toBe('entrada');
     await req('POST', `/ordens/${ordem.body.id}/conferencia`, {});
     const despacho = await req('POST', `/ordens/${ordem.body.id}/despacho`, {});
     expect(despacho.status, JSON.stringify(despacho.body)).toBe(201);
     return { casoId: criado.body.id, ordemId: ordem.body.id };
   }
 
-  test('fatura só nasce de OS despachada', async () => {
+  test('fatura só nasce de OS faturável', async () => {
     await entrar('admin@lapato.local');
     const servicos = await req('GET', '/administracao/servicos');
     servicoId = servicos.body.find((s: any) => s.codigo === 'HISTO').id;
+    servicoCitoId = servicos.body.find((s: any) => s.codigo === 'CITO').id;
     const clientes = await req('GET', '/catalogo/clientes');
     clienteId = clientes.body[0].id;
 
-    // Uma OS ainda aberta não entra na fatura.
+    // Histopatologia recebida mas sem macroscopia concluída não entra na fatura.
     await entrar('recepcao@lapato.local');
     const aberta = await req('POST', '/casos', {
       servicoId,
@@ -4013,7 +4032,7 @@ describe('financeiro padrão: fatura, livro e fluxo de caixa (M20 parcial)', () 
       ordemIds: [ordemAberta.body.id],
     });
     expect(recusada.status).toBe(400);
-    expect(recusada.body.detail).toContain('despachada');
+    expect(recusada.body.detail).toContain('faturável');
 
     ({ casoId, ordemId } = await despacharUmaOrdem());
 
@@ -4257,5 +4276,137 @@ describe('modelo de etiqueta ajustável pela Administração (M01 §19)', () => 
       larguraMm: 2,
     });
     expect(invalido.status).toBe(400);
+  });
+});
+
+describe('cobrança no momento certo: macroscopia concluída fatura, recorte não cobra (M08 + M20)', () => {
+  /**
+   * Segunda review, com Hugo e Roberta. Ficou decidido: a OS fica faturável
+   * ao CONCLUIR A MACROSCOPIA - só ali se sabe quantas peças são. E o recorte
+   * (amostragem não representativa) reabre a macroscopia SEM cobrança: consta
+   * na OS com valor zero, e "o espaço para liberação do laudo é o mesmo".
+   */
+  let casoId: string;
+  let amostraId: string;
+  let macroscopiaId: string;
+  let previsaoAntes: string;
+
+  test('histopatologia recebida ainda não é faturável; concluir a macroscopia torna', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: any) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: 'Portão da fatura' },
+      amostras: [{ descricao: 'Nódulo mamário' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    casoId = criado.body.id;
+    amostraId = (await req('GET', `/casos/${casoId}`)).body.amostras[0].id;
+
+    await levarAteBancada(casoId);
+
+    // Recebida e triada, a OS existe - mas ninguém abriu o frasco ainda.
+    const aberta = await req('GET', `/ordens/casos/${casoId}`);
+    expect(aberta.status).toBe(200);
+    expect(aberta.body.faturavelEm).toBeNull();
+
+    await entrar('patologista@lapato.local');
+    const macro = await req('POST', `/macroscopia/amostras/${amostraId}`);
+    expect(macro.status, JSON.stringify(macro.body)).toBe(201);
+    macroscopiaId = macro.body.id;
+    await req('POST', `/macroscopia/${macroscopiaId}`, {
+      descricaoTexto: 'Fragmento nodular, 2,0 x 1,5 x 1,0 cm.',
+      comprimentoCm: 2,
+      cassetes: [{ tecidoOrigem: 'Nódulo — centro' }],
+    });
+    const concluir = await req('POST', `/macroscopia/${macroscopiaId}/conclusao`);
+    expect(concluir.status, JSON.stringify(concluir.body)).toBe(201);
+
+    const estado = (await req('GET', `/casos/${casoId}`)).body.estado;
+    previsaoAntes = estado.previsaoLiberacao;
+
+    await entrar('tecnico@lapato.local');
+    const faturavel = await req('GET', `/ordens/casos/${casoId}`);
+    expect(faturavel.body.faturavelEm).toBeTruthy();
+    expect(faturavel.body.faturavelOrigem).toBe('macroscopia');
+    // Sem conferir nem despachar: o despacho deixou de ser o portão.
+    expect(faturavel.body.status).toBe('aberta');
+
+    const fila = await req('GET', '/ordens?faturaveis=1');
+    expect(fila.body.some((o: any) => o.casoId === casoId)).toBe(true);
+
+    const tipos = (await req('GET', `/casos/${casoId}`)).body.linhaDoTempo.map((e: any) => e.tipo);
+    expect(tipos).toContain('os.faturavel');
+  });
+
+  test('recorte reabre a macroscopia, entra na OS com valor zero e não mexe no prazo', async () => {
+    await entrar('tecnico@lapato.local');
+    const antes = await req('GET', `/ordens/casos/${casoId}`);
+    const totalAntes = antes.body.total;
+    const itensAntes = antes.body.itens.length;
+
+    await entrar('patologista@lapato.local');
+    const semMotivo = await req('POST', `/macroscopia/amostras/${amostraId}/recorte`, {
+      motivo: '',
+    });
+    expect(semMotivo.status).toBe(400);
+
+    const recorte = await req('POST', `/macroscopia/amostras/${amostraId}/recorte`, {
+      motivo: 'Amostra não representativa: lesão descrita não aparece no corte.',
+    });
+    expect(recorte.status, JSON.stringify(recorte.body)).toBe(201);
+    // M10 é dono da demanda: o pedido tem número próprio.
+    expect(recorte.body.identificador).toMatch(/^SOL-\d{4}-\d{6}$/);
+
+    // A ficha voltou a aberta - a bancada amostra de novo, na mesma macroscopia.
+    const ficha = await req('GET', `/macroscopia/amostras/${amostraId}`);
+    expect(ficha.body.id).toBe(macroscopiaId);
+    expect(ficha.body.concluidaEm).toBeNull();
+    // Os cassetes já gerados são objetos físicos: permanecem.
+    expect(ficha.body.cassetes).toHaveLength(1);
+
+    // Um segundo recorte sobre macroscopia aberta não faz sentido.
+    const repetido = await req('POST', `/macroscopia/amostras/${amostraId}/recorte`, {
+      motivo: 'De novo',
+    });
+    expect(repetido.status).toBe(400);
+
+    const dossie = await req('GET', `/casos/${casoId}`);
+    // "O espaço para liberação do laudo é o mesmo": prazo intocado.
+    expect(dossie.body.estado.previsaoLiberacao).toBe(previsaoAntes);
+    expect(dossie.body.amostras[0].macroscopiaConcluidaEm).toBeNull();
+    const tipos = dossie.body.linhaDoTempo.map((e: any) => e.tipo);
+    expect(tipos).toContain('macroscopia.recorte_solicitado');
+
+    // Consta na OS, com valor zero: o fechamento do mês vê o custo, o cliente não paga.
+    await entrar('tecnico@lapato.local');
+    const depois = await req('GET', `/ordens/casos/${casoId}`);
+    expect(depois.body.itens).toHaveLength(itensAntes + 1);
+    const retrabalho = depois.body.itens.find((i: any) => i.retrabalho);
+    expect(retrabalho).toBeTruthy();
+    expect(Number(retrabalho.valorUnitario)).toBe(0);
+    expect(retrabalho.descricao).toContain('Recorte');
+    expect(depois.body.total).toBe(totalAntes);
+    // Continua faturável desde a primeira conclusão.
+    expect(depois.body.faturavelEm).toBe(antes.body.faturavelEm);
+
+    // A segunda conclusão não muda a data em que ficou faturável (idempotente).
+    await entrar('patologista@lapato.local');
+    await req('POST', `/macroscopia/${macroscopiaId}`, {
+      cassetes: [{ tecidoOrigem: 'Nódulo — recorte' }],
+    });
+    const reconcluir = await req('POST', `/macroscopia/${macroscopiaId}/conclusao`);
+    expect(reconcluir.status, JSON.stringify(reconcluir.body)).toBe(201);
+
+    await entrar('tecnico@lapato.local');
+    const final = await req('GET', `/ordens/casos/${casoId}`);
+    expect(final.body.faturavelEm).toBe(antes.body.faturavelEm);
+    const eventos = (await req('GET', `/casos/${casoId}`)).body.linhaDoTempo.filter(
+      (e: any) => e.tipo === 'os.faturavel',
+    );
+    expect(eventos).toHaveLength(1);
   });
 });

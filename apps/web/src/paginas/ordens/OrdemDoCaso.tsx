@@ -16,18 +16,23 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import {
+  ORDEM_EDITAVEL,
+  ORIGEM_FATURAVEL_LABEL,
   STATUS_ORDEM_LABEL,
   formatarReais,
   totalDoItem,
+  type OrigemFaturavel,
   type StatusOrdemServico,
 } from '@lapato/shared';
 import { api, ErroApi, type Servico } from '../../api';
 
 /**
- * M20 (parcial) - a OS do caso, como o laboratorio a descreveu na review:
- * nasce na conferencia do recebimento, e conferida na saida ("foi tudo
- * feito?"), despachada, e so entao faturavel. Enquanto aberta, a recepcao
- * ajusta itens, quantidades e descontos; depois de conferida, congela.
+ * M20 (parcial) - a OS do caso, como o laboratorio a descreveu nas reviews:
+ * nasce na conferencia do recebimento, fica FATURAVEL ao concluir a
+ * macroscopia (ou na entrada, para servico sem macroscopia), e segue
+ * recebendo itens ate entrar numa fatura - coloracao, margem, nova amostra
+ * pedidas depois de "finalizado" sao rotina. Conferir e despachar sao marcos
+ * operacionais, nao portoes de cobranca.
  */
 
 interface ItemOrdem {
@@ -37,6 +42,8 @@ interface ItemOrdem {
   quantidade: string;
   valorUnitario: string;
   descontoPercentual: string;
+  /** Recorte: consta na OS com valor zero, nunca na fatura. */
+  retrabalho: boolean;
 }
 
 interface Ordem {
@@ -45,6 +52,8 @@ interface Ordem {
   status: StatusOrdemServico;
   observacoes: string | null;
   criadoEm: string;
+  faturavelEm: string | null;
+  faturavelOrigem: OrigemFaturavel | null;
   conferidaEm: string | null;
   despachadaEm: string | null;
   motivoCancelamento: string | null;
@@ -113,8 +122,10 @@ export function OrdemDoCaso({ casoId, permissoes }: { casoId: string; permissoes
     );
   }
 
-  const editavel = ordem.status === 'aberta' && podeEditar;
-  const temItemSemValor = ordem.itens.some((i) => Number(i.valorUnitario) === 0);
+  const editavel = ORDEM_EDITAVEL.includes(ordem.status) && podeEditar;
+  const temItemSemValor = ordem.itens.some(
+    (i) => !i.retrabalho && Number(i.valorUnitario) === 0,
+  );
 
   return (
     <Card sx={{ p: 2.5 }}>
@@ -132,6 +143,24 @@ export function OrdemDoCaso({ casoId, permissoes }: { casoId: string; permissoes
         </Typography>
       </Stack>
 
+      {/* O portao da fatura, dito na tela: quem fatura precisa saber se ja pode. */}
+      {ordem.status !== 'cancelada' && ordem.status !== 'faturada' && (
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1.5 }}>
+          <Chip
+            size="small"
+            color={ordem.faturavelEm ? 'success' : 'default'}
+            variant={ordem.faturavelEm ? 'filled' : 'outlined'}
+            label={ordem.faturavelEm ? 'Faturável' : 'Ainda não faturável'}
+          />
+          <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+            {ordem.faturavelEm
+              ? `desde ${new Date(ordem.faturavelEm).toLocaleDateString('pt-BR')}` +
+                (ordem.faturavelOrigem ? `, ${ORIGEM_FATURAVEL_LABEL[ordem.faturavelOrigem]}` : '')
+              : 'Fica faturável ao concluir a macroscopia — só ali se sabe quantas peças são.'}
+          </Typography>
+        </Stack>
+      )}
+
       {erro && (
         <Alert severity="error" sx={{ mb: 1.5 }}>
           {erro}
@@ -144,10 +173,10 @@ export function OrdemDoCaso({ casoId, permissoes }: { casoId: string; permissoes
         </Alert>
       )}
 
-      {temItemSemValor && ordem.status === 'aberta' && (
+      {temItemSemValor && editavel && (
         <Alert severity="warning" sx={{ mb: 1.5 }}>
           Há item com valor zerado — o serviço não tem preço cadastrado. Defina o valor antes da
-          conferência.
+          fatura.
         </Alert>
       )}
 
@@ -160,7 +189,12 @@ export function OrdemDoCaso({ casoId, permissoes }: { casoId: string; permissoes
             sx={{ alignItems: 'center', justifyContent: 'space-between' }}
           >
             <Box sx={{ minWidth: 0 }}>
-              <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{item.descricao}</Typography>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{item.descricao}</Typography>
+                {item.retrabalho && (
+                  <Chip size="small" variant="outlined" color="warning" label="Retrabalho — não cobrado" />
+                )}
+              </Stack>
               <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
                 {Number(item.quantidade)} × {formatarReais(item.valorUnitario)}
                 {Number(item.descontoPercentual) > 0
@@ -172,7 +206,7 @@ export function OrdemDoCaso({ casoId, permissoes }: { casoId: string; permissoes
               <Typography sx={{ ...MONO, fontSize: 13.5 }}>
                 {formatarReais(totalDoItem(item))}
               </Typography>
-              {editavel && (
+              {editavel && !item.retrabalho && (
                 <Button size="small" onClick={() => setEmEdicao(item)}>
                   Editar
                 </Button>

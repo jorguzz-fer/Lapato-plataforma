@@ -30,6 +30,7 @@ import Colorize from '@mui/icons-material/ColorizeOutlined';
 import PendingActions from '@mui/icons-material/PendingActionsOutlined';
 import RequestQuoteOutlined from '@mui/icons-material/RequestQuoteOutlined';
 import PaidOutlined from '@mui/icons-material/PaidOutlined';
+import LibraryBooksOutlined from '@mui/icons-material/LibraryBooksOutlined';
 import Science from '@mui/icons-material/ScienceOutlined';
 import Contacts from '@mui/icons-material/ContactsOutlined';
 import MedicalServices from '@mui/icons-material/MedicalServicesOutlined';
@@ -117,6 +118,14 @@ const MENU = [
     icone: <RequestQuoteOutlined fontSize="small" />,
     rotulo: 'Ordens de Serviço',
     permissao: 'os:visualizar',
+  },
+  {
+    /* Segunda review (Hugo): o arquivo de laudos com busca por paciente,
+       cliente, palavra-chave, lamina, OS. */
+    para: '/laudos',
+    icone: <LibraryBooksOutlined fontSize="small" />,
+    rotulo: 'Laudos',
+    permissao: 'laudo:visualizar',
   },
   {
     /* M20 (review): fluxo de caixa, faturas e o livro de entrada e saida. */

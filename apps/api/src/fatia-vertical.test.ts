@@ -4726,3 +4726,102 @@ describe('conferência lê o que foi declarado (M05, review)', () => {
     expect(amostra.descricao).toBe('Baço com nódulos');
   });
 });
+
+describe('fechamento do período, produtividade e arquivo de laudos (M20 + M11)', () => {
+  /**
+   * Segunda review. Roberta: "no dia 1 eu preciso fechar todo mundo: um
+   * relatório com todos os exames, valor e subtotal, para todos os clientes"
+   * — cortado por "o que chegou no laboratório entre o dia 1 e o dia 31".
+   * Hugo: produtividade por patologista; e o arquivo de laudos com busca
+   * "pelo paciente, pelo cliente, por uma palavra-chave, pela lâmina, pela OS".
+   */
+  test('o fechamento agrupa por cliente com subtotal, cortado pela entrada', async () => {
+    await entrar('admin@lapato.local');
+    const hoje = new Date();
+    const de = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
+    const ate = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1).toISOString().slice(0, 10);
+
+    const fechamento = await req('GET', `/financeiro/fechamento?de=${de}&ate=${ate}`);
+    expect(fechamento.status, JSON.stringify(fechamento.body)).toBe(200);
+    expect(Array.isArray(fechamento.body.clientes)).toBe(true);
+    expect(fechamento.body.clientes.length).toBeGreaterThan(0);
+    const cv = fechamento.body.clientes.find((c: any) => c.clienteNome === 'Clínica Veterinária Central');
+    expect(cv).toBeTruthy();
+    expect(cv.casos).toBeGreaterThan(0);
+    // Subtotal do cliente = soma das OSs nao canceladas dele; total = soma dos subtotais.
+    const soma = cv.itens
+      .filter((i: any) => i.status !== 'cancelada')
+      .reduce((acc: number, i: any) => acc + Number(i.total ?? 0), 0);
+    expect(Math.round(soma * 100) / 100).toBe(cv.subtotal);
+    expect(fechamento.body.total).toBe(
+      Math.round(fechamento.body.clientes.reduce((a: number, c: any) => a + c.subtotal, 0) * 100) / 100,
+    );
+    // Toda linha tem entrada dentro do periodo.
+    for (const c of fechamento.body.clientes) {
+      for (const i of c.itens) {
+        expect(new Date(i.entradaEm).getTime()).toBeGreaterThanOrEqual(new Date(de).getTime());
+        expect(new Date(i.entradaEm).getTime()).toBeLessThan(new Date(ate).getTime());
+      }
+    }
+
+    // `ate` antes de `de` nao e periodo.
+    const invertido = await req('GET', `/financeiro/fechamento?de=${ate}&ate=${de}`);
+    expect(invertido.status).toBe(400);
+
+    // Quem nao e do financeiro nao fecha o mes.
+    await entrar('tecnico@lapato.local');
+    const negado = await req('GET', `/financeiro/fechamento?de=${de}&ate=${ate}`);
+    expect(negado.status).toBe(403);
+  });
+
+  test('o fechamento sai em PDF, e a produtividade lista o patologista', async () => {
+    await entrar('admin@lapato.local');
+    const hoje = new Date();
+    const de = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
+    const ate = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1).toISOString().slice(0, 10);
+
+    const pdf = await fetch(`${servidor}${BASE}/financeiro/fechamento/pdf?de=${de}&ate=${ate}`, {
+      headers: { cookie },
+    });
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers.get('content-type')).toContain('application/pdf');
+    const bytes = Buffer.from(await pdf.arrayBuffer());
+    expect(bytes.subarray(0, 4).toString()).toBe('%PDF');
+    expect(bytes.toString('latin1')).toContain('Fechamento');
+
+    const prod = await req('GET', `/financeiro/produtividade?de=${de}&ate=${ate}`);
+    expect(prod.status, JSON.stringify(prod.body)).toBe(200);
+    // A fatia liberou laudos neste mes; alguem aparece com laudo liberado.
+    expect(prod.body.patologistas.some((p: any) => p.laudosLiberados > 0)).toBe(true);
+  });
+
+  test('o arquivo de laudos acha pelo paciente, pelo registro e por palavra do laudo', async () => {
+    await entrar('patologista@lapato.local');
+    // "Thor" e o paciente da fatia vertical, que tem laudo liberado.
+    const porPaciente = await req('GET', '/laudos/busca?q=Thor');
+    expect(porPaciente.status, JSON.stringify(porPaciente.body)).toBe(200);
+    expect(porPaciente.body.length).toBeGreaterThan(0);
+    const alvo = porPaciente.body[0];
+    expect(alvo.paciente).toContain('Thor');
+
+    const porRegistro = await req('GET', `/laudos/busca?q=${encodeURIComponent(alvo.identificador)}`);
+    expect(porRegistro.body.some((r: any) => r.casoId === alvo.casoId)).toBe(true);
+
+    if (alvo.trecho) {
+      const palavra = String(alvo.trecho).replace(/…/g, '').trim().split(/\s+/).find((p: string) => p.length > 5);
+      if (palavra) {
+        const porPalavra = await req('GET', `/laudos/busca?q=${encodeURIComponent(palavra)}`);
+        expect(porPalavra.body.some((r: any) => r.casoId === alvo.casoId)).toBe(true);
+      }
+    }
+
+    // Termo curto nao dispara varredura.
+    const curto = await req('GET', '/laudos/busca?q=a');
+    expect(curto.body).toEqual([]);
+
+    // Quem nao ve laudo nao busca no arquivo.
+    await entrar('recepcao@lapato.local');
+    const negado = await req('GET', '/laudos/busca?q=Thor');
+    expect(negado.status).toBe(403);
+  });
+});

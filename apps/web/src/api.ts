@@ -217,6 +217,8 @@ export interface Dossie {
     id: string;
     identificador: string;
     prioridade: string;
+    /** Quando o material chegou — o prazo conta daqui (segunda review). */
+    entradaEm: string;
     recebidoEm: string | null;
     triadoEm: string | null;
     resultadoTriagem: string | null;

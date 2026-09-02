@@ -54,6 +54,7 @@ export class FluxoService {
       .select({
         casoId: caso.id,
         servicoId: caso.servicoId,
+        entradaEm: caso.entradaEm,
         modalidade: servico.modalidade,
         prazoDiasUteis: servico.prazoDiasUteis,
         prazoUrgente: servico.prazoUrgenteDiasUteis,
@@ -80,7 +81,9 @@ export class FluxoService {
         : registro.prazoDiasUteis;
 
     const calendario = await this.calendario(tx);
-    const inicio = new Date();
+    // O prazo conta da ENTRADA do material, nao do instante do cadastro
+    // (segunda review): cadastrar amanha o que chegou hoje nao pode atrasar.
+    const inicio = registro.entradaEm ?? new Date();
 
     await tx.insert(estadoCaso).values({
       tenantId: ctx.tenantId,
@@ -278,6 +281,20 @@ export class FluxoService {
    * M07: a previsao e ESTIMADA e nunca substitui o prazo contratual ou legal -
    * o front rotula os dois de forma diferente.
    */
+  /**
+   * Reconta o prazo a partir de outra data de inicio - a data de entrada
+   * corrigida pelo M05. Nao mexe em etapa, bloqueio nem suspensoes; so o
+   * marco zero muda, e a previsao e refeita sobre ele.
+   */
+  async reiniciarPrazo(tx: Transacao, casoId: string, inicio: Date): Promise<void> {
+    const ctx = exigirContexto();
+    await tx
+      .update(estadoCaso)
+      .set({ prazoIniciadoEm: inicio, atualizadoEm: new Date() })
+      .where(and(eq(estadoCaso.tenantId, ctx.tenantId), eq(estadoCaso.casoId, casoId)));
+    await this.recalcularPrazo(tx, casoId);
+  }
+
   async recalcularPrazo(tx: Transacao, casoId: string): Promise<void> {
     const ctx = exigirContexto();
 

@@ -109,7 +109,22 @@ import { DbService } from '../core/db/db.service.js';
 // M05 - Recebimento e Cadastro de Amostras
 // ---------------------------------------------------------------------------
 
+/**
+ * Data de entrada do material (segunda review): pode ficar no passado -
+ * volume grande chega hoje e e cadastrado amanha - mas nao no futuro, e nao
+ * tao atras que vire reescrita de historico.
+ */
+const entradaEmSchema = z
+  .string()
+  .datetime({ offset: true })
+  .refine((v) => new Date(v).getTime() <= Date.now() + 5 * 60_000, 'A entrada não pode estar no futuro.')
+  .refine(
+    (v) => new Date(v).getTime() >= Date.now() - 60 * 24 * 60 * 60_000,
+    'Entrada com mais de 60 dias: fale com a administração.',
+  );
+
 const novoCasoSchema = z.object({
+  entradaEm: entradaEmSchema.optional(),
   servicoId: z.string().uuid(),
   clienteId: z.string().uuid(),
   veterinarioId: z.string().uuid().optional(),
@@ -171,7 +186,22 @@ export class CasosController {
       'nunca reutilizável, e inicia o fluxo no M07.',
   })
   async criar(@Body() corpo: unknown) {
-    return this.casos.criar(validarCorpo(novoCasoSchema, corpo));
+    const { entradaEm, ...dados } = validarCorpo(novoCasoSchema, corpo);
+    return this.casos.criar({ ...dados, ...(entradaEm ? { entradaEm: new Date(entradaEm) } : {}) });
+  }
+
+  @Post(':id/entrada')
+  @ExigePermissao(PERMISSOES.CASO_EDITAR)
+  @ApiOperation({
+    summary: 'Corrige a data de entrada do material',
+    description:
+      'O prazo do laudo é recontado a partir da nova data (M07); a alteração fica ' +
+      'na auditoria e na linha do tempo.',
+  })
+  async alterarEntrada(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(z.object({ entradaEm: entradaEmSchema }), corpo);
+    await this.casos.alterarEntrada(id, new Date(dados.entradaEm));
+    return { ok: true };
   }
 
   @Post('bipagem')

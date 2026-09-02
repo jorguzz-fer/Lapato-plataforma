@@ -254,6 +254,13 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
         <Card sx={{ p: 2.5 }}>
           <Stack spacing={2}>
             <Campo rotulo="Prioridade" valor={dados.caso.prioridade} />
+            <EntradaDoMaterial
+              casoId={dados.caso.id}
+              entradaEm={dados.caso.entradaEm}
+              previsao={dados.estado?.previsaoLiberacao ?? null}
+              podeEditar={permissoes.includes('caso:editar')}
+              aoMudar={() => api.get<DadosDossie>(`/casos/${dados.caso.id}`).then(setDados)}
+            />
             <Campo
               rotulo="Recebido em"
               valor={
@@ -412,6 +419,103 @@ function Campo({ rotulo, valor }: { rotulo: string; valor: string }) {
     <Box>
       <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{rotulo}</Typography>
       <Typography sx={{ fontSize: 13.5 }}>{valor}</Typography>
+    </Box>
+  );
+}
+
+/**
+ * Data de entrada do material (segunda review, Hugo): "se entrou hoje mas
+ * ela cadastrou so amanha, a gente ja vai liberar com atraso". Quem edita o
+ * caso corrige aqui; o prazo e recontado pelo M07 e a mudanca fica na linha
+ * do tempo.
+ */
+function EntradaDoMaterial({
+  casoId,
+  entradaEm,
+  previsao,
+  podeEditar,
+  aoMudar,
+}: {
+  casoId: string;
+  entradaEm: string;
+  previsao: string | null;
+  podeEditar: boolean;
+  aoMudar: () => Promise<unknown>;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+
+  function abrir() {
+    const d = new Date(entradaEm);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
+    setValor(local.toISOString().slice(0, 16));
+    setErro(null);
+    setEditando(true);
+  }
+
+  async function salvar() {
+    setOcupado(true);
+    setErro(null);
+    try {
+      await api.post(`/casos/${casoId}/entrada`, { entradaEm: new Date(valor).toISOString() });
+      setEditando(false);
+      await aoMudar();
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível corrigir a entrada.');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <Box>
+      <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>Entrada do material</Typography>
+      <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+        <Typography sx={{ fontSize: 13.5 }}>
+          {new Date(entradaEm).toLocaleString('pt-BR')}
+          {previsao && (
+            <Box component="span" sx={{ color: 'text.secondary' }}>
+              {' '}
+              · previsão de liberação {new Date(previsao).toLocaleDateString('pt-BR')}
+            </Box>
+          )}
+        </Typography>
+        {podeEditar && (
+          <Button size="small" onClick={abrir}>
+            Corrigir
+          </Button>
+        )}
+      </Stack>
+      <Dialog open={editando} onClose={() => setEditando(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontSize: 16 }}>Corrigir a entrada do material</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+            {erro && <Alert severity="error">{erro}</Alert>}
+            <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+              O prazo do laudo passa a contar da nova data. A correção fica na auditoria e na
+              linha do tempo.
+            </Typography>
+            <TextField
+              type="datetime-local"
+              label="Entrada"
+              value={valor}
+              onChange={(e) => setValor(e.target.value)}
+              slotProps={{ inputLabel: { shrink: true } }}
+              fullWidth
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditando(false)} disabled={ocupado}>
+            Voltar
+          </Button>
+          <Button variant="contained" disabled={ocupado || !valor} onClick={() => void salvar()}>
+            Salvar
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

@@ -108,6 +108,17 @@ export const caso = pgTable(
     // --- Os quatro momentos do M05, separados de proposito ------------------
     /** Pre-solicitacao criada no Portal (M04), antes de existir material. */
     solicitadoEm: timestamp('solicitado_em', { withTimezone: true }),
+    /**
+     * Quando o material CHEGOU ao laboratorio - a data de entrada.
+     *
+     * Segunda review (Hugo): "chegou uma quantidade muito grande de exames
+     * hoje, ela nao conseguiu cadastrar todas; se entrou hoje mas ela
+     * cadastrou so amanha, a gente ja vai liberar com atraso". O prazo conta
+     * daqui, nao do instante do cadastro; e o fechamento do mes (Roberta: "o
+     * que chegou entre o dia 1 e o dia 31") corta por aqui. Ajustavel, com
+     * auditoria. `cadastradoEm` segue dizendo quando alguem digitou.
+     */
+    entradaEm: timestamp('entrada_em', { withTimezone: true }).notNull().defaultNow(),
     /** Caso cadastrado no sistema. */
     cadastradoEm: timestamp('cadastrado_em', { withTimezone: true }).notNull().defaultNow(),
     cadastradoPorId: uuid('cadastrado_por_id').references(() => usuario.id),

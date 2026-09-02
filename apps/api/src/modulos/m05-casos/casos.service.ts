@@ -37,6 +37,8 @@ export interface DadosNovoCaso {
   servicoId: string;
   clienteId: string;
   veterinarioId?: string;
+  /** Data de entrada do material; omitida = agora. */
+  entradaEm?: Date;
   prioridade?: 'rotina' | 'prioritaria' | 'urgente' | 'critica';
   paciente: {
     id?: string;
@@ -136,6 +138,8 @@ export class CasosService {
           veterinarioId: dados.veterinarioId ?? null,
           pacienteId,
           prioridade: dados.prioridade ?? 'rotina',
+          // Entrada: quando o material chegou (pode ser antes de agora - volume grande).
+          entradaEm: dados.entradaEm ?? new Date(),
           // Momento 2: cadastrado. Recebido e triado ficam nulos ate acontecerem.
           cadastradoEm: new Date(),
           cadastradoPorId: ctx.usuarioId,
@@ -332,6 +336,51 @@ export class CasosService {
         historicos,
         linhaDoTempo,
       };
+    });
+  }
+
+  /**
+   * Corrige a data de entrada do material (segunda review, Hugo).
+   *
+   * Nao e edicao livre de historico: o prazo do laudo e recontado a partir
+   * da nova data pelo M07, a alteracao fica na auditoria e vira evento na
+   * linha do tempo. Quem cadastrou ontem o que chegou anteontem conserta
+   * aqui, e o caso deixa de nascer atrasado.
+   */
+  async alterarEntrada(casoId: string, entradaEm: Date): Promise<void> {
+    const ctx = exigirContexto();
+
+    await this.db.executar(async (tx) => {
+      const [atual] = await tx
+        .select({ id: caso.id, entradaEm: caso.entradaEm, cadastradoEm: caso.cadastradoEm })
+        .from(caso)
+        .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.id, casoId)))
+        .limit(1);
+      if (!atual) throw new NotFoundException('Caso não encontrado.');
+      if (atual.entradaEm.getTime() === entradaEm.getTime()) return;
+
+      await tx
+        .update(caso)
+        .set({ entradaEm, atualizadoEm: new Date() })
+        .where(eq(caso.id, casoId));
+
+      await this.auditoria.registrarAlteracao(
+        tx,
+        'caso',
+        casoId,
+        { entradaEm: atual.entradaEm.toISOString() },
+        { entradaEm: entradaEm.toISOString() },
+      );
+
+      await this.eventos.publicar(tx, {
+        tipo: 'caso.entrada_alterada',
+        casoId,
+        moduloOrigem: MODULOS.M05_RECEBIMENTO,
+        payload: { de: atual.entradaEm.toISOString(), para: entradaEm.toISOString() },
+      });
+
+      // O prazo conta da entrada: o M07 reconta a partir da nova data.
+      await this.fluxo.reiniciarPrazo(tx, casoId, entradaEm);
     });
   }
 

@@ -4619,3 +4619,73 @@ describe('para quem foi a lâmina: destino, bipagem e fila do patologista (M05 +
     expect(doTecnico.body.some((s: any) => s.id === pedido.body.id)).toBe(false);
   });
 });
+
+describe('data de entrada do material: o prazo conta dela (M05 + M07)', () => {
+  /**
+   * Segunda review (Hugo): "chegou uma quantidade muito grande de exames hoje,
+   * ela não conseguiu cadastrar todas; se entrou hoje mas ela cadastrou só
+   * amanhã, a gente já vai liberar com atraso". A entrada é informada no
+   * cadastro (pode ficar no passado), corrigível depois, e o M07 reconta o
+   * prazo a partir dela.
+   */
+  let servicoId: string;
+  let clienteId: string;
+
+  async function criar(entradaEm?: string) {
+    await entrar('recepcao@lapato.local');
+    const r = await req('POST', '/casos', {
+      servicoId,
+      clienteId,
+      ...(entradaEm ? { entradaEm } : {}),
+      paciente: { nome: `Entrada ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Fragmento' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    return r;
+  }
+
+  test('cadastrar com entrada de dias atrás encurta a previsão de liberação', async () => {
+    await entrar('admin@lapato.local');
+    servicoId = (await req('GET', '/catalogo/servicos')).body.find((s: any) => s.codigo === 'HISTO').id;
+    clienteId = (await req('GET', '/catalogo/clientes')).body.find((c: any) => c.codigo === 'CV').id;
+
+    const hoje = await criar();
+    expect(hoje.status, JSON.stringify(hoje.body)).toBe(201);
+    const previsaoHoje = new Date((await req('GET', `/casos/${hoje.body.id}`)).body.estado.previsaoLiberacao);
+
+    const seteDiasAtras = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
+    const atrasado = await criar(seteDiasAtras);
+    expect(atrasado.status, JSON.stringify(atrasado.body)).toBe(201);
+    const dossie = await req('GET', `/casos/${atrasado.body.id}`);
+    expect(new Date(dossie.body.caso.entradaEm).toISOString()).toBe(seteDiasAtras);
+    // O prazo não nasce do cadastro: a previsão vem antes da do caso de hoje.
+    expect(new Date(dossie.body.estado.previsaoLiberacao).getTime()).toBeLessThan(previsaoHoje.getTime());
+
+    // Futuro não: ninguém recebe amanhã o que cadastra hoje.
+    const futuro = await criar(new Date(Date.now() + 2 * 24 * 60 * 60_000).toISOString());
+    expect(futuro.status).toBe(400);
+  });
+
+  test('corrigir a entrada reconta o prazo e fica na linha do tempo', async () => {
+    const criado = await criar();
+    const casoId = criado.body.id;
+    const antes = (await req('GET', `/casos/${casoId}`)).body.estado.previsaoLiberacao;
+
+    // Recepção edita o caso (caso:editar); técnico, não.
+    await entrar('tecnico@lapato.local');
+    const negado = await req('POST', `/casos/${casoId}/entrada`, {
+      entradaEm: new Date(Date.now() - 3 * 24 * 60 * 60_000).toISOString(),
+    });
+    expect(negado.status).toBe(403);
+
+    await entrar('recepcao@lapato.local');
+    const corrigido = await req('POST', `/casos/${casoId}/entrada`, {
+      entradaEm: new Date(Date.now() - 3 * 24 * 60 * 60_000).toISOString(),
+    });
+    expect(corrigido.status, JSON.stringify(corrigido.body)).toBe(201);
+
+    const depois = await req('GET', `/casos/${casoId}`);
+    expect(new Date(depois.body.estado.previsaoLiberacao).getTime()).toBeLessThan(new Date(antes).getTime());
+    expect(depois.body.linhaDoTempo.map((e: any) => e.tipo)).toContain('caso.entrada_alterada');
+  });
+});

@@ -353,7 +353,7 @@ function Abertura({
               value={responsavel}
               onChange={(e) => setResponsavel(e.target.value)}
               required
-              helperText="Tutor, clínica, seguradora, autoridade. O veterinário é opcional na necropsia."
+              helperText="Responsável, clínica, seguradora, autoridade. O veterinário é opcional na necropsia."
               sx={{ flex: 1 }}
             />
             <TextField

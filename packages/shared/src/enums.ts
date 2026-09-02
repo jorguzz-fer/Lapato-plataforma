@@ -346,6 +346,18 @@ export const TIPO_CLIENTE = [
 ] as const;
 export type TipoCliente = (typeof TIPO_CLIENTE)[number];
 
+/**
+ * Modalidade de cobranca do caso (documento do Hugo, segunda review).
+ *
+ * `convenio`: a amostra vem por um parceiro (clinica, laboratorio, hospital)
+ * e e ele quem paga, no fechamento mensal. `particular`: o responsavel pelo
+ * animal traz a amostra, paga na entrada e recebe o laudo diretamente - a
+ * clinica de origem e o veterinario ficam como texto, porque nao ha parceria
+ * nem cadastro previo deles.
+ */
+export const MODALIDADE_COBRANCA = ['convenio', 'particular'] as const;
+export type ModalidadeCobranca = (typeof MODALIDADE_COBRANCA)[number];
+
 export const STATUS_CLIENTE = [
   'ativo',
   'aguardando_aprovacao',

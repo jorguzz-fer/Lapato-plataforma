@@ -10,6 +10,7 @@ import {
   laudo,
   ordemServico,
   paciente,
+  tutor,
   servico,
   tenant,
   usuario,
@@ -95,6 +96,22 @@ export class FinanceiroService {
         if (ordem.clienteId !== clienteId) {
           throw new BadRequestException('Todas as ordens da fatura devem ser do mesmo cliente.');
         }
+      }
+
+      /**
+       * Particular (documento do Hugo): o "cliente" e o pseudo-cliente da
+       * instituicao, mas quem paga e o responsavel de CADA animal - uma fatura
+       * por exame, nunca o fechamento mensal agrupado.
+       */
+      const [pagador] = await tx
+        .select({ tipo: cliente.tipo })
+        .from(cliente)
+        .where(and(eq(cliente.tenantId, ctx.tenantId), eq(cliente.id, clienteId)))
+        .limit(1);
+      if (pagador?.tipo === 'tutor_particular' && ordens.length > 1) {
+        throw new BadRequestException(
+          'Exame particular é cobrado do responsável, um a um: uma fatura por Ordem de Serviço.',
+        );
       }
 
       const agora = new Date();
@@ -517,6 +534,9 @@ export class FinanceiroService {
           casoIdentificador: caso.identificador,
           entradaEm: caso.entradaEm,
           paciente: paciente.nome,
+          // Particular: a linha e cobrada do responsavel, nao do "cliente".
+          modalidade: caso.modalidade,
+          responsavel: tutor.nome,
           servico: servico.nome,
           ordemId: ordemServico.id,
           ordemIdentificador: ordemServico.identificador,
@@ -536,6 +556,7 @@ export class FinanceiroService {
         .from(caso)
         .innerJoin(cliente, eq(cliente.id, caso.clienteId))
         .innerJoin(paciente, eq(paciente.id, caso.pacienteId))
+        .leftJoin(tutor, eq(tutor.id, paciente.tutorId))
         .innerJoin(servico, eq(servico.id, caso.servicoId))
         .leftJoin(ordemServico, eq(ordemServico.casoId, caso.id))
         .leftJoin(fatura, eq(fatura.id, ordemServico.faturaId))

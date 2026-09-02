@@ -8,9 +8,11 @@ import {
   itemTabelaPreco,
   macroscopia,
   ordemServico,
+  paciente,
   precoCliente,
   servico,
   tabelaPreco,
+  tutor,
   type Transacao,
 } from '@lapato/db';
 import {
@@ -97,6 +99,7 @@ export class OrdensService {
     const [alvo] = await tx
       .select({
         clienteId: caso.clienteId,
+        modalidade: caso.modalidade,
         servicoId: caso.servicoId,
         servicoNome: servico.nome,
         valorPadrao: servico.valorPadrao,
@@ -127,7 +130,9 @@ export class OrdensService {
      * Servico sem macroscopia (citologia, necropsia) nao tem o momento "agora
      * sei quantas pecas sao" - a entrada conferida ja e o portao da fatura.
      */
-    const faturavelNaEntrada = !alvo.exigeMacroscopia;
+    // Particular (documento do Hugo): "cobramos diretamente do tutor quando
+    // ele nos entrega a amostra" - a entrada e o portao, com ou sem macro.
+    const faturavelNaEntrada = !alvo.exigeMacroscopia || alvo.modalidade === 'particular';
 
     const [ordem] = await tx
       .insert(ordemServico)
@@ -341,6 +346,10 @@ export class OrdensService {
           casoIdentificador: caso.identificador,
           clienteId: ordemServico.clienteId,
           clienteNome: cliente.nomeFantasia,
+          // Particular: quem paga e o responsavel do paciente - e ele que a
+          // tela mostra no lugar de "Particular".
+          modalidade: caso.modalidade,
+          responsavel: tutor.nome,
           // Referencia externa literal: interpolar a coluna aqui pode sair
           // sem qualificacao e capturar `i.id` (armadilha do M19).
           total: sql<string>`coalesce((
@@ -352,6 +361,8 @@ export class OrdensService {
         .from(ordemServico)
         .innerJoin(caso, eq(caso.id, ordemServico.casoId))
         .innerJoin(cliente, eq(cliente.id, ordemServico.clienteId))
+        .leftJoin(paciente, eq(paciente.id, caso.pacienteId))
+        .leftJoin(tutor, eq(tutor.id, paciente.tutorId))
         .where(
           and(
             eq(ordemServico.tenantId, ctx.tenantId),

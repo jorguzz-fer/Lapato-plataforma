@@ -58,6 +58,7 @@ import {
   GRAU_CERTEZA,
   INTENSIDADE,
   LATERALIDADE,
+  MODALIDADE_COBRANCA,
   METODO_AMOSTRAGEM,
   NIVEL_BLOQUEIO,
   PERMISSOES,
@@ -123,43 +124,60 @@ const entradaEmSchema = z
     'Entrada com mais de 60 dias: fale com a administração.',
   );
 
-const novoCasoSchema = z.object({
-  entradaEm: entradaEmSchema.optional(),
-  servicoId: z.string().uuid(),
-  clienteId: z.string().uuid(),
-  veterinarioId: z.string().uuid().optional(),
-  prioridade: z.enum(PRIORIDADE).optional(),
-  paciente: z.object({
-    id: z.string().uuid().optional(),
-    nome: z.string().min(1),
-    especieId: z.string().uuid().optional(),
-    sexo: z.string().optional(),
-    microchip: z.string().optional(),
-    tutorNome: z.string().optional(),
-  }),
-  historicoClinico: z.string().optional(),
-  amostras: z
-    .array(
-      z.object({
-        descricao: z.string().optional(),
-        orgaoId: z.string().uuid().optional(),
-        regiaoAnatomica: z.string().optional(),
-        lateralidade: z.enum(LATERALIDADE).optional(),
-        tipoRelacao: z.string().optional(),
-      }),
-    )
-    .min(1, 'Informe ao menos uma amostra.'),
-  recipientes: z
-    .array(
-      z.object({
-        tipoId: z.string().uuid().optional(),
-        fixadorId: z.string().uuid().optional(),
-        identificacaoExterna: z.string().optional(),
-        quantidadeDeclarada: z.number().int().positive().optional(),
-      }),
-    )
-    .min(1, 'Informe ao menos um recipiente.'),
+const pacienteSchema = z.object({
+  nome: z.string().min(1),
+  // `''` = limpar a especie (dialogo de correcao envia o campo vazio).
+  especieId: z.string().uuid().optional().or(z.literal('')),
+  raca: z.string().max(80).optional(),
+  sexo: z.string().optional(),
+  /** ISO `AAAA-MM-DD`; a maioria das requisicoes traz idade, algumas a data. */
+  dataNascimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
+  idadeInformada: z.string().max(40).optional(),
+  microchip: z.string().optional(),
+  tutorNome: z.string().max(160).optional(),
+  tutorTelefone: z.string().max(40).optional(),
+  tutorEmail: z.string().email().optional().or(z.literal('')),
 });
+
+const novoCasoSchema = z
+  .object({
+    entradaEm: entradaEmSchema.optional(),
+    servicoId: z.string().uuid(),
+    modalidade: z.enum(MODALIDADE_COBRANCA).optional(),
+    clienteId: z.string().uuid().optional(),
+    veterinarioId: z.string().uuid().optional(),
+    clinicaOrigem: z.string().max(160).optional(),
+    veterinarioInformado: z.string().max(160).optional(),
+    prioridade: z.enum(PRIORIDADE).optional(),
+    paciente: pacienteSchema.extend({ id: z.string().uuid().optional() }),
+    historicoClinico: z.string().optional(),
+    amostras: z
+      .array(
+        z.object({
+          descricao: z.string().optional(),
+          orgaoId: z.string().uuid().optional(),
+          regiaoAnatomica: z.string().optional(),
+          lateralidade: z.enum(LATERALIDADE).optional(),
+          tipoRelacao: z.string().optional(),
+        }),
+      )
+      .min(1, 'Informe ao menos uma amostra.'),
+    recipientes: z
+      .array(
+        z.object({
+          tipoId: z.string().uuid().optional(),
+          fixadorId: z.string().uuid().optional(),
+          identificacaoExterna: z.string().optional(),
+          quantidadeDeclarada: z.number().int().positive().optional(),
+        }),
+      )
+      .min(1, 'Informe ao menos um recipiente.'),
+  })
+  .superRefine((c, ctx) => {
+    if ((c.modalidade ?? 'convenio') === 'convenio' && !c.clienteId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['clienteId'], message: 'Informe o cliente.' });
+    }
+  });
 
 const recebimentoSchema = z.object({
   conferencia: z
@@ -1012,26 +1030,46 @@ export class UsuariosController {
 // M03 - Cadastro de Clientes e Veterinários
 // ---------------------------------------------------------------------------
 
-const clienteSchema = z.object({
-  nomeFantasia: z.string().min(1, 'Informe o nome do cliente.'),
-  razaoSocial: z.string().optional(),
-  documento: z.string().optional(),
-  tipo: z.enum(TIPO_CLIENTE),
-  codigo: z
-    .string()
-    .min(2)
-    .max(6)
-    .regex(/^[A-Za-z0-9]+$/, 'Só letras e números - o código compõe o registro do exame.'),
-  nomeAbreviado: z.string().optional(),
-  observacoes: z.string().optional(),
-  /** M03 seção 20: confirmação após o aviso de duplicidade. */
-  ignorarDuplicidade: z.boolean().optional(),
-});
+/**
+ * Documento do Hugo: "as unicas infos obrigatorias sao CNPJ, email, telefone".
+ * O particular e a excecao - nao e empresa, e o responsavel do animal.
+ */
+const clienteBase = z
+  .object({
+    nomeFantasia: z.string().min(1, 'Informe o nome do cliente.'),
+    razaoSocial: z.string().optional(),
+    documento: z.string().optional(),
+    email: z.string().email('E-mail inválido.').optional().or(z.literal('')),
+    telefone: z.string().max(40).optional(),
+    tipo: z.enum(TIPO_CLIENTE),
+    codigo: z
+      .string()
+      .min(2)
+      .max(6)
+      .regex(/^[A-Za-z0-9]+$/, 'Só letras e números - o código compõe o registro do exame.'),
+    nomeAbreviado: z.string().optional(),
+    observacoes: z.string().optional(),
+    /** M03 seção 20: confirmação após o aviso de duplicidade. */
+    ignorarDuplicidade: z.boolean().optional(),
+  });
+const clienteSchema = clienteBase.superRefine((c, ctx) => {
+    if (c.tipo === 'tutor_particular') return;
+    if (!c.documento?.replace(/\D/g, '')) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['documento'], message: 'Informe o CNPJ.' });
+    }
+    if (!c.email?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['email'], message: 'Informe o e-mail.' });
+    }
+    if (!c.telefone?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['telefone'], message: 'Informe o telefone.' });
+    }
+  });
 
+// Documento do Hugo: no veterinario, nome e CRMV sao obrigatorios.
 const veterinarioBase = z.object({
   nome: z.string().min(1, 'Informe o nome do profissional.'),
-  crmv: z.string().optional(),
-  crmvUf: z.string().length(2).optional(),
+  crmv: z.string().min(1, 'Informe o CRMV.'),
+  crmvUf: z.string().length(2, 'Informe a UF do CRMV.'),
   email: z.string().email().optional().or(z.literal('')),
   telefone: z.string().optional(),
   especialidade: z.string().optional(),
@@ -1056,6 +1094,38 @@ const vinculoSchema = z.object({
 });
 
 @ApiTags('M03 - Clientes e Veterinários')
+/**
+ * Paciente longitudinal (M05): a busca para "so inserir o exame" e a correcao
+ * da identificacao depois do cadastro (documento do Hugo).
+ */
+@Controller('pacientes')
+export class PacientesController {
+  constructor(private readonly casos: CasosService) {}
+
+  @Get()
+  @ExigePermissao(PERMISSOES.CASO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Busca pacientes já atendidos por nome, responsável ou microchip',
+    description:
+      'Devolve o último exame de cada um para a recepção confirmar que é o mesmo animal ' +
+      'antes de reaproveitar o cadastro.',
+  })
+  async buscar(@Query('q') q?: string) {
+    return this.casos.buscarPacientes(q ?? '');
+  }
+
+  @Post(':id')
+  @ExigePermissao(PERMISSOES.CASO_EDITAR)
+  @ApiOperation({
+    summary: 'Corrige a identificação do animal e do responsável',
+    description: 'Auditado campo a campo; o Guardian segue comparando identidade antes da assinatura.',
+  })
+  async editar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.casos.editarPaciente(id, validarCorpo(pacienteSchema.partial(), corpo));
+    return { ok: true };
+  }
+}
+
 @Controller('clientes')
 export class ClientesController {
   constructor(private readonly clientes: ClientesService) {}
@@ -1107,7 +1177,7 @@ export class ClientesController {
     await this.clientes.editarCliente(
       id,
       validarCorpo(
-        clienteSchema
+        clienteBase
           .partial()
           .omit({ codigo: true, ignorarDuplicidade: true })
           // M20: tabela de precos que o cliente segue; nulo volta ao valor padrao.

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { aliasedTable, and, eq, getTableColumns, inArray } from 'drizzle-orm';
+import { aliasedTable, and, desc, eq, getTableColumns, ilike, inArray, or, sql } from 'drizzle-orm';
 import {
   amostra,
   bloco,
@@ -25,6 +25,7 @@ import {
   identificadorAmostra,
   identificadorRecipiente,
   type Lateralidade,
+  type ModalidadeCobranca,
 } from '@lapato/shared';
 import { DbService } from '../../core/db/db.service.js';
 import { EventosService } from '../../core/eventos/eventos.service.js';
@@ -34,21 +35,37 @@ import { FluxoService } from '../m07-fluxo/fluxo.service.js';
 import { OrdensService } from '../m20-ordens/ordens.service.js';
 import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
 
+export interface DadosPaciente {
+  nome: string;
+  especieId?: string;
+  raca?: string;
+  sexo?: string;
+  dataNascimento?: string;
+  idadeInformada?: string;
+  microchip?: string;
+  /** Responsavel pelo animal ("Tutor" virou "Responsavel" na tela - documento do Hugo). */
+  tutorNome?: string;
+  tutorTelefone?: string;
+  tutorEmail?: string;
+}
+
 export interface DadosNovoCaso {
   servicoId: string;
-  clienteId: string;
+  /**
+   * Convenio: o cliente parceiro (obrigatorio). Particular: omitido - o caso
+   * vai para o pseudo-cliente "Particular" da instituicao e quem paga e o
+   * responsavel do paciente.
+   */
+  modalidade?: ModalidadeCobranca;
+  clienteId?: string;
   veterinarioId?: string;
+  /** Particular: clinica de origem e veterinario como texto, sem cadastro. */
+  clinicaOrigem?: string;
+  veterinarioInformado?: string;
   /** Data de entrada do material; omitida = agora. */
   entradaEm?: Date;
   prioridade?: 'rotina' | 'prioritaria' | 'urgente' | 'critica';
-  paciente: {
-    id?: string;
-    nome: string;
-    especieId?: string;
-    sexo?: string;
-    microchip?: string;
-    tutorNome?: string;
-  };
+  paciente: DadosPaciente & { id?: string };
   historicoClinico?: string;
   amostras: Array<{
     descricao?: string;
@@ -103,10 +120,34 @@ export class CasosService {
         throw new BadRequestException('Serviço inativado não aceita novos casos.');
       }
 
+      const modalidade: ModalidadeCobranca = dados.modalidade ?? 'convenio';
+
+      /**
+       * Particular (documento do Hugo): o responsavel traz a amostra, paga na
+       * entrada e recebe o laudo. Nao ha parceria, logo nao ha cliente a
+       * escolher - o caso vai para o pseudo-cliente "Particular" da
+       * instituicao, e a sigla dele (PT) identifica esses exames a olho nu.
+       */
+      const clienteId =
+        modalidade === 'particular'
+          ? await this.obterClienteParticular(tx)
+          : dados.clienteId;
+      if (!clienteId) {
+        throw new BadRequestException('Informe o cliente do convênio.');
+      }
+      if (modalidade === 'particular') {
+        const contato = dados.paciente.tutorTelefone?.trim() || dados.paciente.tutorEmail?.trim();
+        if (!dados.paciente.id && (!dados.paciente.tutorNome?.trim() || !contato)) {
+          throw new BadRequestException(
+            'Exame particular precisa do responsável com telefone ou e-mail — é dele que se cobra e para ele que vai o laudo.',
+          );
+        }
+      }
+
       const [clienteEscolhido] = await tx
         .select()
         .from(cliente)
-        .where(and(eq(cliente.tenantId, ctx.tenantId), eq(cliente.id, dados.clienteId)))
+        .where(and(eq(cliente.tenantId, ctx.tenantId), eq(cliente.id, clienteId)))
         .limit(1);
 
       if (!clienteEscolhido) throw new NotFoundException('Cliente não encontrado.');
@@ -135,8 +176,12 @@ export class CasosService {
           ano,
           unidadeId: ctx.unidadeId,
           servicoId: dados.servicoId,
-          clienteId: dados.clienteId,
-          veterinarioId: dados.veterinarioId ?? null,
+          clienteId,
+          modalidade,
+          veterinarioId: modalidade === 'convenio' ? (dados.veterinarioId ?? null) : null,
+          clinicaOrigem: modalidade === 'particular' ? dados.clinicaOrigem?.trim() || null : null,
+          veterinarioInformado:
+            modalidade === 'particular' ? dados.veterinarioInformado?.trim() || null : null,
           pacienteId,
           prioridade: dados.prioridade ?? 'rotina',
           // Entrada: quando o material chegou (pode ser antes de agora - volume grande).
@@ -343,8 +388,18 @@ export class CasosService {
 
       const linhaDoTempo = await this.eventos.linhaDoTempo(tx, casoId);
 
+      // Responsavel pelo animal: no particular e quem paga e recebe o laudo.
+      const [responsavel] = registro.paciente.tutorId
+        ? await tx
+            .select({ id: tutor.id, nome: tutor.nome, telefone: tutor.telefone, email: tutor.email })
+            .from(tutor)
+            .where(and(eq(tutor.tenantId, ctx.tenantId), eq(tutor.id, registro.paciente.tutorId)))
+            .limit(1)
+        : [];
+
       return {
         ...registro,
+        responsavel: responsavel ?? null,
         patologistaResponsavel: patologistaResponsavel ?? null,
         amostras,
         recipientes,
@@ -562,7 +617,12 @@ export class CasosService {
     if (dados.tutorNome?.trim()) {
       const [novoTutor] = await tx
         .insert(tutor)
-        .values({ tenantId: ctx.tenantId, nome: dados.tutorNome.trim() })
+        .values({
+          tenantId: ctx.tenantId,
+          nome: dados.tutorNome.trim(),
+          telefone: dados.tutorTelefone?.trim() || null,
+          email: dados.tutorEmail?.trim().toLowerCase() || null,
+        })
         .returning({ id: tutor.id });
       tutorId = novoTutor!.id;
     }
@@ -573,13 +633,217 @@ export class CasosService {
         tenantId: ctx.tenantId,
         nome: dados.nome,
         especieId: dados.especieId ?? null,
+        raca: dados.raca?.trim() || null,
         sexo: dados.sexo ?? null,
+        dataNascimento: dados.dataNascimento || null,
+        idadeInformada: dados.idadeInformada?.trim() || null,
         microchip: dados.microchip ?? null,
         tutorId,
       })
       .returning({ id: paciente.id });
 
     return novo!.id;
+  }
+
+  /**
+   * O pseudo-cliente "Particular" da instituicao - criado na primeira vez que
+   * um exame particular entra. Um por instituicao, tipo `tutor_particular`,
+   * sigla PT: e o que faz `PT-000012/26` ser reconhecivel como particular
+   * sem abrir o caso.
+   */
+  private async obterClienteParticular(tx: Transacao): Promise<string> {
+    const ctx = exigirContexto();
+
+    const [existente] = await tx
+      .select({ id: cliente.id })
+      .from(cliente)
+      .where(and(eq(cliente.tenantId, ctx.tenantId), eq(cliente.tipo, 'tutor_particular')))
+      .orderBy(cliente.criadoEm)
+      .limit(1);
+    if (existente) return existente.id;
+
+    const [comSiglaPt] = await tx
+      .select({ id: cliente.id })
+      .from(cliente)
+      .where(and(eq(cliente.tenantId, ctx.tenantId), eq(cliente.codigo, 'PT')))
+      .limit(1);
+
+    const [novo] = await tx
+      .insert(cliente)
+      .values({
+        tenantId: ctx.tenantId,
+        nomeFantasia: 'Particular',
+        tipo: 'tutor_particular',
+        codigo: comSiglaPt ? 'PART' : 'PT',
+        observacoes:
+          'Exames trazidos pelo responsável, sem parceria. Cobrados na entrada, do próprio responsável.',
+      })
+      .returning({ id: cliente.id });
+
+    await this.auditoria.registrar(tx, {
+      entidade: 'cliente',
+      entidadeId: novo!.id,
+      acao: 'criar',
+      valorNovo: { nomeFantasia: 'Particular', tipo: 'tutor_particular' },
+      justificativa: 'Pseudo-cliente criado automaticamente no primeiro exame particular.',
+    });
+
+    return novo!.id;
+  }
+
+  /**
+   * Busca do paciente ja atendido (documento do Hugo): "BOB, da MARIA
+   * OLIVEIRA, fez uma citologia dia 10; dia 1 chegou um histopatologico dele -
+   * precisamos reinserir tudo". A busca e por nome do animal OU do responsavel,
+   * e devolve o ultimo exame para a recepcao confirmar que e o mesmo bicho
+   * antes de "so inserir o exame".
+   */
+  async buscarPacientes(texto: string) {
+    const q = texto.trim();
+    if (q.length < 2) return [];
+
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      const padrao = `%${q}%`;
+
+      const especie = aliasedTable(termo, 'especie');
+      const linhas = await tx
+        .select({
+          id: paciente.id,
+          nome: paciente.nome,
+          especie: especie.valor,
+          raca: paciente.raca,
+          sexo: paciente.sexo,
+          dataNascimento: paciente.dataNascimento,
+          idadeInformada: paciente.idadeInformada,
+          microchip: paciente.microchip,
+          tutorNome: tutor.nome,
+          tutorTelefone: tutor.telefone,
+          tutorEmail: tutor.email,
+          // Ultimo exame: literal para nao cair na armadilha da subconsulta.
+          ultimoCaso: sql<string | null>`(
+            select c.identificador from caso c
+            where c.paciente_id = paciente.id order by c.entrada_em desc limit 1
+          )`,
+          ultimaEntrada: sql<string | null>`(
+            select c.entrada_em from caso c
+            where c.paciente_id = paciente.id order by c.entrada_em desc limit 1
+          )`,
+          totalCasos: sql<number>`(select count(*)::int from caso c where c.paciente_id = paciente.id)`,
+        })
+        .from(paciente)
+        .leftJoin(tutor, eq(tutor.id, paciente.tutorId))
+        .leftJoin(especie, eq(especie.id, paciente.especieId))
+        .where(
+          and(
+            eq(paciente.tenantId, ctx.tenantId),
+            or(ilike(paciente.nome, padrao), ilike(tutor.nome, padrao), ilike(paciente.microchip, padrao)),
+          ),
+        )
+        .orderBy(desc(paciente.atualizadoEm))
+        .limit(20);
+
+      return linhas;
+    });
+  }
+
+  /**
+   * Edicao da identificacao do animal depois do cadastro (documento do Hugo:
+   * "quem inseriu pode errar ou nao entender a informacao - e bem comum").
+   * Fica auditado campo a campo; o Guardian continua comparando identidade
+   * antes da assinatura, entao uma correcao aqui e o caminho certo, nao um
+   * desvio.
+   */
+  async editarPaciente(pacienteId: string, dados: Partial<DadosPaciente>): Promise<void> {
+    const ctx = exigirContexto();
+
+    await this.db.executar(async (tx) => {
+      const [atual] = await tx
+        .select()
+        .from(paciente)
+        .where(and(eq(paciente.tenantId, ctx.tenantId), eq(paciente.id, pacienteId)))
+        .limit(1);
+      if (!atual) throw new NotFoundException('Paciente não encontrado.');
+
+      const mudancas: Record<string, unknown> = {};
+      if (dados.nome !== undefined && dados.nome.trim()) mudancas.nome = dados.nome.trim();
+      if (dados.especieId !== undefined) mudancas.especieId = dados.especieId || null;
+      if (dados.raca !== undefined) mudancas.raca = dados.raca.trim() || null;
+      if (dados.sexo !== undefined) mudancas.sexo = dados.sexo || null;
+      if (dados.dataNascimento !== undefined) mudancas.dataNascimento = dados.dataNascimento || null;
+      if (dados.idadeInformada !== undefined)
+        mudancas.idadeInformada = dados.idadeInformada.trim() || null;
+      if (dados.microchip !== undefined) mudancas.microchip = dados.microchip.trim() || null;
+
+      const anteriorPaciente = {
+        nome: atual.nome,
+        especieId: atual.especieId,
+        raca: atual.raca,
+        sexo: atual.sexo,
+        dataNascimento: atual.dataNascimento,
+        idadeInformada: atual.idadeInformada,
+        microchip: atual.microchip,
+      };
+
+      if (Object.keys(mudancas).length > 0) {
+        await tx
+          .update(paciente)
+          .set({ ...mudancas, atualizadoEm: new Date() })
+          .where(eq(paciente.id, pacienteId));
+        await this.auditoria.registrarAlteracao(tx, 'paciente', pacienteId, anteriorPaciente, mudancas);
+      }
+
+      // Responsavel: cria se nao havia, atualiza se havia.
+      const mexeuNoTutor =
+        dados.tutorNome !== undefined ||
+        dados.tutorTelefone !== undefined ||
+        dados.tutorEmail !== undefined;
+      if (!mexeuNoTutor) return;
+
+      if (atual.tutorId) {
+        const [tutorAtual] = await tx
+          .select()
+          .from(tutor)
+          .where(and(eq(tutor.tenantId, ctx.tenantId), eq(tutor.id, atual.tutorId)))
+          .limit(1);
+        const mudancasTutor: Record<string, unknown> = {};
+        if (dados.tutorNome !== undefined && dados.tutorNome.trim())
+          mudancasTutor.nome = dados.tutorNome.trim();
+        if (dados.tutorTelefone !== undefined)
+          mudancasTutor.telefone = dados.tutorTelefone.trim() || null;
+        if (dados.tutorEmail !== undefined)
+          mudancasTutor.email = dados.tutorEmail.trim().toLowerCase() || null;
+        if (Object.keys(mudancasTutor).length === 0) return;
+        await tx
+          .update(tutor)
+          .set({ ...mudancasTutor, atualizadoEm: new Date() })
+          .where(eq(tutor.id, atual.tutorId));
+        await this.auditoria.registrarAlteracao(
+          tx,
+          'tutor',
+          atual.tutorId,
+          { nome: tutorAtual?.nome, telefone: tutorAtual?.telefone, email: tutorAtual?.email },
+          mudancasTutor,
+        );
+      } else if (dados.tutorNome?.trim()) {
+        const [novoTutor] = await tx
+          .insert(tutor)
+          .values({
+            tenantId: ctx.tenantId,
+            nome: dados.tutorNome.trim(),
+            telefone: dados.tutorTelefone?.trim() || null,
+            email: dados.tutorEmail?.trim().toLowerCase() || null,
+          })
+          .returning({ id: tutor.id });
+        await tx
+          .update(paciente)
+          .set({ tutorId: novoTutor!.id, atualizadoEm: new Date() })
+          .where(eq(paciente.id, pacienteId));
+        await this.auditoria.registrarAlteracao(tx, 'paciente', pacienteId, { tutorId: null }, {
+          tutorId: novoTutor!.id,
+        });
+      }
+    });
   }
 
   private async criarRecipientesEAmostras(

@@ -41,6 +41,7 @@ import { UsuariosService } from './modulos/m02-usuarios/usuarios.service.js';
 import { CatalogoController } from './modulos/m01-administracao/catalogo.controller.js';
 import {
   CasosController,
+  PacientesController,
   ClientesController,
   FluxoController,
   PainelController,
@@ -107,6 +108,7 @@ import {
     ClientesController,
     VeterinariosController,
     CasosController,
+  PacientesController,
     TriagemController,
     MacroscopiaController,
     ProcessamentoController,

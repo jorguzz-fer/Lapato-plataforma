@@ -95,7 +95,7 @@ export function PortalExame({ podeComplementar }: { podeComplementar: boolean })
               {[
                 dados.identificador,
                 dados.servico,
-                dados.tutor && `Tutor: ${dados.tutor}`,
+                dados.tutor && `Responsável: ${dados.tutor}`,
                 dados.veterinario,
               ]
                 .filter(Boolean)

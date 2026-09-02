@@ -294,12 +294,14 @@ function DialogoVeterinario({
               label="CRMV"
               value={crmv}
               onChange={(e) => setCrmv(e.target.value)}
+              required
               sx={{ flex: 1 }}
             />
             <TextField
               label="UF"
               value={crmvUf}
               onChange={(e) => setCrmvUf(e.target.value.toUpperCase())}
+              required
               slotProps={{ htmlInput: { maxLength: 2, style: { textTransform: 'uppercase' } } }}
               sx={{ width: 90 }}
             />

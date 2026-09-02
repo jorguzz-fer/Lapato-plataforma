@@ -671,7 +671,8 @@ export async function criarBaseInstitucional(
     .insert(s.servico)
     .values({
       tenantId,
-      nome: 'Histopatologia de biópsia',
+      // Review: "deixar só Histopatologia" - o nome curto e o que a bancada usa.
+      nome: 'Histopatologia',
       codigo: 'HISTO',
       categoria: 'Anatomopatologia',
       modalidade: 'histopatologia',

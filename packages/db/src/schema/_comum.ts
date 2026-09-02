@@ -62,6 +62,7 @@ import {
   STATUS_SOLICITACAO,
   STATUS_USUARIO,
   TIPO_CLIENTE,
+  MODALIDADE_COBRANCA,
   TIPO_IMAGEM,
   TIPO_LANCAMENTO,
   TIPO_UNIDADE,
@@ -79,6 +80,7 @@ export const tipoUnidadeEnum = pgEnum('tipo_unidade', TIPO_UNIDADE);
 export const statusUsuarioEnum = pgEnum('status_usuario', STATUS_USUARIO);
 export const categoriaUsuarioEnum = pgEnum('categoria_usuario', CATEGORIA_USUARIO);
 export const tipoClienteEnum = pgEnum('tipo_cliente', TIPO_CLIENTE);
+export const modalidadeCobrancaEnum = pgEnum('modalidade_cobranca', MODALIDADE_COBRANCA);
 export const statusClienteEnum = pgEnum('status_cliente', STATUS_CLIENTE);
 export const formaEntregaEnum = pgEnum('forma_entrega', FORMA_ENTREGA);
 export const resultadoTriagemEnum = pgEnum('resultado_triagem', RESULTADO_TRIAGEM);

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, getTableColumns, inArray } from 'drizzle-orm';
+import { aliasedTable, and, eq, getTableColumns, inArray } from 'drizzle-orm';
 import {
   amostra,
   bloco,
@@ -13,6 +13,7 @@ import {
   perfil,
   recipiente,
   servico,
+  termo,
   tutor,
   usuario,
   usuarioPerfil,
@@ -314,10 +315,24 @@ export class CasosService {
         .leftJoin(macroscopia, eq(macroscopia.amostraId, amostra.id))
         .where(and(eq(amostra.tenantId, ctx.tenantId), eq(amostra.casoId, casoId)));
 
+      /**
+       * Review: "esta faltando a descricao exata do que foi DECLARADO" - quem
+       * confere precisa bater o que o cliente disse que mandou com o que
+       * chegou. Tipo de recipiente e fixador vem pelo nome, nao pelo id.
+       */
+      const tipoRecipiente = aliasedTable(termo, 'tipo_recipiente');
+      const fixador = aliasedTable(termo, 'fixador');
       const recipientes = await tx
-        .select()
+        .select({
+          ...getTableColumns(recipiente),
+          tipo: tipoRecipiente.valor,
+          fixador: fixador.valor,
+        })
         .from(recipiente)
-        .where(and(eq(recipiente.tenantId, ctx.tenantId), eq(recipiente.casoId, casoId)));
+        .leftJoin(tipoRecipiente, eq(tipoRecipiente.id, recipiente.tipoId))
+        .leftJoin(fixador, eq(fixador.id, recipiente.fixadorId))
+        .where(and(eq(recipiente.tenantId, ctx.tenantId), eq(recipiente.casoId, casoId)))
+        .orderBy(recipiente.ordem);
 
       const historicos = await tx
         .select()

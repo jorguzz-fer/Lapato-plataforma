@@ -134,6 +134,8 @@ export function Macroscopia({ exigeSupervisao }: Props) {
   const [selecoes, setSelecoes] = useState<Record<string, string[]>>({});
   const [outroPorGrupo, setOutroPorGrupo] = useState<Record<string, string>>({});
   const [compondo, setCompondo] = useState(false);
+  /** Ultima frase composta: compor de novo troca esta, em vez de empilhar. */
+  const [ultimaComposicao, setUltimaComposicao] = useState('');
   const [comprimento, setComprimento] = useState('');
   const [largura, setLargura] = useState('');
   const [altura, setAltura] = useState('');
@@ -303,7 +305,21 @@ export function Macroscopia({ exigeSupervisao }: Props) {
         `/macroscopia/${ficha.id}/composicao`,
         { selecoes },
       );
-      setDescricaoTexto((atual) => (atual.trim() ? `${atual.trim()}\n\n${r.texto}` : r.texto));
+      /**
+       * Review: dois cliques em "Compor" deixaram a frase duas vezes no texto.
+       * A composicao anterior e substituida, nao somada: o que a pessoa
+       * escreveu por fora fica, o que veio dos bloquinhos e trocado.
+       */
+      setDescricaoTexto((atual) => {
+        const base = atual.trim();
+        if (!base) return r.texto;
+        if (ultimaComposicao && base.includes(ultimaComposicao)) {
+          return base.replace(ultimaComposicao, r.texto);
+        }
+        if (base.includes(r.texto)) return base;
+        return `${base}\n\n${r.texto}`;
+      });
+      setUltimaComposicao(r.texto);
       if (r.origem === 'padrao') {
         setAviso('Texto composto no modo padrão (IA indisponível) — revise e ajuste à vontade.');
       }
@@ -407,7 +423,21 @@ export function Macroscopia({ exigeSupervisao }: Props) {
   const cassetesIncompletos = novosCassetes.some((c) => c.tecidoOrigem.trim() === '');
   const lesoesIncompletas = lesoes.some((l) => l.rotulo.trim() === '' && !lesaoIntocada(l));
   const margensIncompletas = margens.some((m) => m.nome.trim() === '');
+  const margensSemMetodo = margens.some(
+    (m) => !m.naoAvaliavel && (m.metodoAmostragem === '' || m.distanciaCm.trim() === ''),
+  );
   const podeSalvar = !ocupado && !cassetesIncompletos && !lesoesIncompletas && !margensIncompletas;
+  /**
+   * Review: "preciso lembrar de colocar uma marcação se algum dos campos que
+   * é obrigatório... fica marcadinho em vermelho". Cada campo ja acende; aqui
+   * a lista, no lugar onde a pessoa vai clicar em concluir.
+   */
+  const faltando = [
+    cassetesIncompletos ? 'tecido de origem em cassete' : null,
+    lesoesIncompletas ? 'rótulo de lesão' : null,
+    margensIncompletas ? 'nome de margem' : null,
+    margensSemMetodo ? 'método e distância de margem (ou "não avaliável")' : null,
+  ].filter((f): f is string => f !== null);
 
   if (!dossie) {
     return erro ? (
@@ -538,19 +568,19 @@ export function Macroscopia({ exigeSupervisao }: Props) {
                   <RotuloGrupo>Medidas do fragmento</RotuloGrupo>
                   <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
                     <Medida
-                      rotulo="Compr."
+                      rotulo="Compr. (cm)"
                       valor={comprimento}
                       aoMudar={setComprimento}
                       travado={concluida}
                     />
                     <Medida
-                      rotulo="Largura"
+                      rotulo="Largura (cm)"
                       valor={largura}
                       aoMudar={setLargura}
                       travado={concluida}
                     />
                     <Medida
-                      rotulo="Altura"
+                      rotulo="Altura (cm)"
                       valor={altura}
                       aoMudar={setAltura}
                       travado={concluida}
@@ -719,6 +749,7 @@ export function Macroscopia({ exigeSupervisao }: Props) {
                       )
                     }
                     required
+                    error={!concluida && l.rotulo.trim() === '' && !lesaoIntocada(l)}
                     disabled={concluida}
                     sx={{ width: { xs: '100%', md: 100 }, ...MONO }}
                   />
@@ -765,7 +796,7 @@ export function Macroscopia({ exigeSupervisao }: Props) {
                     ))}
                   </TextField>
                   <Medida
-                    rotulo="Maior eixo"
+                    rotulo="Maior eixo (cm)"
                     valor={l.maiorEixoCm}
                     travado={concluida}
                     aoMudar={(v) =>
@@ -773,7 +804,7 @@ export function Macroscopia({ exigeSupervisao }: Props) {
                     }
                   />
                   <Medida
-                    rotulo="Menor eixo"
+                    rotulo="Menor eixo (cm)"
                     valor={l.menorEixoCm}
                     travado={concluida}
                     aoMudar={(v) =>
@@ -829,6 +860,7 @@ export function Macroscopia({ exigeSupervisao }: Props) {
                       )
                     }
                     required
+                    error={!concluida && m.nome.trim() === ''}
                     disabled={concluida}
                     sx={{ flex: 1.5, width: { xs: '100%', md: 'auto' } }}
                   />
@@ -846,6 +878,8 @@ export function Macroscopia({ exigeSupervisao }: Props) {
                       )
                     }
                     disabled={concluida}
+                    // M13: sem o metodo, a distancia nao tem leitura na microscopia.
+                    error={!concluida && !m.naoAvaliavel && m.metodoAmostragem === ''}
                     sx={{ minWidth: 185, width: { xs: '100%', md: 'auto' } }}
                   >
                     <MenuItem value="">—</MenuItem>
@@ -856,9 +890,10 @@ export function Macroscopia({ exigeSupervisao }: Props) {
                     ))}
                   </TextField>
                   <Medida
-                    rotulo="Distância"
+                    rotulo="Distância (cm)"
                     valor={m.distanciaCm}
                     travado={concluida || m.naoAvaliavel}
+                    erro={!concluida && !m.naoAvaliavel && m.distanciaCm.trim() === ''}
                     aoMudar={(v) =>
                       setMargens((a) => a.map((x, j) => (i === j ? { ...x, distanciaCm: v } : x)))
                     }
@@ -1076,6 +1111,12 @@ export function Macroscopia({ exigeSupervisao }: Props) {
             </Alert>
           )}
 
+          {!concluida && faltando.length > 0 && (
+            <Alert severity="warning" sx={{ mt: 2.5 }}>
+              Falta para concluir: {faltando.join('; ')}.
+            </Alert>
+          )}
+
           <Stack
             direction={{ xs: 'column-reverse', sm: 'row' }}
             spacing={1.5}
@@ -1163,11 +1204,14 @@ function Medida({
   valor,
   aoMudar,
   travado,
+  erro,
 }: {
   rotulo: string;
   valor: string;
   aoMudar: (v: string) => void;
   travado?: boolean;
+  /** Review: "fica marcadinho em vermelho" o que falta para concluir. */
+  erro?: boolean;
 }) {
   return (
     <TextField
@@ -1176,7 +1220,8 @@ function Medida({
       onChange={(e) => aoMudar(e.target.value)}
       type="number"
       disabled={travado}
-      sx={{ width: { xs: '100%', md: 118 } }}
+      error={erro}
+      sx={{ width: { xs: '100%', md: 150 } }}
       slotProps={{ htmlInput: { min: 0, step: '0.01', inputMode: 'decimal' } }}
     />
   );

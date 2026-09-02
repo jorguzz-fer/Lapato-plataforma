@@ -181,9 +181,34 @@ export function Recebimento() {
                 spacing={{ xs: 1.5, sm: 2 }}
                 sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
               >
-                <Typography sx={{ ...MONO, fontSize: 13, flex: 1, minWidth: 0 }}>
-                  {r.identificador}
-                </Typography>
+                {/**
+                  * Review: "esta faltando a descricao exata do que foi
+                  * declarado". O que o cliente disse que mandou fica ao lado
+                  * do identificador - e contra isso que se bate o que chegou.
+                  */}
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography sx={{ ...MONO, fontSize: 13 }}>{r.identificador}</Typography>
+                  <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                    {[r.tipo, r.fixador ? `em ${r.fixador}` : null, r.identificacaoExterna ? `ref. ${r.identificacaoExterna}` : null]
+                      .filter(Boolean)
+                      .join(' · ') || 'Recipiente sem tipo declarado'}
+                  </Typography>
+                  {(dados.amostras.filter((a) => a.recipienteId === r.id)).map((a) => (
+                    <Typography key={a.id} sx={{ fontSize: 12.5, mt: 0.25 }}>
+                      <Box component="span" sx={{ ...MONO, fontSize: 11.5, color: 'text.secondary' }}>
+                        {a.letra}
+                      </Box>{' '}
+                      {a.descricao ?? 'sem descrição'}
+                      {a.regiaoAnatomica ? ` — ${a.regiaoAnatomica}` : ''}
+                      {a.lateralidade !== 'nao_aplicavel' ? ` (${a.lateralidade})` : ''}
+                    </Typography>
+                  ))}
+                  {r.observacoes && (
+                    <Typography sx={{ fontSize: 12, color: 'text.secondary', fontStyle: 'italic' }}>
+                      {r.observacoes}
+                    </Typography>
+                  )}
+                </Box>
 
                 {/**
                   * Declarado e recebido lado a lado tambem no celular: e a

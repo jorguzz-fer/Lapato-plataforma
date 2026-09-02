@@ -4689,3 +4689,40 @@ describe('data de entrada do material: o prazo conta dela (M05 + M07)', () => {
     expect(depois.body.linhaDoTempo.map((e: any) => e.tipo)).toContain('caso.entrada_alterada');
   });
 });
+
+describe('conferência lê o que foi declarado (M05, review)', () => {
+  test('o dossiê traz recipiente com tipo e fixador por nome, e cada amostra sabe em que recipiente veio', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const tipos = await req('GET', '/catalogo/tabelas/tipo_recipiente');
+    const fixadores = await req('GET', '/catalogo/tabelas/fixador');
+    const tipo = tipos.status === 200 ? tipos.body[0] : null;
+    const fixador = fixadores.status === 200 ? fixadores.body[0] : null;
+
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: any) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body.find((c: any) => c.codigo === 'CV').id,
+      paciente: { nome: 'Declarado' },
+      amostras: [{ descricao: 'Baço com nódulos', regiaoAnatomica: 'abdome' }],
+      recipientes: [
+        {
+          quantidadeDeclarada: 1,
+          ...(tipo ? { tipoId: tipo.id } : {}),
+          ...(fixador ? { fixadorId: fixador.id } : {}),
+          identificacaoExterna: 'FR-77',
+        },
+      ],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+
+    const dossie = await req('GET', `/casos/${criado.body.id}`);
+    const [recipiente] = dossie.body.recipientes;
+    expect(recipiente.identificacaoExterna).toBe('FR-77');
+    if (tipo) expect(recipiente.tipo).toBe(tipo.valor);
+    if (fixador) expect(recipiente.fixador).toBe(fixador.valor);
+    const [amostra] = dossie.body.amostras;
+    expect(amostra.recipienteId).toBe(recipiente.id);
+    expect(amostra.descricao).toBe('Baço com nódulos');
+  });
+});

@@ -1,5 +1,5 @@
 import { relations } from 'drizzle-orm';
-import { index, integer, numeric, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, numeric, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 import { colunasTempo, colunasTenant, statusOrdemServicoEnum } from './_comum.js';
 import { caso } from './caso.js';
 import { fatura } from './financeiro.js';
@@ -74,6 +74,21 @@ export const ordemServico = pgTable(
      */
     faturaId: uuid('fatura_id').references(() => fatura.id, { onDelete: 'set null' }),
 
+    /**
+     * Momento em que a OS ficou pronta para faturar - e o portao da fatura,
+     * no lugar do despacho.
+     *
+     * Segunda review, com Hugo e Roberta: cobrar na entrada erra, porque a
+     * recepcao nao abre o frasco ("vem dizendo nodulo, quando a gente abre
+     * tem tres"); cobrar na liberacao do laudo joga o fim de mes inteiro para
+     * o mes seguinte. Ficou: **ao concluir a macroscopia** se sabe quantas
+     * pecas sao - e ai a OS fica faturavel. Servico sem macroscopia
+     * (citologia, necropsia) fica faturavel na entrada. `faturavelOrigem`
+     * guarda qual dos dois foi.
+     */
+    faturavelEm: timestamp('faturavel_em', { withTimezone: true }),
+    faturavelOrigem: text('faturavel_origem'),
+
     conferidaEm: timestamp('conferida_em', { withTimezone: true }),
     conferidaPorId: uuid('conferida_por_id').references(() => usuario.id),
     despachadaEm: timestamp('despachada_em', { withTimezone: true }),
@@ -114,6 +129,13 @@ export const itemOrdemServico = pgTable(
       .notNull()
       .default('0'),
     ordem: integer('ordem').notNull().default(0),
+    /**
+     * Retrabalho do proprio laboratorio - o "recorte" da review: a amostragem
+     * nao foi representativa, faz-se nova macroscopia e o cliente NAO paga
+     * ("o erro foi nosso"). Entra na OS com valor zero para o fechamento do
+     * mes enxergar o custo, e nunca na fatura.
+     */
+    retrabalho: boolean('retrabalho').notNull().default(false),
     ...colunasTempo,
   },
   (t) => [index('idx_item_ordem').on(t.tenantId, t.ordemId)],

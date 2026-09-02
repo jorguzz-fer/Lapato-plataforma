@@ -1,16 +1,23 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
 import {
   amostra,
   caso,
   cliente,
   itemOrdemServico,
+  macroscopia,
   ordemServico,
   precoCliente,
   servico,
   type Transacao,
 } from '@lapato/db';
-import { MODULOS, totalDaOrdem, type StatusOrdemServico } from '@lapato/shared';
+import {
+  MODULOS,
+  ORDEM_EDITAVEL,
+  totalDaOrdem,
+  type OrigemFaturavel,
+  type StatusOrdemServico,
+} from '@lapato/shared';
 import { DbService } from '../../core/db/db.service.js';
 import { EventosService } from '../../core/eventos/eventos.service.js';
 import { AuditoriaService } from '../../core/auditoria/auditoria.service.js';
@@ -39,15 +46,22 @@ export interface EdicaoItemOrdem {
  *
  *   recebimento conferido -> OS aberta (itens editaveis)
  *     -> conferencia tecnica da saida ("foi tudo feito?") -> conferida
- *     -> despacho -> pronta para faturar (a fatura e do modulo financeiro)
+ *     -> despacho -> faturada (a fatura e do modulo financeiro)
  *
- * Duas regras estruturais:
+ * O portao da fatura e `faturavelEm`, nao o despacho - decisao da segunda
+ * review (ver `ordemServico.faturavelEm` no schema): ao concluir a
+ * macroscopia, ou na entrada quando o servico nao tem macroscopia.
+ *
+ * Tres regras estruturais:
  *
  * - **Uma OS por caso.** Servico adicional e ITEM da mesma ordem. E a ordem,
  *   nao o caso, que o financeiro fatura.
  * - **Preco e retrato.** O item copia o valor vigente (acordo do cliente, ou
  *   tabela padrao) no momento em que entra. Mudar preco depois nao retroage
  *   (M01) - por isso nenhuma leitura volta a consultar o preco atual.
+ * - **Itens entram ate a fatura.** Conferir e despachar nao congelam: o
+ *   laboratorio adiciona coloracao, margem, nova amostra depois de
+ *   "finalizado" - faz e manda, sem aprovacao previa (Hugo).
  */
 @Injectable()
 export class OrdensService {
@@ -84,6 +98,7 @@ export class OrdensService {
         servicoId: caso.servicoId,
         servicoNome: servico.nome,
         valorPadrao: servico.valorPadrao,
+        exigeMacroscopia: servico.exigeMacroscopia,
       })
       .from(caso)
       .innerJoin(servico, eq(servico.id, caso.servicoId))
@@ -106,6 +121,12 @@ export class OrdensService {
     const agora = new Date();
     const identificador = await this.numeracao.proximaOrdemServico(tx, agora.getFullYear());
 
+    /**
+     * Servico sem macroscopia (citologia, necropsia) nao tem o momento "agora
+     * sei quantas pecas sao" - a entrada conferida ja e o portao da fatura.
+     */
+    const faturavelNaEntrada = !alvo.exigeMacroscopia;
+
     const [ordem] = await tx
       .insert(ordemServico)
       .values({
@@ -113,6 +134,7 @@ export class OrdensService {
         identificador,
         casoId,
         clienteId: alvo.clienteId,
+        ...(faturavelNaEntrada ? { faturavelEm: agora, faturavelOrigem: 'entrada' } : {}),
       })
       .returning({ id: ordemServico.id });
 
@@ -134,6 +156,117 @@ export class OrdensService {
       objetoTipo: 'ordem_servico',
       objetoId: ordem!.id,
       payload: { identificador },
+    });
+
+    if (faturavelNaEntrada) {
+      await this.publicarFaturavel(tx, casoId, ordem!.id, identificador, 'entrada');
+    }
+  }
+
+  /**
+   * Chamado pelo M08 ao concluir a macroscopia de uma amostra.
+   *
+   * A OS so fica faturavel quando TODAS as amostras que chegam a bancada tem
+   * macroscopia concluida: com duas pecas, a primeira pronta ainda nao diz
+   * quantos cassetes a segunda vai render. Amostra bloqueada ou recusada na
+   * triagem fica fora da conta - ela nunca chega a bancada (M06).
+   *
+   * Idempotente: a segunda conclusao da mesma amostra (recorte) nao muda a
+   * data nem publica de novo. Devolve se marcou agora.
+   */
+  async marcarFaturavelSeCompleta(tx: Transacao, casoId: string): Promise<boolean> {
+    const ctx = exigirContexto();
+
+    const [pendentes] = (await tx
+      .select({ quantidade: sql<number>`count(*)::int` })
+      .from(amostra)
+      .leftJoin(macroscopia, eq(macroscopia.amostraId, amostra.id))
+      .where(
+        and(
+          eq(amostra.tenantId, ctx.tenantId),
+          eq(amostra.casoId, casoId),
+          // `NOT IN` com NULL da NULL: amostra sem triagem (servico que dispensa)
+          // precisa entrar explicitamente na conta.
+          or(
+            isNull(amostra.resultadoTriagem),
+            notInArray(amostra.resultadoTriagem, ['bloqueado', 'recusado']),
+          ),
+          isNull(macroscopia.concluidaEm),
+        ),
+      )) as [{ quantidade: number }];
+    if (pendentes.quantidade > 0) return false;
+
+    const agora = new Date();
+    const marcadas = await tx
+      .update(ordemServico)
+      .set({ faturavelEm: agora, faturavelOrigem: 'macroscopia', atualizadoEm: agora })
+      .where(
+        and(
+          eq(ordemServico.tenantId, ctx.tenantId),
+          eq(ordemServico.casoId, casoId),
+          isNull(ordemServico.faturavelEm),
+          notInArray(ordemServico.status, ['faturada', 'cancelada']),
+        ),
+      )
+      .returning({ id: ordemServico.id, identificador: ordemServico.identificador });
+    if (!marcadas[0]) return false;
+
+    await this.publicarFaturavel(tx, casoId, marcadas[0].id, marcadas[0].identificador, 'macroscopia');
+    return true;
+  }
+
+  private async publicarFaturavel(
+    tx: Transacao,
+    casoId: string,
+    ordemId: string,
+    identificador: string,
+    origem: OrigemFaturavel,
+  ): Promise<void> {
+    await this.eventos.publicar(tx, {
+      tipo: 'os.faturavel',
+      casoId,
+      moduloOrigem: MODULOS.M20_FINANCEIRO,
+      objetoTipo: 'ordem_servico',
+      objetoId: ordemId,
+      payload: { identificador, origem },
+    });
+  }
+
+  /**
+   * Retrabalho do laboratorio (recorte, M08): consta na OS com valor ZERO.
+   *
+   * "Nao tem como eu cobrar do cliente - o erro foi nosso. Mas deve constar
+   * na OS": quando for fechar o mes, o laboratorio sabe que aquilo saiu como
+   * prejuizo. Valor zero nao mexe no total nem na fatura; a marca
+   * `retrabalho` e o que o fechamento le.
+   */
+  async registrarRetrabalho(tx: Transacao, casoId: string, descricao: string): Promise<void> {
+    const ctx = exigirContexto();
+
+    const [ordem] = await tx
+      .select({ id: ordemServico.id, status: ordemServico.status })
+      .from(ordemServico)
+      .where(and(eq(ordemServico.tenantId, ctx.tenantId), eq(ordemServico.casoId, casoId)))
+      .limit(1);
+    if (!ordem) throw new NotFoundException('O caso não tem Ordem de Serviço.');
+    // Ordem cancelada nao tem fechamento onde o retrabalho apareceria.
+    if (ordem.status === 'cancelada') return;
+
+    const [{ maiorOrdem }] = (await tx
+      .select({ maiorOrdem: sql<number>`coalesce(max(${itemOrdemServico.ordem}), 0)` })
+      .from(itemOrdemServico)
+      .where(
+        and(eq(itemOrdemServico.tenantId, ctx.tenantId), eq(itemOrdemServico.ordemId, ordem.id)),
+      )) as [{ maiorOrdem: number }];
+
+    await tx.insert(itemOrdemServico).values({
+      tenantId: ctx.tenantId,
+      ordemId: ordem.id,
+      descricao,
+      quantidade: '1',
+      valorUnitario: '0.00',
+      retrabalho: true,
+      ordem: maiorOrdem + 1,
     });
   }
 
@@ -173,7 +306,8 @@ export class OrdensService {
     return padrao?.valor ?? '0';
   }
 
-  async listar(status?: StatusOrdemServico) {
+  /** `apenasFaturaveis`: o que o financeiro pode colocar numa fatura agora. */
+  async listar(status?: StatusOrdemServico, apenasFaturaveis = false) {
     return this.db.executar(async (tx) => {
       const ctx = exigirContexto();
 
@@ -183,6 +317,7 @@ export class OrdensService {
           identificador: ordemServico.identificador,
           status: ordemServico.status,
           criadoEm: ordemServico.criadoEm,
+          faturavelEm: ordemServico.faturavelEm,
           casoId: ordemServico.casoId,
           casoIdentificador: caso.identificador,
           clienteId: ordemServico.clienteId,
@@ -202,6 +337,12 @@ export class OrdensService {
           and(
             eq(ordemServico.tenantId, ctx.tenantId),
             ...(status ? [eq(ordemServico.status, status)] : []),
+            ...(apenasFaturaveis
+              ? [
+                  isNotNull(ordemServico.faturavelEm),
+                  notInArray(ordemServico.status, ['faturada', 'cancelada']),
+                ]
+              : []),
           ),
         )
         .orderBy(desc(ordemServico.criadoEm))
@@ -222,6 +363,8 @@ export class OrdensService {
           status: ordemServico.status,
           observacoes: ordemServico.observacoes,
           criadoEm: ordemServico.criadoEm,
+          faturavelEm: ordemServico.faturavelEm,
+          faturavelOrigem: ordemServico.faturavelOrigem,
           conferidaEm: ordemServico.conferidaEm,
           despachadaEm: ordemServico.despachadaEm,
           motivoCancelamento: ordemServico.motivoCancelamento,
@@ -242,6 +385,7 @@ export class OrdensService {
           quantidade: itemOrdemServico.quantidade,
           valorUnitario: itemOrdemServico.valorUnitario,
           descontoPercentual: itemOrdemServico.descontoPercentual,
+          retrabalho: itemOrdemServico.retrabalho,
         })
         .from(itemOrdemServico)
         .where(
@@ -259,7 +403,7 @@ export class OrdensService {
   async adicionarItem(ordemId: string, dados: NovoItemOrdem) {
     return this.db.executar(async (tx) => {
       const ctx = exigirContexto();
-      const ordem = await this.exigirOrdem(tx, ordemId, ['aberta']);
+      const ordem = await this.exigirOrdem(tx, ordemId, [...ORDEM_EDITAVEL]);
 
       let descricao = dados.descricao?.trim() ?? '';
       let valor =
@@ -311,7 +455,7 @@ export class OrdensService {
   async editarItem(ordemId: string, itemId: string, dados: EdicaoItemOrdem) {
     return this.db.executar(async (tx) => {
       const ctx = exigirContexto();
-      await this.exigirOrdem(tx, ordemId, ['aberta']);
+      await this.exigirOrdem(tx, ordemId, [...ORDEM_EDITAVEL]);
 
       const [anterior] = await tx
         .select()
@@ -361,7 +505,7 @@ export class OrdensService {
   async removerItem(ordemId: string, itemId: string) {
     return this.db.executar(async (tx) => {
       const ctx = exigirContexto();
-      await this.exigirOrdem(tx, ordemId, ['aberta']);
+      await this.exigirOrdem(tx, ordemId, [...ORDEM_EDITAVEL]);
 
       const removidos = await tx
         .delete(itemOrdemServico)
@@ -388,7 +532,8 @@ export class OrdensService {
 
   /**
    * A conferencia da saida: alguem olhou a OS e confirmou que tudo que ela
-   * lista foi executado. So a partir daqui os valores congelam.
+   * lista foi executado. Marco operacional - nao congela itens nem e o
+   * portao da fatura (ver `faturavelEm`).
    */
   async conferir(ordemId: string) {
     return this.transicionar(ordemId, ['aberta'], 'conferida', 'os.conferida', (agora, ctx) => ({

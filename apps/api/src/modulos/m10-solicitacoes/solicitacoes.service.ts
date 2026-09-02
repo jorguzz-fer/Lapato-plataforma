@@ -102,9 +102,21 @@ export class SolicitacoesService {
   // --- solicitacoes ---------------------------------------------------------
 
   async criar(dados: NovaSolicitacao): Promise<{ id: string; identificador: string }> {
+    return this.db.executar((tx) => this.criarEmTransacao(tx, dados));
+  }
+
+  /**
+   * Variante para quem ja esta numa transacao (o recorte do M08 reabre a
+   * macroscopia, registra a solicitacao e lanca o retrabalho na OS como um
+   * unico ato - metade disso gravada seria pior que nada).
+   */
+  async criarEmTransacao(
+    tx: Transacao,
+    dados: NovaSolicitacao,
+  ): Promise<{ id: string; identificador: string }> {
     const ctx = exigirContexto();
 
-    return this.db.executar(async (tx) => {
+    {
       const identificador = await this.numeracao.proximaSolicitacao(
         tx,
         new Date().getFullYear(),
@@ -152,7 +164,7 @@ export class SolicitacoesService {
       });
 
       return { id: nova!.id, identificador };
-    });
+    }
   }
 
   /**

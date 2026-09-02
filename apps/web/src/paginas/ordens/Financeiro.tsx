@@ -29,7 +29,7 @@ import { api, ErroApi } from '../../api';
 
 /**
  * M20 (parcial) - Financeiro padrao, o escopo combinado na review: fluxo de
- * caixa, faturas sobre as OSs despachadas e o livro de entrada e saida. O que
+ * caixa, faturas sobre as OSs faturaveis (portao: macroscopia concluida) e o livro de entrada e saida. O que
  * for especifico do setor entra quando a Roberta mandar a lista.
  */
 
@@ -62,7 +62,7 @@ interface Lancamento {
   faturaId: string | null;
 }
 
-interface OrdemDespachada {
+interface OrdemFaturavel {
   id: string;
   identificador: string;
   casoIdentificador: string;
@@ -81,7 +81,8 @@ export function Financeiro({ permissoes }: { permissoes: string[] }) {
         Financeiro
       </Typography>
       <Typography sx={{ fontSize: 13, color: 'text.secondary', mb: 1.5 }}>
-        A cobrança nasce da Ordem de Serviço despachada; o livro registra o que entrou e saiu.
+        A cobrança nasce da Ordem de Serviço faturável — ao concluir a macroscopia; o livro
+        registra o que entrou e saiu.
       </Typography>
 
       <Tabs value={aba} onChange={(_, v) => setAba(v)} sx={{ mb: 2, minHeight: 42 }}>
@@ -133,7 +134,7 @@ function Visao() {
             {formatarReais(resumo.aFaturar.valor)}
           </Typography>
           <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
-            {resumo.aFaturar.quantidade} OS despachada(s) sem fatura
+            {resumo.aFaturar.quantidade} OS faturável(is) sem fatura
           </Typography>
         </Card>
       </Stack>
@@ -246,7 +247,7 @@ function Faturas({ podeLancar }: { podeLancar: boolean }) {
       {!carregado && <Skeleton variant="rounded" height={160} />}
       {carregado && faturas.length === 0 && (
         <Typography sx={{ fontSize: 13.5, color: 'text.secondary' }}>
-          Nenhuma fatura — crie a primeira a partir das OSs despachadas.
+          Nenhuma fatura — crie a primeira a partir das OSs faturáveis.
         </Typography>
       )}
 
@@ -301,7 +302,7 @@ function Faturas({ podeLancar }: { podeLancar: boolean }) {
 }
 
 function DialogoNovaFatura({ aoFechar, aoSalvar }: { aoFechar: () => void; aoSalvar: () => void }) {
-  const [ordens, setOrdens] = useState<OrdemDespachada[]>([]);
+  const [ordens, setOrdens] = useState<OrdemFaturavel[]>([]);
   const [escolhidas, setEscolhidas] = useState<Set<string>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -309,9 +310,9 @@ function DialogoNovaFatura({ aoFechar, aoSalvar }: { aoFechar: () => void; aoSal
 
   useEffect(() => {
     api
-      .get<OrdemDespachada[]>('/ordens?status=despachada')
+      .get<OrdemFaturavel[]>('/ordens?faturaveis=1')
       .then(setOrdens)
-      .catch(() => setErro('Não foi possível carregar as ordens despachadas.'))
+      .catch(() => setErro('Não foi possível carregar as ordens faturáveis.'))
       .finally(() => setCarregado(true));
   }, []);
 
@@ -324,7 +325,7 @@ function DialogoNovaFatura({ aoFechar, aoSalvar }: { aoFechar: () => void; aoSal
     });
   }
 
-  const porCliente = new Map<string, OrdemDespachada[]>();
+  const porCliente = new Map<string, OrdemFaturavel[]>();
   for (const ordem of ordens) {
     porCliente.set(ordem.clienteNome, [...(porCliente.get(ordem.clienteNome) ?? []), ordem]);
   }
@@ -359,11 +360,12 @@ function DialogoNovaFatura({ aoFechar, aoSalvar }: { aoFechar: () => void; aoSal
         <Stack spacing={1.5} sx={{ mt: 0.5 }}>
           {erro && <Alert severity="error">{erro}</Alert>}
           <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
-            Só OS despachada entra — e todas da mesma fatura são do mesmo cliente.
+            Só OS faturável entra — ela fica faturável ao concluir a macroscopia (ou na entrada,
+            para serviço sem macroscopia) — e todas da mesma fatura são do mesmo cliente.
           </Typography>
           {carregado && ordens.length === 0 && (
             <Typography sx={{ fontSize: 13.5, color: 'text.secondary' }}>
-              Nenhuma OS despachada aguardando fatura.
+              Nenhuma OS faturável aguardando fatura.
             </Typography>
           )}
           {[...porCliente.entries()].map(([nomeCliente, doCliente]) => (

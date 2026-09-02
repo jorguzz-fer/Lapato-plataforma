@@ -5,8 +5,18 @@
  * eles ja praticam: a OS nasce quando o material foi CONFERIDO no recebimento
  * (quantidades contadas, divergencias anotadas), acompanha o caso pelo
  * processo inteiro, e no fim alguem confere se tudo que ela lista foi de fato
- * executado. So a OS conferida e despachada pode virar fatura - a cobranca
- * nunca nasce de um caso solto, nasce da ordem.
+ * executado. A cobranca nunca nasce de um caso solto, nasce da ordem.
+ *
+ * O PORTAO da fatura mudou na segunda review (Hugo e Roberta): nao e mais o
+ * despacho, e o momento em que a OS fica FATURAVEL - ao concluir a
+ * macroscopia, quando se sabe quantas pecas sao; na entrada, quando o servico
+ * nao tem macroscopia (citologia, necropsia). Conferencia e despacho seguem
+ * como marcos operacionais, nao mais como condicao de cobranca.
+ *
+ * E a OS continua recebendo itens depois disso, ate entrar numa fatura: "as
+ * vezes ele pede uma coisa, nos fizemos, depois de finalizado ele pede para
+ * adicionar mais alguma coisa - margem, coloracao" (Hugo). Faz e manda, sem
+ * aprovacao previa do cliente.
  *
  * O preco de cada item e um RETRATO do momento da criacao. M01: alteracoes de
  * configuracao nao retroagem - mudar o preco do servico amanha nao pode mudar
@@ -19,7 +29,7 @@ export const STATUS_ORDEM_SERVICO = [
   'aberta',
   /** Alguem verificou que tudo que a OS lista foi executado. */
   'conferida',
-  /** Saiu da operacao; pronta para faturamento. */
+  /** Saiu da operacao (marco fisico; nao e mais o portao da fatura). */
   'despachada',
   /** Ja incluida numa fatura (M20). */
   'faturada',
@@ -35,8 +45,20 @@ export const STATUS_ORDEM_LABEL: Record<StatusOrdemServico, string> = {
   cancelada: 'Cancelada',
 };
 
-/** Status em que os itens ainda podem ser alterados. */
-export const ORDEM_EDITAVEL: readonly StatusOrdemServico[] = ['aberta'];
+/**
+ * Status em que os itens ainda podem ser alterados: ate a fatura. Conferir e
+ * despachar nao congelam mais - a adicao tardia e rotina do laboratorio.
+ */
+export const ORDEM_EDITAVEL: readonly StatusOrdemServico[] = ['aberta', 'conferida', 'despachada'];
+
+/** De onde veio o "pode faturar" da ordem. */
+export const ORIGEM_FATURAVEL = ['macroscopia', 'entrada'] as const;
+export type OrigemFaturavel = (typeof ORIGEM_FATURAVEL)[number];
+
+export const ORIGEM_FATURAVEL_LABEL: Record<OrigemFaturavel, string> = {
+  macroscopia: 'ao concluir a macroscopia',
+  entrada: 'na entrada (serviço sem macroscopia)',
+};
 
 /**
  * Total de um item, em centavos de precisao decimal.

@@ -390,6 +390,20 @@ export class MacroscopiaController {
     await this.macro.concluir(id);
     return { ok: true };
   }
+
+  @Post('amostras/:amostraId/recorte')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_CRIAR)
+  @ApiOperation({
+    summary: 'Recorte: reabre a macroscopia da amostra, sem cobrança',
+    description:
+      'Pedido do patologista quando a amostragem não foi representativa. Reabre ' +
+      'a ficha, registra a solicitação (M10) e lança o retrabalho na OS com valor ' +
+      'zero. O prazo do laudo não reinicia.',
+  })
+  async recorte(@Param('amostraId', ParseUUIDPipe) amostraId: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(z.object({ motivo: z.string().min(3).max(500) }), corpo);
+    return this.macro.solicitarRecorte(amostraId, dados.motivo);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2815,8 +2829,11 @@ export class OrdensController {
       'A OS nasce na conferência do recebimento e é o que o financeiro fatura — ' +
       'a cobrança nunca sai de um caso solto.',
   })
-  async listar(@Query('status') status?: string) {
-    return this.ordens.listar(status as StatusOrdemServico | undefined);
+  async listar(@Query('status') status?: string, @Query('faturaveis') faturaveis?: string) {
+    return this.ordens.listar(
+      status as StatusOrdemServico | undefined,
+      faturaveis === '1' || faturaveis === 'true',
+    );
   }
 
   @Get('casos/:casoId')
@@ -2829,7 +2846,7 @@ export class OrdensController {
   @Post(':id/itens')
   @ExigePermissao(PERMISSOES.OS_EDITAR)
   @ApiOperation({
-    summary: 'Adiciona um item à OS aberta',
+    summary: 'Adiciona um item à OS (até ela entrar numa fatura)',
     description:
       'Com serviço, o preço entra do acordo do cliente ou da tabela padrão; sem ' +
       'serviço é item avulso, criado na hora, com descrição e valor próprios.',
@@ -2851,7 +2868,7 @@ export class OrdensController {
 
   @Post(':id/itens/:itemId/remocao')
   @ExigePermissao(PERMISSOES.OS_EDITAR)
-  @ApiOperation({ summary: 'Remove um item da OS aberta' })
+  @ApiOperation({ summary: 'Remove um item da OS (até ela entrar numa fatura)' })
   async removerItem(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('itemId', ParseUUIDPipe) itemId: string,
@@ -2865,7 +2882,7 @@ export class OrdensController {
     summary: 'Conferência da saída',
     description:
       'O ato descrito na review: alguém pega a OS, verifica se tudo que ela ' +
-      'lista foi executado e dá o ok. Congela os itens.',
+      'lista foi executado e dá o ok. Marco operacional; não congela itens.',
   })
   async conferir(@Param('id', ParseUUIDPipe) id: string) {
     return this.ordens.conferir(id);
@@ -2873,7 +2890,7 @@ export class OrdensController {
 
   @Post(':id/despacho')
   @ExigePermissao(PERMISSOES.OS_CONFERIR)
-  @ApiOperation({ summary: 'Despacho — a OS fica pronta para o faturamento' })
+  @ApiOperation({ summary: 'Despacho — o material saiu (marco operacional)' })
   async despachar(@Param('id', ParseUUIDPipe) id: string) {
     return this.ordens.despachar(id);
   }
@@ -2915,7 +2932,7 @@ export class PrecosController {
 
 const novaFaturaSchema = z.object({
   clienteId: z.string().uuid(),
-  ordemIds: z.array(z.string().uuid()).min(1, 'Escolha ao menos uma OS despachada.'),
+  ordemIds: z.array(z.string().uuid()).min(1, 'Escolha ao menos uma OS faturável.'),
 });
 
 const lancamentoSchema = z.object({

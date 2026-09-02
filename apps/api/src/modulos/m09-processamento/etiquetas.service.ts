@@ -1,7 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import { and, asc, eq } from 'drizzle-orm';
-import { cassete, loteCassete, loteEnvio, modeloEtiqueta, amostra, caso } from '@lapato/db';
+import {
+  cassete,
+  cliente,
+  loteCassete,
+  loteEnvio,
+  modeloEtiqueta,
+  amostra,
+  caso,
+  paciente,
+  recipiente,
+} from '@lapato/db';
 import { DbService } from '../../core/db/db.service.js';
 import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
 import { code128Larguras } from './codigo-barras.js';
@@ -70,6 +80,129 @@ export class EtiquetasService {
 
     const bytes = await this.renderizar(larguraMm, alturaMm, dados.cassetes);
     return { bytes, nomeArquivo: `etiquetas-${dados.lote.identificador}.pdf` };
+  }
+
+  /**
+   * Etiquetas da ENTRADA (documento do Hugo): uma para a requisicao e uma para
+   * cada pote, com o codigo de barras que a bancada bipa para abrir a macro.
+   * `alvo` escolhe o que sai: tudo, so a requisicao, ou um recipiente.
+   */
+  async etiquetasDoCaso(
+    casoId: string,
+    alvo: 'tudo' | 'requisicao' | 'recipientes' | { recipienteId: string },
+  ): Promise<{ bytes: Buffer; nomeArquivo: string }> {
+    const dados = await this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+
+      const [alvoCaso] = await tx
+        .select({
+          id: caso.id,
+          identificador: caso.identificador,
+          entradaEm: caso.entradaEm,
+          paciente: paciente.nome,
+          cliente: cliente.nomeFantasia,
+        })
+        .from(caso)
+        .innerJoin(paciente, eq(paciente.id, caso.pacienteId))
+        .innerJoin(cliente, eq(cliente.id, caso.clienteId))
+        .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.id, casoId)))
+        .limit(1);
+      if (!alvoCaso) throw new NotFoundException('Caso não encontrado.');
+
+      const recipientes = await tx
+        .select({ id: recipiente.id, identificador: recipiente.identificador })
+        .from(recipiente)
+        .where(and(eq(recipiente.tenantId, ctx.tenantId), eq(recipiente.casoId, casoId)))
+        .orderBy(asc(recipiente.ordem));
+
+      const [modelo] = await tx
+        .select({ larguraMm: modeloEtiqueta.larguraMm, alturaMm: modeloEtiqueta.alturaMm })
+        .from(modeloEtiqueta)
+        .where(and(eq(modeloEtiqueta.tenantId, ctx.tenantId), eq(modeloEtiqueta.alvo, 'recipiente')))
+        .limit(1);
+
+      return { caso: alvoCaso, recipientes, modelo };
+    });
+
+    const linha2 = `${dados.caso.paciente} · ${dados.caso.cliente}`;
+    const data = dados.caso.entradaEm.toLocaleDateString('pt-BR');
+    const etiquetas: Array<{ identificador: string; linhas: string[] }> = [];
+
+    if (alvo === 'tudo' || alvo === 'requisicao') {
+      etiquetas.push({ identificador: dados.caso.identificador, linhas: [linha2, `Requisição · ${data}`] });
+    }
+    const potes =
+      typeof alvo === 'object'
+        ? dados.recipientes.filter((r) => r.id === alvo.recipienteId)
+        : alvo === 'requisicao'
+          ? []
+          : dados.recipientes;
+    if (typeof alvo === 'object' && potes.length === 0) {
+      throw new NotFoundException('Recipiente não encontrado neste caso.');
+    }
+    for (const r of potes) {
+      etiquetas.push({ identificador: r.identificador, linhas: [linha2, `Pote · ${data}`] });
+    }
+    if (etiquetas.length === 0) throw new NotFoundException('Nada para etiquetar.');
+
+    // Modelo de recipiente do M01; sem ele, 50x25 (o padrao do seed).
+    const bytes = await this.renderizarEntrada(
+      dados.modelo?.larguraMm ?? 50,
+      dados.modelo?.alturaMm ?? 25,
+      etiquetas,
+    );
+    return { bytes, nomeArquivo: `etiquetas-${dados.caso.identificador.replace('/', '-')}.pdf` };
+  }
+
+  /** Etiqueta de entrada: identificador, duas linhas legiveis e o codigo de barras. */
+  private renderizarEntrada(
+    larguraMm: number,
+    alturaMm: number,
+    etiquetas: Array<{ identificador: string; linhas: string[] }>,
+  ): Promise<Buffer> {
+    const MM = 72 / 25.4;
+    const largura = larguraMm * MM;
+    const altura = alturaMm * MM;
+    const margem = 1.5 * MM;
+
+    const doc = new PDFDocument({ size: [largura, altura], margin: 0, autoFirstPage: false });
+    const pedacos: Buffer[] = [];
+    doc.on('data', (pedaco: Buffer) => pedacos.push(pedaco));
+    const pronto = new Promise<Buffer>((resolver) => {
+      doc.on('end', () => resolver(Buffer.concat(pedacos)));
+    });
+
+    for (const etiqueta of etiquetas) {
+      doc.addPage({ size: [largura, altura], margin: 0 });
+      const util = largura - 2 * margem;
+
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(Math.min(9, util / (etiqueta.identificador.length * 0.6)))
+        .text(etiqueta.identificador, margem, margem, { width: util, align: 'left' });
+      let y = margem + 10;
+      for (const linha of etiqueta.linhas) {
+        doc.font('Helvetica').fontSize(6).text(linha, margem, y, { width: util, align: 'left', lineBreak: false });
+        y += 7.5;
+      }
+
+      const larguras = code128Larguras(etiqueta.identificador);
+      const totalModulos = larguras.reduce((acc, l) => acc + l, 0);
+      const modulo = util / totalModulos;
+      const topoBarras = y + 1;
+      const alturaBarras = Math.max(altura - margem - topoBarras, 8);
+
+      let x = margem;
+      let barra = true;
+      for (const l of larguras) {
+        if (barra) doc.rect(x, topoBarras, l * modulo, alturaBarras).fill('#000000');
+        x += l * modulo;
+        barra = !barra;
+      }
+    }
+
+    doc.end();
+    return pronto;
   }
 
   private renderizar(

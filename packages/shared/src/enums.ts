@@ -356,6 +356,38 @@ export type TipoCliente = (typeof TIPO_CLIENTE)[number];
  * nem cadastro previo deles.
  */
 export const MODALIDADE_COBRANCA = ['convenio', 'particular'] as const;
+
+/**
+ * Ressalvas do recebimento, em dropdown (documento do Hugo). Nao e uma nao
+ * conformidade da triagem (M06): e o que a recepcao ve no pote ao conferir -
+ * fica no recipiente e aparece no cabecalho da macro e do laudo.
+ */
+export const RESSALVAS_RECEBIMENTO = [
+  'sem_identificacao',
+  'identificacao_divergente',
+  'fixador_insuficiente',
+  'sem_fixador',
+  'recipiente_danificado',
+  'recipiente_vazando',
+  'material_autolisado',
+  'requisicao_incompleta',
+  'requisicao_ausente',
+  'outra',
+] as const;
+export type RessalvaRecebimento = (typeof RESSALVAS_RECEBIMENTO)[number];
+
+export const RESSALVA_RECEBIMENTO_LABEL: Record<RessalvaRecebimento, string> = {
+  sem_identificacao: 'Pote sem identificação',
+  identificacao_divergente: 'Identificação diverge da requisição',
+  fixador_insuficiente: 'Fixador insuficiente',
+  sem_fixador: 'Sem fixador',
+  recipiente_danificado: 'Recipiente danificado',
+  recipiente_vazando: 'Recipiente vazando',
+  material_autolisado: 'Material autolisado',
+  requisicao_incompleta: 'Requisição incompleta',
+  requisicao_ausente: 'Requisição ausente',
+  outra: 'Outra (descrever)',
+};
 export type ModalidadeCobranca = (typeof MODALIDADE_COBRANCA)[number];
 
 export const STATUS_CLIENTE = [

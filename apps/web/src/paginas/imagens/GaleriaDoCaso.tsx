@@ -117,15 +117,22 @@ interface Props {
   permissoes: string[];
   /** Contexto de captura desta tela — vira o módulo de origem da imagem. */
   moduloContexto?: string;
+  /** Etapa pré-selecionada ao enviar (recebimento, requisição, triagem…). */
+  tipoPadrao?: string;
 }
 
-export function GaleriaDoCaso({ casoId, permissoes, moduloContexto = 'M16_IMAGENS' }: Props) {
+export function GaleriaDoCaso({
+  casoId,
+  permissoes,
+  moduloContexto = 'M16_IMAGENS',
+  tipoPadrao = 'macroscopia',
+}: Props) {
   const [imagens, setImagens] = useState<ImagemDoCaso[]>([]);
   const [carregado, setCarregado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
-  const [novoTipo, setNovoTipo] = useState<string>('macroscopia');
+  const [novoTipo, setNovoTipo] = useState<string>(tipoPadrao);
   const entrada = useRef<HTMLInputElement>(null);
 
   const [emEdicao, setEmEdicao] = useState<ImagemDoCaso | null>(null);

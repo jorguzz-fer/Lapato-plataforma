@@ -43,6 +43,7 @@ import {
   type VocabularioCitologia,
 } from '../api';
 import { BloqueioGuardian } from './BloqueioGuardian';
+import { CabecalhoDoMaterial } from './CabecalhoDoMaterial';
 import { AvisoBancadaBloqueada, impedimentoDeBancada } from './AvisoBancadaBloqueada';
 import {
   PainelCitologia,
@@ -560,6 +561,7 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
             <Typography sx={{ fontSize: 13.5 }}>{dossie.servico.nome}</Typography>
           </Box>
         </Stack>
+        <CabecalhoDoMaterial dossie={dossie} />
       </Card>
 
       {!laudo ? (

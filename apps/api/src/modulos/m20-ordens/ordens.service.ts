@@ -4,6 +4,7 @@ import {
   amostra,
   caso,
   cliente,
+  faixaTabelaPreco,
   itemOrdemServico,
   itemTabelaPreco,
   macroscopia,
@@ -145,14 +146,18 @@ export class OrdensService {
       })
       .returning({ id: ordemServico.id });
 
-    const valor = await this.precoVigente(tx, alvo.clienteId, alvo.servicoId);
+    const quantidade = Math.max(quantidadeAmostras, 1);
+    const preco = await this.precoParaQuantidade(tx, alvo.clienteId, alvo.servicoId, quantidade);
     await tx.insert(itemOrdemServico).values({
       tenantId: ctx.tenantId,
       ordemId: ordem!.id,
       servicoId: alvo.servicoId,
-      descricao: alvo.servicoNome,
-      quantidade: String(Math.max(quantidadeAmostras, 1)),
-      valorUnitario: valor,
+      // Faixa por quantidade (documento do Hugo): o item vira 1 x total, com a
+      // quantidade na descricao - o total acordado e exato, sem centavo de
+      // arredondamento num unitario ficticio.
+      descricao: preco.porFaixa ? `${alvo.servicoNome} (${quantidade} amostras)` : alvo.servicoNome,
+      quantidade: preco.porFaixa ? '1' : String(quantidade),
+      valorUnitario: preco.valor,
       ordem: 0,
     });
 
@@ -284,6 +289,43 @@ export class OrdensService {
    * consultado no momento em que um item ENTRA na ordem - nunca para reler
    * itens antigos.
    */
+  /**
+   * Preco para N amostras: a faixa da tabela do cliente quando existe
+   * (documento do Hugo: "1 = 100, 2 = 160, 3 = 200"), senao linear. Faixa
+   * abaixo de N e completada pelo unitario das amostras que excedem.
+   */
+  private async precoParaQuantidade(
+    tx: Transacao,
+    clienteId: string,
+    servicoId: string,
+    quantidade: number,
+  ): Promise<{ valor: string; porFaixa: boolean }> {
+    const ctx = exigirContexto();
+    const unitario = await this.precoVigente(tx, clienteId, servicoId);
+    if (quantidade < 2) return { valor: unitario, porFaixa: false };
+
+    const [faixa] = await tx
+      .select({ quantidade: faixaTabelaPreco.quantidade, valorTotal: faixaTabelaPreco.valorTotal })
+      .from(cliente)
+      .innerJoin(
+        faixaTabelaPreco,
+        and(
+          eq(faixaTabelaPreco.tabelaId, cliente.tabelaPrecoId),
+          eq(faixaTabelaPreco.servicoId, servicoId),
+          eq(faixaTabelaPreco.tenantId, ctx.tenantId),
+          sql`${faixaTabelaPreco.quantidade} <= ${quantidade}`,
+        ),
+      )
+      .where(and(eq(cliente.tenantId, ctx.tenantId), eq(cliente.id, clienteId)))
+      .orderBy(desc(faixaTabelaPreco.quantidade))
+      .limit(1);
+    if (!faixa) return { valor: unitario, porFaixa: false };
+
+    const excedente = quantidade - faixa.quantidade;
+    const total = Number(faixa.valorTotal) + excedente * Number(unitario);
+    return { valor: total.toFixed(2), porFaixa: true };
+  }
+
   private async precoVigente(
     tx: Transacao,
     clienteId: string,
@@ -855,6 +897,82 @@ export class OrdensService {
         )
         .where(and(eq(servico.tenantId, ctx.tenantId), isNull(servico.inativadoEm)))
         .orderBy(asc(servico.nome));
+    });
+  }
+
+  /** Faixas por quantidade de um servico na tabela (documento do Hugo). */
+  async faixasDaTabela(tabelaId: string, servicoId: string) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      await this.exigirTabela(tx, tabelaId);
+      return tx
+        .select({
+          quantidade: faixaTabelaPreco.quantidade,
+          valorTotal: faixaTabelaPreco.valorTotal,
+        })
+        .from(faixaTabelaPreco)
+        .where(
+          and(
+            eq(faixaTabelaPreco.tenantId, ctx.tenantId),
+            eq(faixaTabelaPreco.tabelaId, tabelaId),
+            eq(faixaTabelaPreco.servicoId, servicoId),
+          ),
+        )
+        .orderBy(asc(faixaTabelaPreco.quantidade));
+    });
+  }
+
+  /** Define (ou remove, com total nulo) o total de N amostras do servico na tabela. */
+  async definirFaixaTabela(
+    tabelaId: string,
+    servicoId: string,
+    quantidade: number,
+    valorTotal: number | null,
+  ) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      await this.exigirTabela(tx, tabelaId);
+
+      if (valorTotal == null) {
+        await tx
+          .delete(faixaTabelaPreco)
+          .where(
+            and(
+              eq(faixaTabelaPreco.tenantId, ctx.tenantId),
+              eq(faixaTabelaPreco.tabelaId, tabelaId),
+              eq(faixaTabelaPreco.servicoId, servicoId),
+              eq(faixaTabelaPreco.quantidade, quantidade),
+            ),
+          );
+        return { ok: true };
+      }
+
+      await tx
+        .insert(faixaTabelaPreco)
+        .values({
+          tenantId: ctx.tenantId,
+          tabelaId,
+          servicoId,
+          quantidade,
+          valorTotal: valorTotal.toFixed(2),
+        })
+        .onConflictDoUpdate({
+          target: [
+            faixaTabelaPreco.tenantId,
+            faixaTabelaPreco.tabelaId,
+            faixaTabelaPreco.servicoId,
+            faixaTabelaPreco.quantidade,
+          ],
+          set: { valorTotal: valorTotal.toFixed(2), atualizadoEm: new Date() },
+        });
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'faixa_tabela_preco',
+        entidadeId: tabelaId,
+        acao: 'definir',
+        valorNovo: { servicoId, quantidade, valorTotal: valorTotal.toFixed(2) },
+      });
+      return { ok: true };
     });
   }
 

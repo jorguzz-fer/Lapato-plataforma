@@ -1337,6 +1337,97 @@ interface ItemTabela {
  * poucas tabelas; o cliente escolhe a dele no cadastro. Inativar nao apaga
  * (M01): a tabela some da escolha, nao do historico.
  */
+/**
+ * Faixas por quantidade (documento do Hugo): "1 histopatologico 100, 2 = 160,
+ * 3 = 200" - o total para N amostras, quando nao e linear. Sem faixa, o
+ * preco segue unitario x quantidade.
+ */
+function FaixasDoServico({ tabelaId, servicoId }: { tabelaId: string; servicoId: string }) {
+  const [faixas, setFaixas] = useState<Array<{ quantidade: number; valorTotal: string }>>([]);
+  const [aberto, setAberto] = useState(false);
+  const [quantidade, setQuantidade] = useState('2');
+  const [total, setTotal] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+
+  const carregar = useCallback(() => {
+    api
+      .get<Array<{ quantidade: number; valorTotal: string }>>(
+        `/precos/tabelas/${tabelaId}/faixas?servicoId=${servicoId}`,
+      )
+      .then(setFaixas)
+      .catch(() => setFaixas([]));
+  }, [tabelaId, servicoId]);
+
+  useEffect(carregar, [carregar]);
+
+  async function definir(q: number, valorTotal: number | null) {
+    setErro(null);
+    try {
+      await api.post(`/precos/tabelas/${tabelaId}/faixas`, { servicoId, quantidade: q, valorTotal });
+      carregar();
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível salvar a faixa.');
+    }
+  }
+
+  return (
+    <Box sx={{ mt: 0.25 }}>
+      <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
+        {faixas.map((f) => (
+          <Chip
+            key={f.quantidade}
+            size="small"
+            variant="outlined"
+            label={`${f.quantidade} amostras: ${formatarReais(f.valorTotal)}`}
+            onDelete={() => void definir(f.quantidade, null)}
+          />
+        ))}
+        <Button size="small" onClick={() => setAberto((v) => !v)} sx={{ fontSize: 11, minWidth: 0, px: 0.75 }}>
+          {aberto ? 'Fechar' : faixas.length ? 'Faixa' : 'Faixa por quantidade'}
+        </Button>
+      </Stack>
+      {aberto && (
+        <Stack direction="row" spacing={1} sx={{ mt: 1, alignItems: 'center' }}>
+          <TextField
+            size="small"
+            type="number"
+            label="Amostras"
+            value={quantidade}
+            onChange={(e) => setQuantidade(e.target.value)}
+            slotProps={{ htmlInput: { min: 2, max: 500 } }}
+            sx={{ width: 100 }}
+          />
+          <TextField
+            size="small"
+            label="Total (R$)"
+            value={total}
+            onChange={(e) => setTotal(e.target.value)}
+            sx={{ width: 130 }}
+          />
+          <Button
+            size="small"
+            variant="contained"
+            disabled={!(Number(quantidade) >= 2) || total.trim() === ''}
+            onClick={() => {
+              const v = Number(total.replace(',', '.'));
+              if (!Number.isFinite(v) || v < 0) {
+                setErro('Total inválido.');
+                return;
+              }
+              void definir(Math.trunc(Number(quantidade)), v).then(() => setTotal(''));
+            }}
+          >
+            Definir
+          </Button>
+        </Stack>
+      )}
+      {erro && (
+        <Typography sx={{ fontSize: 11.5, color: 'error.main', mt: 0.5 }}>{erro}</Typography>
+      )}
+    </Box>
+  );
+}
+
 function AbaTabelasPreco() {
   const [tabelas, setTabelas] = useState<TabelaPreco[]>([]);
   const [aberta, setAberta] = useState<TabelaPreco | null>(null);
@@ -1530,8 +1621,9 @@ function DialogoValoresTabela({ tabela, aoFechar }: { tabela: TabelaPreco; aoFec
                 spacing={2}
                 sx={{ alignItems: 'center', justifyContent: 'space-between' }}
               >
-                <Box sx={{ minWidth: 0 }}>
+                <Box sx={{ minWidth: 0, flex: 1 }}>
                   <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{i.nome}</Typography>
+                  <FaixasDoServico tabelaId={tabela.id} servicoId={i.servicoId} />
                   <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
                     Padrão: {i.valorPadrao != null ? formatarReais(i.valorPadrao) : 'sem preço'}
                   </Typography>

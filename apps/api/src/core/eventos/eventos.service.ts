@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { eventoDominio, outboxEvento, type Transacao } from '@lapato/db';
+import { eventoDominio, outboxEvento, type Transacao , usuario } from '@lapato/db';
 import type { NovoEvento, VisibilidadeEvento } from '@lapato/shared';
 import { exigirContexto } from '../contexto/contexto-requisicao.js';
 
@@ -77,6 +77,8 @@ export class EventosService {
       tipo: string;
       moduloOrigem: string;
       usuarioId: string | null;
+      /** Documento do Hugo: "o nome de quem executou cada etapa aumenta o cuidado". */
+      usuarioNome: string | null;
       objetoTipo: string | null;
       payload: Record<string, unknown>;
       ocorridoEm: Date;
@@ -98,11 +100,13 @@ export class EventosService {
         tipo: eventoDominio.tipo,
         moduloOrigem: eventoDominio.moduloOrigem,
         usuarioId: eventoDominio.usuarioId,
+        usuarioNome: usuario.nomeCompleto,
         objetoTipo: eventoDominio.objetoTipo,
         payload: eventoDominio.payload,
         ocorridoEm: eventoDominio.ocorridoEm,
       })
       .from(eventoDominio)
+      .leftJoin(usuario, eq(usuario.id, eventoDominio.usuarioId))
       .where(condicoes.length > 1 ? and(...condicoes) : condicoes[0]!)
       .orderBy(desc(eventoDominio.ocorridoEm));
   }

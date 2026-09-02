@@ -19,6 +19,7 @@ import {
   usuarioPerfil,
   type Transacao,
   macroscopia,
+  naoConformidadePreAnalitica,
 } from '@lapato/db';
 import {
   MODULOS,
@@ -236,7 +237,15 @@ export class CasosService {
    */
   async receberMaterial(
     casoId: string,
-    conferencia: Array<{ recipienteId: string; quantidadeRecebida: number }>,
+    conferencia: Array<{
+      recipienteId: string;
+      quantidadeRecebida: number;
+      /** Documento do Hugo: fragmentos por pote (numero) ou "multiplos". */
+      fragmentosRecebidos?: number | null;
+      fragmentosMultiplos?: boolean;
+      ressalva?: string | null;
+      ressalvaDetalhe?: string | null;
+    }>,
   ): Promise<{ divergencias: number }> {
     const ctx = exigirContexto();
 
@@ -266,8 +275,32 @@ export class CasosService {
 
         await tx
           .update(recipiente)
-          .set({ quantidadeRecebida: item.quantidadeRecebida, recebidoEm: new Date() })
+          .set({
+            quantidadeRecebida: item.quantidadeRecebida,
+            fragmentosRecebidos: item.fragmentosMultiplos ? null : (item.fragmentosRecebidos ?? null),
+            fragmentosMultiplos: item.fragmentosMultiplos ?? false,
+            ressalva: item.ressalva || null,
+            ressalvaDetalhe: item.ressalvaDetalhe?.trim() || null,
+            recebidoEm: new Date(),
+          })
           .where(eq(recipiente.id, alvo.id));
+
+        // A ressalva do pote fica na linha do tempo: e o que a macro e o
+        // laudo precisam ver antes de abrir o material.
+        if (item.ressalva) {
+          await this.eventos.publicar(tx, {
+            tipo: 'ressalva.recebimento',
+            casoId,
+            moduloOrigem: MODULOS.M05_RECEBIMENTO,
+            objetoTipo: 'recipiente',
+            objetoId: alvo.id,
+            payload: {
+              recipiente: alvo.identificador,
+              ressalva: item.ressalva,
+              detalhe: item.ressalvaDetalhe?.trim() || null,
+            },
+          });
+        }
 
         if (
           alvo.quantidadeDeclarada !== null &&
@@ -388,6 +421,24 @@ export class CasosService {
 
       const linhaDoTempo = await this.eventos.linhaDoTempo(tx, casoId);
 
+      // Documento do Hugo: ressalvas e nao conformidades no cabecalho da macro e
+      // do laudo, para conferir antes de abrir o pote.
+      const naoConformidades = await tx
+        .select({
+          id: naoConformidadePreAnalitica.id,
+          tipo: naoConformidadePreAnalitica.tipo,
+          gravidade: naoConformidadePreAnalitica.gravidade,
+          descricao: naoConformidadePreAnalitica.descricao,
+          amostraId: naoConformidadePreAnalitica.amostraId,
+        })
+        .from(naoConformidadePreAnalitica)
+        .where(
+          and(
+            eq(naoConformidadePreAnalitica.tenantId, ctx.tenantId),
+            eq(naoConformidadePreAnalitica.casoId, casoId),
+          ),
+        );
+
       // Responsavel pelo animal: no particular e quem paga e recebe o laudo.
       const [responsavel] = registro.paciente.tutorId
         ? await tx
@@ -399,6 +450,7 @@ export class CasosService {
 
       return {
         ...registro,
+        naoConformidades,
         responsavel: responsavel ?? null,
         patologistaResponsavel: patologistaResponsavel ?? null,
         amostras,
@@ -528,6 +580,71 @@ export class CasosService {
    * que herda o do cassete, que carrega o do caso. Qualquer um deles resolve o
    * caso, e o caso passa a ser de quem bipou.
    */
+  /**
+   * Resolve um codigo bipado (caso, recipiente, cassete, bloco ou lamina) ao
+   * caso, SEM atribuir nada - e o que a fila de macroscopia usa para abrir a
+   * ficha do pote que esta na bancada (documento do Hugo).
+   */
+  async resolverCodigo(codigo: string): Promise<{ casoId: string; identificador: string }> {
+    const ctx = exigirContexto();
+    const limpo = codigo.trim().toUpperCase();
+    if (!limpo) throw new BadRequestException('Bipe ou digite o código da etiqueta.');
+
+    return this.db.executar(async (tx) => {
+      const casoId = await this.casoDoCodigo(tx, limpo);
+      const [registro] = await tx
+        .select({ identificador: caso.identificador })
+        .from(caso)
+        .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.id, casoId)))
+        .limit(1);
+      return { casoId, identificador: registro!.identificador };
+    });
+  }
+
+  private async casoDoCodigo(tx: Transacao, limpo: string): Promise<string> {
+    const ctx = exigirContexto();
+
+    const [direto] = await tx
+      .select({ id: caso.id })
+      .from(caso)
+      .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.identificador, limpo)))
+      .limit(1);
+    if (direto) return direto.id;
+
+    // Etiqueta do pote (documento do Hugo): `CV-000342/26-F01`.
+    const [porRecipiente] = await tx
+      .select({ casoId: recipiente.casoId })
+      .from(recipiente)
+      .where(and(eq(recipiente.tenantId, ctx.tenantId), eq(recipiente.identificador, limpo)))
+      .limit(1);
+    if (porRecipiente) return porRecipiente.casoId;
+
+    const [porCassete] = await tx
+      .select({ casoId: cassete.casoId })
+      .from(cassete)
+      .where(and(eq(cassete.tenantId, ctx.tenantId), eq(cassete.identificador, limpo)))
+      .limit(1);
+    if (porCassete) return porCassete.casoId;
+
+    const [porBloco] = await tx
+      .select({ casoId: bloco.casoId })
+      .from(bloco)
+      .where(and(eq(bloco.tenantId, ctx.tenantId), eq(bloco.identificador, limpo)))
+      .limit(1);
+    if (porBloco) return porBloco.casoId;
+
+    const [porLamina] = await tx
+      .select({ casoId: lamina.casoId })
+      .from(lamina)
+      .where(and(eq(lamina.tenantId, ctx.tenantId), eq(lamina.identificador, limpo)))
+      .limit(1);
+    if (porLamina) return porLamina.casoId;
+
+    throw new NotFoundException(
+      `Nenhum caso, recipiente, cassete, bloco ou lâmina com o código "${limpo}".`,
+    );
+  }
+
   async biparParaMim(codigo: string): Promise<{ casoId: string; identificador: string }> {
     const ctx = exigirContexto();
     const limpo = codigo.trim().toUpperCase();
@@ -540,29 +657,7 @@ export class CasosService {
         .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.identificador, limpo)))
         .limit(1);
       if (direto) return direto.id;
-
-      const [porCassete] = await tx
-        .select({ casoId: cassete.casoId })
-        .from(cassete)
-        .where(and(eq(cassete.tenantId, ctx.tenantId), eq(cassete.identificador, limpo)))
-        .limit(1);
-      if (porCassete) return porCassete.casoId;
-
-      const [porBloco] = await tx
-        .select({ casoId: bloco.casoId })
-        .from(bloco)
-        .where(and(eq(bloco.tenantId, ctx.tenantId), eq(bloco.identificador, limpo)))
-        .limit(1);
-      if (porBloco) return porBloco.casoId;
-
-      const [porLamina] = await tx
-        .select({ casoId: lamina.casoId })
-        .from(lamina)
-        .where(and(eq(lamina.tenantId, ctx.tenantId), eq(lamina.identificador, limpo)))
-        .limit(1);
-      if (porLamina) return porLamina.casoId;
-
-      throw new NotFoundException(`Nenhum caso, cassete, bloco ou lâmina com o código "${limpo}".`);
+      return this.casoDoCodigo(tx, limpo);
     });
 
     await this.atribuirPatologista(casoId, ctx.usuarioId);

@@ -5004,3 +5004,137 @@ describe('documento do Hugo: cadastro, paciente reaproveitado e particular', () 
     expect(semCliente.status).toBe(400);
   });
 });
+
+/**
+ * Documento do Hugo (segunda review): a entrada - etiquetas da requisicao e
+ * dos potes, conferencia com fragmentos e ressalva, bipagem do pote para a
+ * macro, fila da macro com busca, quem executou na linha do tempo e o preco
+ * por faixa de quantidade.
+ */
+describe('documento do Hugo: entrada, etiquetas, fila da macro e preço por faixa', () => {
+  const marca = Date.now().toString().slice(-6);
+  let servicoId: string;
+  let clienteId: string;
+  let casoId: string;
+  let recipienteId: string;
+  let tabelaId: string;
+
+  test('a recepção confere com fragmentos e ressalva; tudo aparece no dossiê e na linha do tempo', async () => {
+    await entrar('admin@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    servicoId = servicos.body.find((s: any) => s.codigo === 'HISTO').id;
+
+    // Cliente proprio, com tabela de preco propria, para a faixa nao vazar
+    // para os outros testes.
+    const cli = await req('POST', '/clientes', {
+      nomeFantasia: `Hospital Faixa ${marca}`,
+      documento: `77${marca}0001`,
+      email: `faixa-${marca}@exemplo.test`,
+      telefone: '85 98888-0000',
+      tipo: 'hospital',
+      codigo: `H${marca.slice(-3)}`,
+    });
+    expect(cli.status, JSON.stringify(cli.body)).toBe(201);
+    clienteId = cli.body.id;
+
+    const criado = await req('POST', '/casos', {
+      servicoId,
+      clienteId,
+      paciente: { nome: `Nina ${marca}`, tutorNome: `Carlos Faixa ${marca}` },
+      amostras: [{ descricao: 'Nódulo 1' }, { descricao: 'Nódulo 2' }],
+      recipientes: [{ quantidadeDeclarada: 2 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    casoId = criado.body.id;
+
+    const dossie = await req('GET', `/casos/${casoId}`);
+    recipienteId = dossie.body.recipientes[0].id;
+
+    // Tabela com faixa: 2 amostras = 160 (e nao 2 x 100).
+    const tabela = await req('POST', '/precos/tabelas', { nome: `Faixa ${marca}` });
+    expect(tabela.status, JSON.stringify(tabela.body)).toBe(201);
+    tabelaId = tabela.body.id;
+    expect((await req('POST', `/precos/tabelas/${tabelaId}/itens`, { servicoId, valor: 100 })).status).toBe(201);
+    expect(
+      (await req('POST', `/precos/tabelas/${tabelaId}/faixas`, { servicoId, quantidade: 2, valorTotal: 160 })).status,
+    ).toBe(201);
+    const faixas = await req('GET', `/precos/tabelas/${tabelaId}/faixas?servicoId=${servicoId}`);
+    expect(faixas.body).toEqual([{ quantidade: 2, valorTotal: '160.00' }]);
+    expect((await req('POST', `/clientes/${clienteId}`, { tabelaPrecoId: tabelaId })).status).toBe(201);
+
+    const recebido = await req('POST', `/casos/${casoId}/recebimento`, {
+      conferencia: [
+        {
+          recipienteId,
+          quantidadeRecebida: 2,
+          fragmentosMultiplos: true,
+          ressalva: 'fixador_insuficiente',
+          ressalvaDetalhe: 'Pote pela metade',
+        },
+      ],
+    });
+    expect([200, 201], JSON.stringify(recebido.body)).toContain(recebido.status);
+
+    const depois = await req('GET', `/casos/${casoId}`);
+    const pote = depois.body.recipientes[0];
+    expect(pote.fragmentosMultiplos).toBe(true);
+    expect(pote.fragmentosRecebidos).toBeNull();
+    expect(pote.ressalva).toBe('fixador_insuficiente');
+    expect(pote.ressalvaDetalhe).toBe('Pote pela metade');
+    expect(Array.isArray(depois.body.naoConformidades)).toBe(true);
+
+    // Quem executou, na linha do tempo (documento do Hugo).
+    const evento = depois.body.linhaDoTempo.find((e: any) => e.tipo === 'ressalva.recebimento');
+    expect(evento).toBeDefined();
+    expect(evento.usuarioNome).toBeTruthy();
+
+    // A OS aplicou a faixa: 1 x 160 com a quantidade na descricao.
+    const ordem = await req('GET', `/ordens/casos/${casoId}`);
+    expect(ordem.status).toBe(200);
+    expect(Number(ordem.body.total)).toBe(160);
+    expect(ordem.body.itens[0].descricao).toContain('2 amostras');
+  });
+
+  test('etiquetas da entrada saem em PDF: requisição, todos os potes ou um pote', async () => {
+    await entrar('admin@lapato.local');
+    for (const alvo of ['', '?alvo=requisicao', '?alvo=recipientes', `?alvo=${recipienteId}`]) {
+      const resposta = await fetch(`${servidor}${BASE}/casos/${casoId}/etiquetas${alvo}`, {
+        headers: { cookie },
+      });
+      expect(resposta.status, alvo).toBe(200);
+      expect(resposta.headers.get('content-type')).toContain('application/pdf');
+      const bytes = Buffer.from(await resposta.arrayBuffer());
+      expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
+    }
+    const inexistente = await fetch(
+      `${servidor}${BASE}/casos/${casoId}/etiquetas?alvo=00000000-0000-4000-8000-000000000000`,
+      { headers: { cookie } },
+    );
+    expect(inexistente.status).toBe(404);
+  });
+
+  test('bipar o pote resolve o caso sem assumi-lo; a fila da macro busca por responsável', async () => {
+    await entrar('tecnico@lapato.local');
+    const dossie = await req('GET', `/casos/${casoId}`);
+    const codigoPote = dossie.body.recipientes[0].identificador;
+
+    const resolvido = await req('POST', '/casos/resolver-codigo', { codigo: codigoPote.toLowerCase() });
+    expect(resolvido.status, JSON.stringify(resolvido.body)).toBe(201);
+    expect(resolvido.body.casoId).toBe(casoId);
+    // Sem atribuir: o patologista responsavel continua vazio.
+    expect((await req('GET', `/casos/${casoId}`)).body.patologistaResponsavel).toBeNull();
+
+    const nada = await req('POST', '/casos/resolver-codigo', { codigo: 'XX-999999/99-F99' });
+    expect(nada.status).toBe(404);
+
+    const fila = await req(
+      'GET',
+      `/fluxo/casos?etapa=aguardando_macroscopia,em_macroscopia&q=${encodeURIComponent(`Carlos Faixa ${marca}`)}`,
+    );
+    expect(fila.status).toBe(200);
+    const naFila = fila.body.find((c: any) => c.casoId === casoId);
+    expect(naFila).toBeDefined();
+    expect(naFila.responsavel).toBe(`Carlos Faixa ${marca}`);
+    expect(naFila.entradaEm).toBeTruthy();
+  });
+});

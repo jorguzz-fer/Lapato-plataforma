@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq, type SQL } from 'drizzle-orm';
+import { and, asc, eq, ilike, inArray, or, type SQL } from 'drizzle-orm';
 import {
   caso,
   cliente,
@@ -7,8 +7,9 @@ import {
   paciente,
   servico,
   type Transacao,
+  tutor,
 } from '@lapato/db';
-import { alertaDePrazo, type Etapa } from '@lapato/shared';
+import { alertaDePrazo, type Etapa, ETAPA } from '@lapato/shared';
 import { DbService } from '../../core/db/db.service.js';
 import { FluxoService } from './fluxo.service.js';
 import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
@@ -27,15 +28,33 @@ export class FluxoConsultaService {
     private readonly fluxo: FluxoService,
   ) {}
 
-  async listar(filtros: { etapa?: Etapa; apenasMinhaFila?: boolean }) {
+  async listar(filtros: { etapa?: Etapa | Etapa[]; apenasMinhaFila?: boolean; q?: string }) {
     const ctx = exigirContexto();
 
     return this.db.executar(async (tx) => {
       const condicoes: SQL[] = [eq(estadoCaso.tenantId, ctx.tenantId)];
 
-      if (filtros.etapa) condicoes.push(eq(estadoCaso.etapa, filtros.etapa));
+      // Uma etapa ou varias (a fila da macro soma "aguardando" e "em").
+      const etapas = (Array.isArray(filtros.etapa) ? filtros.etapa : filtros.etapa ? [filtros.etapa] : [])
+        .filter((e): e is Etapa => (ETAPA as readonly string[]).includes(e));
+      if (etapas.length === 1) condicoes.push(eq(estadoCaso.etapa, etapas[0]!));
+      else if (etapas.length > 1) condicoes.push(inArray(estadoCaso.etapa, etapas));
       if (filtros.apenasMinhaFila) {
         condicoes.push(eq(estadoCaso.responsavelId, ctx.usuarioId));
+      }
+      // Documento do Hugo: na fila da macro, buscar por paciente, responsavel
+      // ou cliente - e o registro, porque a etiqueta tambem se digita.
+      const q = filtros.q?.trim();
+      if (q && q.length >= 2) {
+        const padrao = `%${q}%`;
+        condicoes.push(
+          or(
+            ilike(paciente.nome, padrao),
+            ilike(tutor.nome, padrao),
+            ilike(cliente.nomeFantasia, padrao),
+            ilike(caso.identificador, padrao),
+          )!,
+        );
       }
 
       const linhas = await tx
@@ -43,9 +62,12 @@ export class FluxoConsultaService {
           casoId: caso.id,
           identificador: caso.identificador,
           paciente: paciente.nome,
+          responsavel: tutor.nome,
           cliente: cliente.nomeFantasia,
+          modalidade: caso.modalidade,
           servico: servico.nome,
           prioridade: caso.prioridade,
+          entradaEm: caso.entradaEm,
           etapa: estadoCaso.etapa,
           entrouNaEtapaEm: estadoCaso.entrouNaEtapaEm,
           previsaoLiberacao: estadoCaso.previsaoLiberacao,
@@ -56,10 +78,13 @@ export class FluxoConsultaService {
         .from(estadoCaso)
         .innerJoin(caso, eq(caso.id, estadoCaso.casoId))
         .innerJoin(paciente, eq(paciente.id, caso.pacienteId))
+        .leftJoin(tutor, eq(tutor.id, paciente.tutorId))
         .innerJoin(cliente, eq(cliente.id, caso.clienteId))
         .innerJoin(servico, eq(servico.id, caso.servicoId))
         .where(and(...condicoes))
-        .orderBy(asc(estadoCaso.previsaoLiberacao));
+        // Do mais antigo para o mais recente (documento do Hugo); a previsao
+        // desempata. E a ordem em que a bancada deve pegar os potes.
+        .orderBy(asc(caso.entradaEm), asc(estadoCaso.previsaoLiberacao));
 
       const agora = new Date();
 

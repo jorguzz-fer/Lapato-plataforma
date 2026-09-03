@@ -148,7 +148,21 @@ export function NovoCaso() {
 
   function usarPaciente(p: PacienteEncontrado | null) {
     setPacienteExistente(p);
-    if (!p) return;
+    if (!p) {
+      // Review: limpar a escolha limpa os campos - senao o cadastro seguinte
+      // cria um segundo animal com o microchip do primeiro.
+      setNome('');
+      setEspecieId('');
+      setRaca('');
+      setSexo('');
+      setMicrochip('');
+      setIdadeInformada('');
+      setDataNascimento('');
+      setTutorNome('');
+      setTutorTelefone('');
+      setTutorEmail('');
+      return;
+    }
     setNome(p.nome);
     setRaca(p.raca ?? '');
     setSexo(p.sexo ?? '');

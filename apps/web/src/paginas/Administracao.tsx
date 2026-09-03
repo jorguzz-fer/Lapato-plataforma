@@ -1342,29 +1342,34 @@ interface ItemTabela {
  * 3 = 200" - o total para N amostras, quando nao e linear. Sem faixa, o
  * preco segue unitario x quantidade.
  */
-function FaixasDoServico({ tabelaId, servicoId }: { tabelaId: string; servicoId: string }) {
-  const [faixas, setFaixas] = useState<Array<{ quantidade: number; valorTotal: string }>>([]);
+interface FaixaTabela {
+  servicoId: string;
+  quantidade: number;
+  valorTotal: string;
+}
+
+function FaixasDoServico({
+  tabelaId,
+  servicoId,
+  faixas,
+  aoMudar,
+}: {
+  tabelaId: string;
+  servicoId: string;
+  /** Review: as faixas da tabela vem numa requisicao so, do dialogo. */
+  faixas: FaixaTabela[];
+  aoMudar: () => void;
+}) {
   const [aberto, setAberto] = useState(false);
   const [quantidade, setQuantidade] = useState('2');
   const [total, setTotal] = useState('');
   const [erro, setErro] = useState<string | null>(null);
 
-  const carregar = useCallback(() => {
-    api
-      .get<Array<{ quantidade: number; valorTotal: string }>>(
-        `/precos/tabelas/${tabelaId}/faixas?servicoId=${servicoId}`,
-      )
-      .then(setFaixas)
-      .catch(() => setFaixas([]));
-  }, [tabelaId, servicoId]);
-
-  useEffect(carregar, [carregar]);
-
   async function definir(q: number, valorTotal: number | null) {
     setErro(null);
     try {
       await api.post(`/precos/tabelas/${tabelaId}/faixas`, { servicoId, quantidade: q, valorTotal });
-      carregar();
+      aoMudar();
     } catch (err) {
       setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível salvar a faixa.');
     }
@@ -1557,6 +1562,14 @@ function AbaTabelasPreco() {
 
 function DialogoValoresTabela({ tabela, aoFechar }: { tabela: TabelaPreco; aoFechar: () => void }) {
   const [itens, setItens] = useState<ItemTabela[]>([]);
+  const [faixas, setFaixas] = useState<FaixaTabela[]>([]);
+  const carregarFaixas = useCallback(() => {
+    api
+      .get<FaixaTabela[]>(`/precos/tabelas/${tabela.id}/faixas`)
+      .then(setFaixas)
+      .catch(() => setFaixas([]));
+  }, [tabela.id]);
+  useEffect(carregarFaixas, [carregarFaixas]);
   const [edicao, setEdicao] = useState<Record<string, string>>({});
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -1623,7 +1636,12 @@ function DialogoValoresTabela({ tabela, aoFechar }: { tabela: TabelaPreco; aoFec
               >
                 <Box sx={{ minWidth: 0, flex: 1 }}>
                   <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{i.nome}</Typography>
-                  <FaixasDoServico tabelaId={tabela.id} servicoId={i.servicoId} />
+                  <FaixasDoServico
+                    tabelaId={tabela.id}
+                    servicoId={i.servicoId}
+                    faixas={faixas.filter((f) => f.servicoId === i.servicoId)}
+                    aoMudar={carregarFaixas}
+                  />
                   <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
                     Padrão: {i.valorPadrao != null ? formatarReais(i.valorPadrao) : 'sem preço'}
                   </Typography>

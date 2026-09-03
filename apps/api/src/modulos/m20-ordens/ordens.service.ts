@@ -304,6 +304,21 @@ export class OrdensService {
     const unitario = await this.precoVigente(tx, clienteId, servicoId);
     if (quantidade < 2) return { valor: unitario, porFaixa: false };
 
+    // Review: o acordo individual do cliente vence a tabela inteira - faixas
+    // incluidas. So a tabela do cliente tem faixa; o acordo e sempre unitario.
+    const [acordo] = await tx
+      .select({ id: precoCliente.id })
+      .from(precoCliente)
+      .where(
+        and(
+          eq(precoCliente.tenantId, ctx.tenantId),
+          eq(precoCliente.clienteId, clienteId),
+          eq(precoCliente.servicoId, servicoId),
+        ),
+      )
+      .limit(1);
+    if (acordo) return { valor: unitario, porFaixa: false };
+
     const [faixa] = await tx
       .select({ quantidade: faixaTabelaPreco.quantidade, valorTotal: faixaTabelaPreco.valorTotal })
       .from(cliente)
@@ -901,12 +916,13 @@ export class OrdensService {
   }
 
   /** Faixas por quantidade de um servico na tabela (documento do Hugo). */
-  async faixasDaTabela(tabelaId: string, servicoId: string) {
+  async faixasDaTabela(tabelaId: string, servicoId?: string) {
     return this.db.executar(async (tx) => {
       const ctx = exigirContexto();
       await this.exigirTabela(tx, tabelaId);
       return tx
         .select({
+          servicoId: faixaTabelaPreco.servicoId,
           quantidade: faixaTabelaPreco.quantidade,
           valorTotal: faixaTabelaPreco.valorTotal,
         })
@@ -915,11 +931,22 @@ export class OrdensService {
           and(
             eq(faixaTabelaPreco.tenantId, ctx.tenantId),
             eq(faixaTabelaPreco.tabelaId, tabelaId),
-            eq(faixaTabelaPreco.servicoId, servicoId),
+            ...(servicoId ? [eq(faixaTabelaPreco.servicoId, servicoId)] : []),
           ),
         )
-        .orderBy(asc(faixaTabelaPreco.quantidade));
+        .orderBy(asc(faixaTabelaPreco.servicoId), asc(faixaTabelaPreco.quantidade));
     });
+  }
+
+  /** Servico da propria instituicao - a FK sozinha aceitaria um id de outro tenant. */
+  private async exigirServico(tx: Transacao, servicoId: string) {
+    const ctx = exigirContexto();
+    const [alvo] = await tx
+      .select({ id: servico.id })
+      .from(servico)
+      .where(and(eq(servico.tenantId, ctx.tenantId), eq(servico.id, servicoId)))
+      .limit(1);
+    if (!alvo) throw new BadRequestException('Serviço não encontrado.');
   }
 
   /** Define (ou remove, com total nulo) o total de N amostras do servico na tabela. */
@@ -932,6 +959,7 @@ export class OrdensService {
     return this.db.executar(async (tx) => {
       const ctx = exigirContexto();
       await this.exigirTabela(tx, tabelaId);
+      await this.exigirServico(tx, servicoId);
 
       if (valorTotal == null) {
         await tx
@@ -981,6 +1009,7 @@ export class OrdensService {
     return this.db.executar(async (tx) => {
       const ctx = exigirContexto();
       await this.exigirTabela(tx, tabelaId);
+      await this.exigirServico(tx, servicoId);
 
       if (valor == null) {
         await tx

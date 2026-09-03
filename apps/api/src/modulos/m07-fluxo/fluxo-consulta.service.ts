@@ -28,7 +28,13 @@ export class FluxoConsultaService {
     private readonly fluxo: FluxoService,
   ) {}
 
-  async listar(filtros: { etapa?: Etapa | Etapa[]; apenasMinhaFila?: boolean; q?: string }) {
+  async listar(filtros: {
+    etapa?: Etapa | Etapa[];
+    apenasMinhaFila?: boolean;
+    q?: string;
+    /** `entrada`: fila da bancada, do mais antigo ao mais recente. Padrao: prazo. */
+    ordem?: 'previsao' | 'entrada';
+  }) {
     const ctx = exigirContexto();
 
     return this.db.executar(async (tx) => {
@@ -82,9 +88,13 @@ export class FluxoConsultaService {
         .innerJoin(cliente, eq(cliente.id, caso.clienteId))
         .innerJoin(servico, eq(servico.id, caso.servicoId))
         .where(and(...condicoes))
-        // Do mais antigo para o mais recente (documento do Hugo); a previsao
-        // desempata. E a ordem em que a bancada deve pegar os potes.
-        .orderBy(asc(caso.entradaEm), asc(estadoCaso.previsaoLiberacao));
+        // Review: a central e as solicitacoes seguem por prazo (o urgente
+        // primeiro); so a fila da macro pede entrada (documento do Hugo).
+        .orderBy(
+          ...(filtros.ordem === 'entrada'
+            ? [asc(caso.entradaEm), asc(estadoCaso.previsaoLiberacao)]
+            : [asc(estadoCaso.previsaoLiberacao), asc(caso.entradaEm)]),
+        );
 
       const agora = new Date();
 

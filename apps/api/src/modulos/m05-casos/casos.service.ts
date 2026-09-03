@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { aliasedTable, and, desc, eq, getTableColumns, ilike, inArray, or, sql } from 'drizzle-orm';
+import { aliasedTable, and, desc, eq, getTableColumns, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   amostra,
   bloco,
@@ -137,11 +137,26 @@ export class CasosService {
         throw new BadRequestException('Informe o cliente do convênio.');
       }
       if (modalidade === 'particular') {
-        const contato = dados.paciente.tutorTelefone?.trim() || dados.paciente.tutorEmail?.trim();
-        if (!dados.paciente.id && (!dados.paciente.tutorNome?.trim() || !contato)) {
-          throw new BadRequestException(
-            'Exame particular precisa do responsável com telefone ou e-mail — é dele que se cobra e para ele que vai o laudo.',
-          );
+        const semResponsavel =
+          'Exame particular precisa do responsável com telefone ou e-mail — é dele que se cobra e para ele que vai o laudo.';
+        if (dados.paciente.id) {
+          // Reaproveitado: o responsavel ja gravado precisa ter contato.
+          const [existente] = await tx
+            .select({ telefone: tutor.telefone, email: tutor.email })
+            .from(paciente)
+            .innerJoin(tutor, eq(tutor.id, paciente.tutorId))
+            .where(and(eq(paciente.tenantId, ctx.tenantId), eq(paciente.id, dados.paciente.id)))
+            .limit(1);
+          if (!existente || !(existente.telefone?.trim() || existente.email?.trim())) {
+            throw new BadRequestException(
+              `${semResponsavel} Corrija a identificação do animal antes de cadastrar o exame.`,
+            );
+          }
+        } else {
+          const contato = dados.paciente.tutorTelefone?.trim() || dados.paciente.tutorEmail?.trim();
+          if (!dados.paciente.tutorNome?.trim() || !contato) {
+            throw new BadRequestException(semResponsavel);
+          }
         }
       }
 
@@ -650,15 +665,7 @@ export class CasosService {
     const limpo = codigo.trim().toUpperCase();
     if (!limpo) throw new BadRequestException('Bipe ou digite o código da lâmina.');
 
-    const casoId = await this.db.executar(async (tx) => {
-      const [direto] = await tx
-        .select({ id: caso.id })
-        .from(caso)
-        .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.identificador, limpo)))
-        .limit(1);
-      if (direto) return direto.id;
-      return this.casoDoCodigo(tx, limpo);
-    });
+    const casoId = await this.db.executar((tx) => this.casoDoCodigo(tx, limpo));
 
     await this.atribuirPatologista(casoId, ctx.usuarioId);
 
@@ -727,7 +734,7 @@ export class CasosService {
       .values({
         tenantId: ctx.tenantId,
         nome: dados.nome,
-        especieId: dados.especieId ?? null,
+        especieId: dados.especieId || null,
         raca: dados.raca?.trim() || null,
         sexo: dados.sexo ?? null,
         dataNascimento: dados.dataNascimento || null,
@@ -749,10 +756,20 @@ export class CasosService {
   private async obterClienteParticular(tx: Transacao): Promise<string> {
     const ctx = exigirContexto();
 
+    // Review: a instituicao pode ter cadastrado uma pessoa fisica como cliente
+    // do tipo `tutor_particular` pela tela. O pseudo-cliente e SO o que este
+    // metodo criou - reconhecido pela sigla reservada e ativo.
     const [existente] = await tx
       .select({ id: cliente.id })
       .from(cliente)
-      .where(and(eq(cliente.tenantId, ctx.tenantId), eq(cliente.tipo, 'tutor_particular')))
+      .where(
+        and(
+          eq(cliente.tenantId, ctx.tenantId),
+          eq(cliente.tipo, 'tutor_particular'),
+          inArray(cliente.codigo, ['PT', 'PART']),
+          isNull(cliente.inativadoEm),
+        ),
+      )
       .orderBy(cliente.criadoEm)
       .limit(1);
     if (existente) return existente.id;

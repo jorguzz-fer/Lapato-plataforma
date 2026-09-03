@@ -369,6 +369,18 @@ export class ClientesService {
         .limit(1);
       if (!instituicao) throw new NotFoundException('Instituição não encontrada.');
 
+      // Um convite vivo por cliente: gerar de novo encerra os anteriores.
+      await tx
+        .update(conviteCadastroCliente)
+        .set({ expiraEm: new Date(), atualizadoEm: new Date() })
+        .where(
+          and(
+            eq(conviteCadastroCliente.tenantId, ctx.tenantId),
+            eq(conviteCadastroCliente.clienteId, clienteId),
+            isNull(conviteCadastroCliente.usadoEm),
+          ),
+        );
+
       const tokenBruto = randomBytes(32).toString('base64url');
       const expiraEm = new Date(Date.now() + 7 * 24 * 3_600_000);
       await tx.insert(conviteCadastroCliente).values({
@@ -442,6 +454,27 @@ export class ClientesService {
         .limit(1);
       if (!atual) throw new NotFoundException('Convite não encontrado.');
 
+      // Review: mesmas regras do cadastro interno - documento com digitos de
+      // verdade e sem colidir com outro cliente da instituicao.
+      const documento = dados.documento.replace(/\D/g, '');
+      if (documento.length < 11) {
+        throw new BadRequestException('Informe o CNPJ (ou CPF) completo, só com os dígitos.');
+      }
+      const [colisao] = await tx
+        .select({ id: cliente.id })
+        .from(cliente)
+        .where(
+          and(
+            eq(cliente.tenantId, tenantId),
+            eq(cliente.documento, documento),
+            sql`${cliente.id} <> ${convite.clienteId}`,
+          ),
+        )
+        .limit(1);
+      if (colisao) {
+        throw new ConflictException('Já existe outro cadastro com este documento. Fale com o laboratório.');
+      }
+
       const agora = new Date();
       // Uso unico: marca antes de escrever, e so segue se ninguem marcou antes.
       const consumido = await tx
@@ -462,7 +495,7 @@ export class ClientesService {
         .set({
           nomeFantasia: dados.nomeFantasia.trim(),
           razaoSocial: dados.razaoSocial?.trim() || null,
-          documento: dados.documento.replace(/\D/g, ''),
+          documento,
           email: dados.email.trim().toLowerCase(),
           telefone: dados.telefone.trim(),
           atualizadoEm: agora,
@@ -495,8 +528,10 @@ export class ClientesService {
           clienteId: conviteCadastroCliente.clienteId,
           expiraEm: conviteCadastroCliente.expiraEm,
           usadoEm: conviteCadastroCliente.usadoEm,
+          clienteInativadoEm: cliente.inativadoEm,
         })
         .from(conviteCadastroCliente)
+        .innerJoin(cliente, eq(cliente.id, conviteCadastroCliente.clienteId))
         .where(
           and(
             eq(conviteCadastroCliente.tenantId, instituicao.id),
@@ -507,6 +542,8 @@ export class ClientesService {
       return c ?? null;
     });
     if (!convite) throw new NotFoundException('Convite não encontrado.');
+    // Cliente inativado depois do convite: o link morre junto.
+    if (convite.clienteInativadoEm) throw new NotFoundException('Convite não encontrado.');
     if (convite.usadoEm) throw new GoneException('Este link já foi usado.');
     if (convite.expiraEm.getTime() < Date.now()) throw new NotFoundException('Convite não encontrado.');
     return { tenantId: instituicao.id, convite };

@@ -32,7 +32,10 @@ export function FilaMacroscopia() {
   useEffect(() => {
     const q = busca.trim();
     const alca = setTimeout(() => {
-      const consulta = new URLSearchParams({ etapa: 'aguardando_macroscopia,em_macroscopia' });
+      const consulta = new URLSearchParams({
+        etapa: 'aguardando_macroscopia,em_macroscopia',
+        ordem: 'entrada',
+      });
       if (q.length >= 2) consulta.set('q', q);
       api
         .get<CasoNaFila[]>(`/fluxo/casos?${consulta.toString()}`)

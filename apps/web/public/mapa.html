@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Acompanhamento do desenvolvimento do LAPATO — Sistema Integrado de Gestão Anatomopatológica Veterinária. Estado de cada um dos 26 módulos.">
+<meta name="description" content="Acompanhamento do desenvolvimento do LAPATO — Sistema Integrado de Gestão Anatomopatológica Veterinária. Estado de cada um dos 26 módulos, entregas e roteiro de homologação.">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#fafafc" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d0f15" media="(prefers-color-scheme: dark)">
@@ -481,6 +481,374 @@
 
     .nota { grid-column: 2; margin-top: 4px; }
   }
+
+  /* ===================== abas ===================== */
+
+  .abas {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-top: -8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .abas::-webkit-scrollbar { display: none; }
+
+  .aba {
+    appearance: none;
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 10px 14px 12px;
+    font: inherit;
+    font-size: 14.5px;
+    font-weight: 500;
+    color: var(--ink-soft);
+    cursor: pointer;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .aba:hover { color: var(--ink); }
+
+  .aba[aria-selected="true"] {
+    color: var(--accent-deep);
+    border-bottom-color: var(--accent);
+  }
+
+  .aba .badge {
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 100px;
+    background: var(--surface-2);
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .aba[aria-selected="true"] .badge { background: var(--accent-wash); color: var(--accent-deep); }
+
+  .aba:focus-visible, .cenario select:focus-visible, .cenario input:focus-visible, .hom-placar button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .painel { display: flex; flex-direction: column; gap: 40px; }
+  .painel[hidden] { display: none; }
+
+  /* ===================== entregas ===================== */
+
+  .entregas-placar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }
+
+  .entregas-placar .metrica .n { color: var(--accent-deep); }
+
+  .rodada { display: flex; flex-direction: column; }
+
+  .rodada-cabeca {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-bottom: 10px;
+    margin-bottom: 2px;
+    border-bottom: 2px solid var(--group);
+  }
+
+  .rodada-cabeca h2 {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 19px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--group);
+  }
+
+  .rodada-cabeca .quando {
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
+    font-size: 12px;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rodada-intro { margin: 10px 0 12px; color: var(--ink-soft); font-size: 14px; max-width: 72ch; }
+
+  .entrega {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .entrega:first-of-type { border-top: 1px solid var(--border); border-radius: var(--radius) var(--radius) 0 0; }
+  .entrega:last-of-type  { border-radius: 0 0 var(--radius) var(--radius); }
+
+  .entrega .pr {
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
+    font-size: 12.5px;
+    color: var(--accent-deep);
+    font-variant-numeric: tabular-nums;
+    padding-top: 2px;
+  }
+
+  .entrega .titulo { font-weight: 600; font-size: 14.5px; line-height: 1.35; margin: 0 0 3px; }
+  .entrega .mods {
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
+    font-size: 11px;
+    color: var(--ink-faint);
+    letter-spacing: .06em;
+    margin-left: 8px;
+    font-weight: 500;
+  }
+  .entrega .detalhe { margin: 0; font-size: 13px; color: var(--ink-soft); line-height: 1.45; }
+
+  /* ===================== homologação ===================== */
+
+  .hom-resumo {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }
+
+  .hom-aviso {
+    background: var(--parcial-wash);
+    border-left: 3px solid var(--parcial);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 14px 18px;
+  }
+
+  .hom-aviso p { margin: 4px 0; max-width: 78ch; }
+  .hom-aviso p strong { color: var(--ink); }
+
+  .hom-aviso pre, .hom-aviso code, .cenario code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
+    font-size: 12.5px;
+  }
+
+  .hom-aviso code, .cenario code { background: var(--surface); padding: 1px 5px; border-radius: 4px; }
+
+  .hom-aviso pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    overflow-x: auto;
+    margin: 8px 0 2px;
+  }
+
+  .rolagem { overflow-x: auto; }
+
+  table.quem {
+    border-collapse: collapse;
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    font-size: 14px;
+  }
+
+  table.quem th, table.quem td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.quem th {
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+    background: var(--surface-2);
+  }
+  table.quem tr:last-child td { border-bottom: 0; }
+
+  .hom-placar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--ground);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    align-items: center;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+  }
+
+  .hom-placar b { font-variant-numeric: tabular-nums; color: var(--ink); }
+  .hom-placar [data-conta="ok"] { color: var(--pronto); }
+  .hom-placar [data-conta="falhou"] { color: var(--semdoc); }
+  .hom-placar [data-conta="bloqueado"] { color: var(--parcial); }
+
+  .hom-placar button {
+    font: inherit;
+    font-size: 12.5px;
+    padding: 4px 10px;
+    border: 1px solid var(--border-firm);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--ink-soft);
+    cursor: pointer;
+    margin-left: auto;
+  }
+
+  .hom-bloco { display: flex; flex-direction: column; gap: 12px; }
+
+  .hom-bloco-cab {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    align-items: baseline;
+    border-bottom: 2px solid var(--group);
+    padding-bottom: 10px;
+  }
+
+  .hom-bloco-cab h2 {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 19px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--group);
+    text-wrap: balance;
+  }
+
+  .hom-bloco-cab .pr {
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+
+  .hom-bloco-cab .menu { font-size: 13px; color: var(--ink-soft); }
+
+  .cenario {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .cenario .cab {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 10px 14px;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid transparent;
+  }
+
+  .cenario h3 { font-size: 15.5px; font-weight: 600; margin: 0; }
+
+  .cenario .id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
+    font-size: 12.5px;
+    color: var(--accent-deep);
+    background: var(--accent-wash);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  .cenario .meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--ink-faint); }
+  .cenario .meta span { border: 1px solid var(--border); border-radius: 100px; padding: 1px 9px; }
+
+  .corpo { display: grid; grid-template-columns: 1fr 1fr; }
+  .corpo > div { padding: 14px 16px; }
+  .corpo > div + div { border-left: 1px solid var(--border); }
+
+  .corpo h4 {
+    margin: 0 0 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+  }
+
+  .corpo ol, .corpo ul { margin: 0; padding-left: 20px; font-size: 14px; }
+  .corpo li { margin: 4px 0; }
+  .corpo ul.esperado { list-style: none; padding-left: 0; }
+  .corpo ul.esperado li { padding-left: 24px; position: relative; }
+  .corpo ul.esperado li::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: .45em;
+    width: 11px;
+    height: 11px;
+    border: 2px solid var(--pronto);
+    border-radius: 3px;
+  }
+
+  kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace;
+    font-size: .85em;
+    border: 1px solid var(--border-firm);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 0 .35em;
+    background: var(--surface-2);
+  }
+
+  .hom-rodape {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+
+  .hom-rodape label { font-size: 13px; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 8px; }
+
+  .hom-rodape select, .hom-rodape input {
+    font: inherit;
+    font-size: 13.5px;
+    padding: 5px 8px;
+    border: 1px solid var(--border-firm);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--ink);
+  }
+
+  .hom-rodape input { flex: 1; min-width: 200px; }
+
+  .cenario[data-estado="ok"] .cab { border-left-color: var(--pronto); }
+  .cenario[data-estado="falhou"] .cab { border-left-color: var(--semdoc); }
+  .cenario[data-estado="bloqueado"] .cab { border-left-color: var(--parcial); }
+  .cenario[data-estado="ok"] .id { background: var(--pronto-wash); color: var(--pronto); }
+  .cenario[data-estado="falhou"] .id { background: var(--semdoc-wash); color: var(--semdoc); }
+  .cenario[data-estado="bloqueado"] .id { background: var(--parcial-wash); color: var(--parcial); }
+
+  .hom-fora ul { margin: 0; padding-left: 20px; font-size: 14px; color: var(--ink-soft); }
+  .hom-fora li { margin: 4px 0; }
+  .hom-fora p.fecho { margin: 16px 0 0; color: var(--ink-soft); max-width: 68ch; }
+
+  @media (max-width: 780px) {
+    .corpo { grid-template-columns: 1fr; }
+    .corpo > div + div { border-left: 0; border-top: 1px solid var(--border); }
+    .cenario .cab { grid-template-columns: auto 1fr; }
+    .cenario .cab .meta { grid-column: 1 / -1; }
+    .entrega { grid-template-columns: 1fr; gap: 4px; }
+  }
+
+  @media print {
+    .abas, .hom-rodape, .hom-placar button { display: none; }
+    .painel[hidden] { display: flex; }
+    .cenario { break-inside: avoid; box-shadow: none; }
+  }
 </style>
 
 </head>
@@ -503,23 +871,43 @@
       testado; só ainda não tem interface própria.
     </p>
     <p class="resumo-texto">
-      <strong>Todos os dezoito módulos com documentação escrita estão construídos de ponta a
-      ponta</strong> — o último a fechar foi a Inteligência Artificial, com o Copiloto real
-      ligado por variável de ambiente. O LAPATO continua operando integralmente sem IA, que é
-      exigência do próprio módulo, e não um modo degradado. Dos oito que aguardam documentação,
-      dois já têm a base pronta: a trilha de auditoria imutável (M22) e a fila de notificações
-      (M26). <strong>O que destrava a próxima fase é a especificação dos oito, não código.</strong>
+      <strong>Os dezoito módulos da documentação original estão construídos de ponta a ponta e em
+      produção.</strong> Desde então o sistema passou por duas rodadas de revisão com quem opera
+      o laboratório, e o que saiu delas está no ar: cadastro por convênio ou particular, entrada
+      com etiquetas e código de barras, fila da macroscopia, destino do caso a um patologista,
+      preços por perfil de cliente e o fechamento mensal. O Financeiro (20) nasceu dessas rodadas
+      e a Logística (19) ganhou documentação e a primeira fatia. <strong>O que vem agora é a
+      homologação em produção</strong> — a terceira aba desta página.
     </p>
   </header>
+
+  <nav class="abas" role="tablist" aria-label="Seções do mapa">
+    <button class="aba" role="tab" id="aba-modulos" aria-controls="painel-modulos" aria-selected="true" data-aba="modulos">Módulos <span class="badge">26</span></button>
+    <button class="aba" role="tab" id="aba-entregas" aria-controls="painel-entregas" aria-selected="false" data-aba="entregas">Entregas <span class="badge">27 PRs</span></button>
+    <button class="aba" role="tab" id="aba-homologacao" aria-controls="painel-homologacao" aria-selected="false" data-aba="homologacao">Homologação <span class="badge">18 cenários</span></button>
+  </nav>
+
+  <!-- ======================================================================
+       ABA 1 · MÓDULOS
+       ====================================================================== -->
+  <div class="painel" id="painel-modulos" role="tabpanel" aria-labelledby="aba-modulos">
 
   <section class="placar" aria-label="Resumo do estado dos módulos">
     <div class="metrica is-pronto">
       <span class="n">18</span>
       <span class="r">Prontos de ponta a ponta</span>
     </div>
+    <div class="metrica is-parcial">
+      <span class="n">2</span>
+      <span class="r">Em construção (19 · 20)</span>
+    </div>
+    <div class="metrica is-ausente">
+      <span class="n">4</span>
+      <span class="r">Documentados, a construir (21–24)</span>
+    </div>
     <div class="metrica is-semdoc">
-      <span class="n">8</span>
-      <span class="r">Aguardando documentação</span>
+      <span class="n">2</span>
+      <span class="r">Aguardando documentação (25 · 26)</span>
     </div>
   </section>
 
@@ -547,7 +935,7 @@
       <span class="nome">Recebimento e Cadastro de Amostras</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
-      <span class="nota">Duas telas: cadastro e recebimento. A conferência nasce com o campo vazio, de propósito.</span>
+      <span class="nota">Cadastro por <strong>convênio ou particular</strong> (no particular o responsável traz o material e é cobrado dele), paciente já atendido reaproveitado sem duplicar, raça e idade, data de <strong>entrada do material</strong> informada e corrigível. Etiquetas da requisição e de cada pote em PDF com Code 128. Conferência mostra o declarado ao lado do recebido: fragmentos por pote, ressalva com detalhe e fotos da entrada pela câmera.</span>
     </div>
 
     <div class="modulo">
@@ -555,7 +943,7 @@
       <span class="nome">Triagem de Amostras</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
-      <span class="nota">Bloqueio trava o caso de verdade: cria pendência e suspende o prazo.</span>
+      <span class="nota">Bloqueio trava o caso de verdade: cria pendência e suspende o prazo. Passou a ser <strong>opcional por serviço</strong>, religável na Administração — o motor de fluxo herda os gatilhos da etapa pulada.</span>
     </div>
 
     <div class="modulo">
@@ -563,7 +951,7 @@
       <span class="nome">Rastreamento e Gestão de Fluxo</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
-      <span class="nota">Central de Casos e dossiê único. É o único módulo que escreve o estado do caso.</span>
+      <span class="nota">Único módulo que escreve o estado do caso. <strong>Painel de chegada</strong> como primeira tela: volumetria do dia, o que precisa de você agora, casos por etapa e entradas × liberações. Prazo contado da data de entrada. Destino do caso a um patologista, bipagem de lâmina que puxa o caso para quem bipou e a fila <em>Meus casos</em>.</span>
     </div>
 
     <div class="modulo">
@@ -571,7 +959,7 @@
       <span class="nome">Macroscopia</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
-      <span class="nota">Uma ficha por amostra. É onde nasce o cassete, primeiro elo da rastreabilidade.</span>
+      <span class="nota">Fila própria dos aptos, do mais antigo ao mais novo, com busca e bipagem do pote abrindo a ficha. <strong>Cartão do fragmento</strong>: medidas em cm e descrição rápida em bloquinhos com prévia da frase ao vivo, composta pela mesma função do servidor — sem IA. Cassetes em um clique, obrigatórios em vermelho, cabeçalho do material com o que veio em cada pote. Concluir a macro torna a OS faturável; o <strong>recorte</strong> reabre a ficha a custo zero sem reiniciar o prazo.</span>
     </div>
 
     <div class="modulo">
@@ -579,7 +967,7 @@
       <span class="nome">Processamento Histológico e Colorações</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
-      <span class="nota">Terceirizado. Lado interno e portal do parceiro, com isolamento por unidade — ele só vê os próprios lotes.</span>
+      <span class="nota">Terceirizado. Lado interno e portal do parceiro, com isolamento por unidade. As etiquetas de lâmina do lote saem em PDF no tamanho do modelo configurado, com Code 128, para o laboratório de apoio imprimir na impressora dele.</span>
     </div>
 
     <div class="modulo">
@@ -587,7 +975,7 @@
       <span class="nome">Solicitações e Pendências</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronta</span></span>
-      <span class="nota">Fila única de demandas com numeração própria, aprovação prévia, conversa por demanda e resolução que desbloqueia o caso — inclusive as pendências de triagem, que antes só saíam por acesso direto ao banco.</span>
+      <span class="nota">Fila única de demandas com numeração própria, aprovação prévia, conversa por demanda e resolução que desbloqueia o caso. Aba <em>Minhas</em> para o patologista não esquecer a coloração que pediu; o recorte da macroscopia entra aqui como solicitação.</span>
     </div>
   </section>
 
@@ -607,7 +995,7 @@
       <span class="nome">Laudos e Microscopia</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
-      <span class="nota">Elaboração, revisão, assinatura, liberação e agora o PDF assinado com QR Code de validação pública — o caso chega a liberado pela interface, com documento em mãos, fechando a fatia vertical.</span>
+      <span class="nota">Elaboração, revisão, assinatura, liberação e o PDF assinado com QR Code de validação pública. Agora com o cabeçalho do material (cliente, raça, entrada, potes e ressalvas) na tela do laudo e o <strong>Arquivo de laudos</strong>: busca por paciente, cliente, responsável, palavra da conclusão, lâmina ou OS, com o trecho ao redor do termo.</span>
     </div>
 
     <div class="modulo">
@@ -615,7 +1003,7 @@
       <span class="nome">Histopatologia</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
-      <span class="nota">Margens e diagnóstico estruturado, na mesma tela do 11 — são o mesmo ato.</span>
+      <span class="nota">Margens e diagnóstico estruturado, na mesma tela do 11 — são o mesmo ato. O serviço passou a se chamar só "Histopatologia".</span>
     </div>
 
     <div class="modulo">
@@ -631,7 +1019,7 @@
       <span class="nome">Necropsia</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
-      <span class="nota">O raciocínio necroscópico inteiro: exame por cavidade e órgão com “não examinado” distinto de “sem alterações”, Objeto Lesão com classificação funcional, cadeia fisiopatológica ligando as lesões, e causa mortis estruturada com mecanismo em campo próprio. O Guardian barra extrapolação causal e evidência insuficiente. Captura por voz, mapa corporal e requisitos forenses ficam para a fase seguinte.</span>
+      <span class="nota">O raciocínio necroscópico inteiro: exame por cavidade e órgão com "não examinado" distinto de "sem alterações", Objeto Lesão com classificação funcional, cadeia fisiopatológica ligando as lesões, e causa mortis estruturada. O Guardian barra extrapolação causal e evidência insuficiente. Captura por voz, mapa corporal e requisitos forenses ficam para a fase seguinte.</span>
     </div>
   </section>
 
@@ -651,7 +1039,7 @@
       <span class="nome">Administração e Configurações</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronta</span></span>
-      <span class="nota">Serviços com as regras de fluxo e prazo, tabelas mestres, unidades/setores e calendário — o laboratório configura o sistema pela interface, sem apoio da equipe técnica. Itens avançados (numeração custom, modelos de etiqueta, locais físicos) evoluem sob demanda.</span>
+      <span class="nota">Serviços com regras de fluxo, prazo e preço padrão, tabelas mestres, unidades/setores e calendário. Aba <em>Etiquetas</em> edita as dimensões dos modelos, e a impressão sai no tamanho certo sem deploy. Aba <em>Tabelas de preço</em>: uma por perfil de cliente, com faixas por quantidade. Fuso horário da instituição corrigido.</span>
     </div>
 
     <div class="modulo">
@@ -659,15 +1047,15 @@
       <span class="nome">Usuários, Perfis e Permissões</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronta</span></span>
-      <span class="nota">Login, MFA e o ciclo de vida da conta pela interface: criar com senha provisória de uso único, atribuir perfis, bloquear (derruba sessões na hora) e redefinir senha — tudo auditado. Delegação temporária evolui sob demanda.</span>
+      <span class="nota">Login, MFA e o ciclo de vida da conta pela interface, tudo auditado. O campo Instituição some do login enquanto há uma só; e-mail do usuário corrigível; perfil <em>financeiro</em> novo. O patologista é usuário comum com o perfil certo — não existe cadastro paralelo de laudador.</span>
     </div>
 
     <div class="modulo">
       <span class="num">22</span>
       <span class="nome">Qualidade e Auditoria</span>
-      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Parcial</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Base pronta</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
-      <span class="nota">A trilha imutável já grava tudo. O módulo que a consome depende de documentação.</span>
+      <span class="nota">Documentado. A trilha imutável já grava tudo, e duas auditorias de segurança contra o Blueprint §6 foram feitas e fechadas. O módulo que consome a trilha (indicadores, não conformidades, eventos de estorno e desconto) é o próximo a construir depois da homologação.</span>
     </div>
   </section>
 
@@ -687,7 +1075,7 @@
       <span class="nome">Cadastro de Clientes e Veterinários</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronta</span></span>
-      <span class="nota">Cadastro, busca ampla, ficha com vínculos e histórico, detecção de duplicidade com confirmação auditada — o degrau zero de qualquer caso novo, sem depender da equipe técnica.</span>
+      <span class="nota">Clientes e veterinários em telas separadas, cada um com sua permissão. Cliente exige CNPJ, e-mail e telefone; veterinário exige CRMV. Tabela de preço e acordos individuais na ficha. <strong>Link de autocadastro</strong>: token de uso único, sete dias, página pública onde o cliente preenche só os próprios dados.</span>
     </div>
 
     <div class="modulo">
@@ -695,15 +1083,15 @@
       <span class="nome">Portal do Cliente</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
-      <span class="nota">O cliente acompanha o exame, complementa a história clínica e baixa o laudo liberado. Isolamento na camada de dados: o escopo sai da conta, nunca da URL. Financeiro, coleta e notificações dependem de módulos ainda sem documentação.</span>
+      <span class="nota">O cliente acompanha o exame, complementa a história clínica e baixa o laudo liberado. Isolamento na camada de dados: o escopo sai da conta, nunca da URL. Notificações dependem do 26.</span>
     </div>
 
     <div class="modulo">
       <span class="num">19</span>
       <span class="nome">Logística</span>
-      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
-      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
-      <span class="nota">Coleta e transporte de material.</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Primeira fatia</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
+      <span class="nota">Documentação chegou e a primeira fatia está no domínio: solicitação com número próprio (LOG-), oferta simultânea a vários encarregados com validade, <strong>aceite competitivo</strong> transacional, recusa, cancelamento e linha do tempo. Faltam execução com evidências, rota, entrega e a tela.</span>
     </div>
   </section>
 
@@ -723,7 +1111,7 @@
       <span class="nome">Imagens e Scanner de Lâminas</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
-      <span class="nota">Galeria do caso, envio com original preservado e hash, e as imagens escolhidas saindo no laudo com numeração automática. Recorte, anotação em camada e Atlas ficam para uma fase seguinte; WSI, fora do escopo v1 (ADR-0004).</span>
+      <span class="nota">Galeria do caso, envio com original preservado e hash, captura direto pela webcam da bancada, e as imagens escolhidas saindo no laudo. A requisição digitalizada é tipo próprio, com guarda mínima de cinco anos. WSI fora do escopo v1 (ADR-0004).</span>
     </div>
 
     <div class="modulo">
@@ -731,7 +1119,7 @@
       <span class="nome">Controle de Cadáveres</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
-      <span class="nota">Ciclo de custódia inteiro: entrada (inclusive antes do caso existir), mapa de posições, retirada para necropsia sem sumir do mapa, bloqueios, liberação, saída física e destinação — com o histórico preservado. Inventário físico, leitura por QR Code, controle de temperatura e lote coletivo ficam para a fase seguinte.</span>
+      <span class="nota">Ciclo de custódia inteiro: entrada (inclusive antes do caso existir), mapa de posições, retirada para necropsia, bloqueios, liberação, saída física e destinação — com o histórico preservado. Inventário físico, QR Code, temperatura e lote coletivo ficam para a fase seguinte.</span>
     </div>
 
     <div class="modulo">
@@ -739,7 +1127,7 @@
       <span class="nome">Bioteca e Acervo Biológico</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
-      <span class="nota">Objeto Biológico com identidade e genealogia próprias, mapa de ocupação, retirada que não faz o material sumir do sistema, reserva com hierarquia de finalidade, empréstimo com prazo, inventário com divergência e reconciliação, e destinação que preserva o histórico. Leitura por QR Code, sensores de temperatura e busca semântica ficam para a fase seguinte.</span>
+      <span class="nota">Objeto Biológico com identidade e genealogia, mapa de ocupação, retirada que não faz o material sumir, reserva, empréstimo com prazo, inventário com reconciliação e destinação. O bloquinho "todo o material" da macroscopia é o mesmo fato que a Bioteca lê para saber se sobra remanescente.</span>
     </div>
   </section>
 
@@ -759,23 +1147,23 @@
       <span class="nome">Inteligência Artificial</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronta</span></span>
-      <span class="nota">Guardian determinístico ativo, painel flutuante e Copiloto real sobre a API da Anthropic — atrás da mesma interface, ligado por variável de ambiente. O contexto enviado ao modelo é montado campo a campo, sem nome de tutor, cliente ou veterinário; o LLM não emite nível crítico, porque bloquear ação continua sendo do Guardian. Sem chave, o sistema opera igual e mostra o indicador de indisponibilidade.</span>
+      <span class="nota">Guardian determinístico ativo, painel flutuante e Copiloto real sobre a API da Anthropic, ligado por variável de ambiente. O contexto enviado ao modelo é montado campo a campo, sem nome de responsável, cliente ou veterinário. A descrição da macroscopia nasce sem IA e o Copiloto só a lapida quando disponível. Sem chave, o sistema opera igual.</span>
     </div>
 
     <div class="modulo">
       <span class="num">23</span>
       <span class="nome">Ensino e Pesquisa</span>
-      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
-      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
-      <span class="nota">Perfil acadêmico já previsto no modelo de identidade.</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciado</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
+      <span class="nota">Documentado. Perfil acadêmico já previsto no modelo de identidade; custo de projeto e centro de custo dependem do Financeiro.</span>
     </div>
 
     <div class="modulo">
       <span class="num">24</span>
       <span class="nome">Perícia e Patologia Forense</span>
-      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
-      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
-      <span class="nota">A classificação “pericial” já existe nos eventos de domínio.</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciado</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
+      <span class="nota">Documentado. A classificação "pericial" já existe nos eventos de domínio; honorários e despesas periciais dependem do Financeiro.</span>
     </div>
   </section>
 
@@ -790,28 +1178,28 @@
       <span>Nº</span><span>Módulo</span><span>Domínio</span><span>Tela</span><span>Onde está</span>
     </div>
 
+    <div class="modulo destaque">
+      <span class="num">20</span>
+      <span class="nome">Financeiro</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Parcial</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronta</span></span>
+      <span class="nota">Construído a partir das revisões com quem opera, ainda sem documento próprio: serviço com preço padrão, acordo por cliente, <strong>tabelas por perfil</strong> (laboratório, clínica, hospital) e faixas por quantidade; <strong>Ordem de Serviço</strong> que nasce na entrada e fica faturável ao concluir a macroscopia; fatura, livro de lançamentos e fluxo de caixa; <strong>fechamento do período por cliente</strong> com PDF, cortado pela data de entrada; produtividade por patologista. Faltam boleto/Pix e o envio do fechamento por e-mail (depende do 26). A documentação do módulo consolida o que já existe.</span>
+    </div>
+
     <div class="modulo">
       <span class="num">26</span>
       <span class="nome">Integrações e Notificações</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Outbox pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
-      <span class="nota">Nenhum módulo manda e-mail por conta própria. Faltam os canais reais — hoje o adaptador só registra em log.</span>
-    </div>
-
-    <div class="modulo">
-      <span class="num">20</span>
-      <span class="nome">Financeiro</span>
-      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
-      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
-      <span class="nota">Referenciado por quase todos os demais módulos.</span>
+      <span class="nota">Nenhum módulo manda e-mail por conta própria. Faltam os canais reais — hoje o adaptador só registra em log. É o que segura o envio automático do fechamento mensal.</span>
     </div>
 
     <div class="modulo">
       <span class="num">21</span>
       <span class="nome">Biblioteca</span>
-      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
-      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
-      <span class="nota">Aguardando documentação.</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciado</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
+      <span class="nota">Documentado, a construir.</span>
     </div>
 
     <div class="modulo">
@@ -819,7 +1207,7 @@
       <span class="nome">Relatórios e Indicadores</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-semdoc"><span class="glifo" aria-hidden="true">?</span> Aguarda doc</span></span>
-      <span class="nota">Consome os eventos de domínio, que já são gravados.</span>
+      <span class="nota">Consome os eventos de domínio, que já são gravados. O Painel de chegada e a produtividade do Financeiro são os primeiros indicadores no ar, dentro dos módulos donos.</span>
     </div>
   </section>
 
@@ -827,55 +1215,550 @@
   <section class="bloco">
     <h2>O que vem a seguir</h2>
     <p class="intro">
-      <strong>Acabaram os módulos documentados.</strong> A fatia vertical fechou primeiro —
-      cadastro, recebimento, triagem, macroscopia, processamento terceirizado, microscopia,
-      laudo estruturado, assinatura, liberação e o PDF com QR Code de validação pública, com
-      teste automatizado cobrindo o caminho inteiro. Depois vieram as três modalidades
-      diagnósticas completas, o Portal do Cliente, o acervo de imagens, o controle de
-      cadáveres e a Bioteca, que fecha o ciclo do material: o que sai da macroscopia hoje
-      continua localizável daqui a dez anos.
-    </p>
-    <p class="intro">
-      Com o Copiloto real ligado, acabou também o que havia de engenharia pendente sobre a
-      documentação existente. O que resta é de outra natureza: <strong>escrever a especificação
-      dos oito módulos restantes</strong>. Nenhum deles é construído por suposição — uma regra
-      inventada agora vira retrabalho depois.
+      A fase de construir sobre a documentação original terminou, e a fase de revisar com quem
+      opera também: duas rodadas com o patologista e a recepção viraram vinte e sete entregas em
+      doze dias, todas revisadas, com dez achados corrigidos e a segurança conferida contra o
+      Blueprint §6. O que segue tem ordem:
     </p>
 
+    <ol class="passos">
+      <li class="passo">
+        <div>
+          <h3>Homologar em produção</h3>
+          <p class="marca">aba Homologação · 18 cenários · Hugo, Roberta e Fernando</p>
+          <p>Tudo o que entrou nas duas rodadas ainda não passou pelas mãos de quem opera. O roteiro diz quem testa o quê e o que tem de acontecer; o que falhar volta como correção antes de qualquer módulo novo.</p>
+        </div>
+      </li>
+      <li class="passo">
+        <div>
+          <h3>Fechar a Logística</h3>
+          <p class="marca">M19 · execução, rota, entrega e a tela</p>
+          <p>O serviço já tem dono pelo aceite competitivo. Falta o encarregado executar com evidências, a rota e a entrega no laboratório — e a tela que mostra tudo isso.</p>
+        </div>
+      </li>
+      <li class="passo">
+        <div>
+          <h3>Documentar o Financeiro e ligar os canais</h3>
+          <p class="marca">M20 · M26</p>
+          <p>O Financeiro existe no ar sem documento; a especificação consolida o que foi construído e decide boleto, Pix e o envio do fechamento por e-mail — que precisa dos canais reais do 26.</p>
+        </div>
+      </li>
+      <li class="passo">
+        <div>
+          <h3>Os quatro documentados e os dois sem documento</h3>
+          <p class="marca">M21 · M22 · M23 · M24 — depois M25 · M26</p>
+          <p>Biblioteca, Qualidade, Ensino e Perícia têm especificação e pontos de extensão prontos. Relatórios e Integrações continuam esperando o texto; nenhum módulo é construído por suposição.</p>
+        </div>
+      </li>
+    </ol>
   </section>
 
-  <!-- ================= BLOQUEADO ================= -->
-  <section class="bloco alerta">
-    <h2>Oito módulos aguardando documentação</h2>
-    <p class="intro">
-      São os módulos que ainda não têm especificação escrita — e nenhum deles é construído por
-      suposição: uma regra inventada agora vira retrabalho depois. <strong>A documentação de cada um
-      é o que destrava sua construção.</strong>
-    </p>
-    <p class="intro">
-      O que já existe são os <strong>pontos de extensão</strong> que eles vão usar quando chegarem —
-      eventos de domínio, trilha de auditoria imutável e fila de notificações. Por isso escrever a
-      documentação destes oito não implica mexer no que já está pronto.
-    </p>
+  </div><!-- /painel-modulos -->
 
-    <ul class="semdoc-lista">
-      <li><span class="n">19</span> Logística</li>
-      <li><span class="n">20</span> Financeiro</li>
-      <li><span class="n">21</span> Biblioteca</li>
-      <li><span class="n">22</span> Qualidade e Auditoria</li>
-      <li><span class="n">23</span> Ensino e Pesquisa</li>
-      <li><span class="n">24</span> Perícia e Patologia Forense</li>
-      <li><span class="n">25</span> Relatórios e Indicadores</li>
-      <li><span class="n">26</span> Integrações e Notificações</li>
-    </ul>
+  <!-- ======================================================================
+       ABA 2 · ENTREGAS
+       ====================================================================== -->
+  <div class="painel" id="painel-entregas" role="tabpanel" aria-labelledby="aba-entregas" hidden>
+
+  <section class="entregas-placar" aria-label="Resumo das entregas desde a última versão do mapa">
+    <div class="metrica"><span class="n">27</span><span class="r">PRs mergeados de 23/08 a 03/09</span></div>
+    <div class="metrica"><span class="n">6</span><span class="r">migrações de banco (0011–0016)</span></div>
+    <div class="metrica"><span class="n">266</span><span class="r">testes automatizados (194 na API, 72 no shared)</span></div>
+    <div class="metrica"><span class="n">10</span><span class="r">achados do code review, todos corrigidos</span></div>
   </section>
+
+  <p class="resumo-texto">
+    Tudo o que entrou em produção desde a versão anterior deste mapa, na ordem em que chegou.
+    As duas rodadas de revisão com o Hugo (patologista) e a Roberta (recepção e financeiro)
+    são o fio: cada pedido virou uma entrega pequena, com teste, e a rodada de code review no
+    final conferiu o conjunto.
+  </p>
+
+  <section class="rodada">
+    <div class="rodada-cabeca"><h2>Endurecimento e Copiloto real</h2><span class="quando">23 a 28 de agosto</span></div>
+    <p class="rodada-intro">Fechamento da fase anterior: segunda auditoria de segurança, o Copiloto ligado ao modelo real e os primeiros ajustes do uso diário.</p>
+
+    <div class="entrega"><span class="pr">#52</span><div><p class="titulo">Segunda auditoria de segurança e CLIs sem o degrau do slug <span class="mods">M02 · infra</span></p><p class="detalhe">Autorização em todas as rotas, isolamento de tenant, validação de entrada e segredos revistos contra o Blueprint §6. Os comandos de manutenção dispensam o slug quando há uma instituição só.</p></div></div>
+    <div class="entrega"><span class="pr">#53</span><div><p class="titulo">Copiloto real sobre a API da Anthropic, e o logotipo LAPATO <span class="mods">M17</span></p><p class="detalhe">Mesma interface do provedor stub, ligado por variável de ambiente. Contexto montado campo a campo, sem dados pessoais; o LLM nunca emite nível crítico.</p></div></div>
+    <div class="entrega"><span class="pr">#54 · #55</span><div><p class="titulo">Menu com rótulos curtos e conta no avatar; tela branca após o login corrigida <span class="mods">web</span></p><p class="detalhe">Uma falha de renderização deixa de derrubar a aplicação inteira: cada tela tem sua barreira de erro.</p></div></div>
+    <div class="entrega"><span class="pr">#56</span><div><p class="titulo">Clientes e Veterinários em telas separadas <span class="mods">M03</span></p><p class="detalhe">Cada um com título, busca, ação e permissão próprios. O vínculo continua na ficha do cliente.</p></div></div>
+    <div class="entrega"><span class="pr">#57</span><div><p class="titulo">Painel de chegada: volumetria, o que trava agora e casos por etapa <span class="mods">M07</span></p><p class="detalhe">Primeira tela depois do login responde "o que precisa de mim agora". Cada número vem do módulo dono e só aparece para quem pode agir sobre ele.</p></div></div>
+    <div class="entrega"><span class="pr">#58 · #59 · #60</span><div><p class="titulo">Login sem o campo Instituição enquanto há uma só; e-mail do usuário corrigível <span class="mods">M02</span></p><p class="detalhe">O campo volta sozinho quando existir uma segunda instituição.</p></div></div>
+  </section>
+
+  <section class="rodada">
+    <div class="rodada-cabeca"><h2>Logística documentada e a primeira revisão com o Hugo</h2><span class="quando">29 e 30 de agosto</span></div>
+    <p class="rodada-intro">Chegaram os documentos dos módulos 19, 21, 22, 23 e 24. No mesmo fôlego, a primeira rodada de revisão em tela compartilhada.</p>
+
+    <div class="entrega"><span class="pr">#62</span><div><p class="titulo">Documentação dos módulos 19–24 e a primeira fatia da Logística <span class="mods">M19 · docs</span></p><p class="detalhe">Solicitação LOG- com número próprio, oferta a vários encarregados com validade, aceite competitivo garantido por um único UPDATE condicional, recusa, cancelamento e linha do tempo. A lista de módulos sem documento cai de oito para três.</p></div></div>
+    <div class="entrega"><span class="pr">#63</span><div><p class="titulo">Fuso horário da instituição corrigido e causa nos erros 500 <span class="mods">M01 · infra</span></p><p class="detalhe">Datas deixam de virar o dia errado; o log traz a causa em vez de só o código.</p></div></div>
+    <div class="entrega"><span class="pr">#64</span><div><p class="titulo">Triagem opcional por serviço, foto pela webcam e requisição digitalizada <span class="mods">M06 · M16 · M07</span></p><p class="detalhe">O motor de fluxo herda os gatilhos da etapa pulada. A requisição é tipo próprio de imagem, com guarda de cinco anos.</p></div></div>
+    <div class="entrega"><span class="pr">#65</span><div><p class="titulo">Serviços com preço e a Ordem de Serviço do recebimento ao despacho <span class="mods">M20 · M01</span></p><p class="detalhe">Valor padrão por serviço, acordo por cliente, OS que nasce na conferência com o preço vigente copiado. Série própria OS-2026-000123.</p></div></div>
+    <div class="entrega"><span class="pr">#66</span><div><p class="titulo">Fatura, livro de lançamentos e fluxo de caixa <span class="mods">M20 · M02</span></p><p class="detalhe">Pagamento espelha lançamento de entrada travado. Perfil "financeiro" novo.</p></div></div>
+    <div class="entrega"><span class="pr">#67 · #68</span><div><p class="titulo">Descrição rápida em bloquinhos, etiquetas de lâmina do parceiro, cassetes em um clique e modelo de etiqueta editável <span class="mods">M08 · M09 · M01</span></p><p class="detalhe">Texto corrido composto sem IA e lapidado pelo Copiloto quando disponível. O laboratório de apoio informa as medidas da etiqueta dele e imprime no tamanho certo sem deploy.</p></div></div>
+  </section>
+
+  <section class="rodada">
+    <div class="rodada-cabeca"><h2>Segunda revisão: Hugo e Roberta</h2><span class="quando">1 e 2 de setembro</span></div>
+    <p class="rodada-intro">Nove entregas tiradas de duas transcrições de reunião e do documento do Hugo. O tema é o dia a dia da recepção, da bancada e do fim de mês.</p>
+
+    <div class="entrega"><span class="pr">#69</span><div><p class="titulo">Cartão do fragmento: medidas e descritores no mesmo lugar, frase com concordância <span class="mods">M08</span></p><p class="detalhe">Rótulo e texto do bloquinho são coisas diferentes: "Marrom" no botão, "acastanhada" na frase. Prévia ao vivo, montada pela mesma função do servidor.</p></div></div>
+    <div class="entrega"><span class="pr">#70</span><div><p class="titulo">OS fica faturável ao concluir a macroscopia; recorte sem cobrança <span class="mods">M20 · M08 · M10</span></p><p class="detalhe">Cobrar na entrada erra e cobrar na liberação joga o fim de mês para o mês seguinte. O recorte reabre a ficha, lança R$ 0 na OS e não reinicia o prazo.</p></div></div>
+    <div class="entrega"><span class="pr">#71</span><div><p class="titulo">Tabelas de preço por perfil de cliente <span class="mods">M20 · M03 · M01</span></p><p class="detalhe">Laboratório, clínica, hospital: poucas tabelas nomeadas, cada cliente aponta para uma. Acordo individual continua vencendo.</p></div></div>
+    <div class="entrega"><span class="pr">#72</span><div><p class="titulo">Para quem foi a lâmina: destino, bipagem e fila do patologista <span class="mods">M05 · M07 · M10 · M02</span></p><p class="detalhe">Seletor de patologista no dossiê, bipagem no painel que puxa o caso, aba "Minhas" nas solicitações. Pede sincronizar perfis no deploy.</p></div></div>
+    <div class="entrega"><span class="pr">#73</span><div><p class="titulo">Data de entrada do material: informada, corrigível, e o prazo conta dela <span class="mods">M05 · M07</span></p><p class="detalhe">Quem cadastra amanhã o que chegou hoje não perde o prazo. O painel e o fechamento olham a entrada.</p></div></div>
+    <div class="entrega"><span class="pr">#74</span><div><p class="titulo">Ajustes vistos na demo: cm, composição única, obrigatórios em vermelho, declarado na conferência <span class="mods">M08 · M05</span></p><p class="detalhe">Compor duas vezes não duplica; o conferente bate o que o cliente disse que mandou.</p></div></div>
+    <div class="entrega"><span class="pr">#75</span><div><p class="titulo">Fechamento do período por cliente com PDF, produtividade por patologista e arquivo de laudos <span class="mods">M20 · M11</span></p><p class="detalhe">"No dia 1 eu preciso fechar todo mundo": agrupado por cliente, cortado pela entrada. Busca de laudo por paciente, cliente, palavra, lâmina ou OS.</p></div></div>
+    <div class="entrega"><span class="pr">#76</span><div><p class="titulo">Convênio × particular, paciente reaproveitado e o mínimo do cadastro <span class="mods">M05 · M03 · M20</span></p><p class="detalhe">No particular o responsável traz a amostra e a OS já nasce faturável. Cliente exige CNPJ, e-mail e telefone; "Tutor" vira "Responsável".</p></div></div>
+    <div class="entrega"><span class="pr">#77</span><div><p class="titulo">Entrada com etiquetas, conferência com fragmentos e ressalva, fila da macro e preço por faixa <span class="mods">M05 · M07 · M09 · M20</span></p><p class="detalhe">Etiquetas com Code 128, fotos no recebimento, menu Macroscopia com bipagem do pote, cabeçalho do material na macro e no laudo, faixas por quantidade.</p></div></div>
+    <div class="entrega"><span class="pr">#78</span><div><p class="titulo">Link de autocadastro do cliente <span class="mods">M03</span></p><p class="detalhe">Token de uso único, sete dias, página pública com os dados dele e nada mais. 404 igual para link errado ou expirado; 410 para link usado.</p></div></div>
+  </section>
+
+  <section class="rodada">
+    <div class="rodada-cabeca"><h2>Code review, segurança e testes</h2><span class="quando">3 de setembro</span></div>
+    <p class="rodada-intro">Revisão do conjunto #69–#78 antes de qualquer pessoa testar em produção.</p>
+
+    <div class="entrega"><span class="pr">#79</span><div><p class="titulo">Dez achados corrigidos, dois pontos de segurança, rotas sem teste cobertas <span class="mods">M05 · M20 · M07 · M03</span></p><p class="detalhe">Pseudo-cliente Particular só o do sistema; acordo vence a faixa; particular com paciente reaproveitado exige responsável; Rastreio volta a ordenar por prazo; autocadastro valida CNPJ e duplicidade. Serviço de tabela validado dentro da instituição; novo link expira o anterior. Oito rotas sem teste ganharam teste.</p></div></div>
+  </section>
+
+  <section class="bloco">
+    <h2>Pendências de deploy</h2>
+    <p class="intro">Uma vez, no container da API em produção (Coolify → API-Lapato → Terminal), porque o #72 acrescentou permissão aos perfis padrão e ela só chega a instituições existentes por aqui. Depois todo mundo sai e entra de novo.</p>
+    <div class="hom-aviso" style="margin-top: -8px;"><pre>node node_modules/@lapato/db/dist/cli/sincronizar-perfis.js</pre></div>
+  </section>
+
+  </div><!-- /painel-entregas -->
+
+  <!-- ======================================================================
+       ABA 3 · HOMOLOGAÇÃO
+       ====================================================================== -->
+  <div class="painel" id="painel-homologacao" role="tabpanel" aria-labelledby="aba-homologacao" hidden>
+
+  <p class="resumo-texto">
+    O que entrou nos PRs #69 a #79 e ainda não passou pelas mãos de quem opera. Cada cenário diz
+    <strong>quem testa</strong>, onde, os passos e o que tem de acontecer. Marque o resultado
+    embaixo de cada um: fica salvo neste navegador. Quando terminar, o que estiver
+    <em>Falhou</em> ou <em>Bloqueado</em> vai para o Fernando com a observação.
+  </p>
+
+<section class="hom-resumo" aria-label="Resumo do roteiro">
+  <div class="metrica"><span class="n">18</span><span class="r">cenários</span></div>
+  <div class="metrica"><span class="n">9</span><span class="r">blocos de funcionalidade</span></div>
+  <div class="metrica"><span class="n">3</span><span class="r">pessoas</span></div>
+  <div class="metrica"><span class="n">~2 h</span><span class="r">de ponta a ponta, sem contar espera de laboratório</span></div>
+</section>
+
+<div class="hom-aviso">
+  <p><strong>Antes de começar (Fernando).</strong> Dois pré-requisitos sem os quais parte dos cenários falha por permissão, não por defeito.</p>
+  <p>1. 🌐 No navegador: abra <code>/api/v1/health</code> da produção e confirme <code>"schema":"ok"</code>.</p>
+  <p>2. 🖥️ Terminal do container da API (Coolify → API-Lapato → Terminal): rode a sincronização de perfis. Ela é aditiva e só acrescenta as permissões novas (<code>fluxo:atribuir_responsavel</code> no técnico e no patologista). Vale na próxima sessão de cada usuário, então todo mundo sai e entra de novo depois.</p>
+  <pre>node node_modules/@lapato/db/dist/cli/sincronizar-perfis.js</pre>
+</div>
+
+<div class="rolagem">
+<table class="quem">
+  <thead><tr><th>Quem</th><th>Perfil na plataforma</th><th>Cenários</th></tr></thead>
+  <tbody>
+    <tr><td>Roberta</td><td>Recepção / Financeiro</td><td>H-01 a H-06, H-13 a H-16</td></tr>
+    <tr><td>Hugo</td><td>Patologista</td><td>H-07 a H-12, H-17</td></tr>
+    <tr><td>Fernando</td><td>Administrador</td><td>Pré-requisitos, H-04, H-13, H-18</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="hom-placar" id="placar"><span>OK <b data-conta="ok">0</b></span><span>Falhou <b data-conta="falhou">0</b></span><span>Bloqueado <b data-conta="bloqueado">0</b></span><span>Sem marcar <b data-conta="pendente">18</b></span><button type="button" id="limpar">Limpar marcações</button></div>
+
+<!-- ============ BLOCO 1 ============ -->
+<section class="hom-bloco">
+  <div class="hom-bloco-cab"><h2>1. Cadastro: convênio × particular, paciente já atendido</h2><span class="pr">PR #76 · #79</span><span class="menu">Menu: Novo caso · Rastreio</span></div>
+
+  <article class="cenario" data-id="H-01">
+    <div class="cab"><span class="id">H-01</span><h3>Caso de convênio com paciente novo</h3><div class="meta"><span>Roberta</span><span>Novo caso</span><span>5 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Novo caso → deixe <em>Convênio</em> marcado.</li>
+        <li>Escolha um cliente real (clínica ou hospital) e o veterinário dele.</li>
+        <li>Preencha o animal: nome, espécie, <strong>raça</strong>, idade ou data de nascimento, responsável.</li>
+        <li>Em <em>Entrada do material</em>, informe <strong>ontem</strong>.</li>
+        <li>Um pote, uma amostra. Cadastrar.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>O rótulo diz <strong>Responsável</strong>, não "Tutor", em toda a tela.</li>
+        <li>O dossiê mostra a entrada de ontem e a previsão de liberação contada a partir dela (um dia mais curta do que se fosse hoje).</li>
+        <li>A raça aparece na identificação do animal no dossiê.</li>
+        <li>O serviço aparece como <strong>Histopatologia</strong> (sem "de biópsia").</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação (o que viu de diferente)"></div>
+  </article>
+
+  <article class="cenario" data-id="H-02">
+    <div class="cab"><span class="id">H-02</span><h3>Caso particular: o responsável traz o material</h3><div class="meta"><span>Roberta</span><span>Novo caso</span><span>5 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Novo caso → marque <em>Particular</em>.</li>
+        <li>Preencha clínica de origem e veterinário <strong>como texto livre</strong>.</li>
+        <li>Responsável com <strong>telefone ou e-mail</strong>. Animal novo. Cadastrar.</li>
+        <li>Abra o caso → aba Ordem de Serviço.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>Não aparece seletor de cliente; o caso fica no cliente <strong>Particular</strong> da instituição.</li>
+        <li>A OS já nasce <strong>faturável na entrada</strong>, cobrada do responsável.</li>
+        <li>Se você deixar o responsável sem telefone e sem e-mail, o botão Cadastrar avisa e não deixa seguir.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+
+  <article class="cenario" data-id="H-03">
+    <div class="cab"><span class="id">H-03</span><h3>Paciente já atendido: só inserir o exame</h3><div class="meta"><span>Roberta</span><span>Novo caso</span><span>4 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Novo caso → clique em <em>Paciente já atendido</em>.</li>
+        <li>Busque pelo nome do animal do H-01 (ou pelo responsável, ou pelo microchip).</li>
+        <li>Escolha o animal: os campos preenchem sozinhos.</li>
+        <li>Clique em <em>Limpar</em> na escolha e confira que <strong>todos</strong> os campos do animal e do responsável esvaziaram.</li>
+        <li>Escolha de novo e cadastre.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>A busca mostra o <strong>último exame</strong> de cada animal na lista.</li>
+        <li>Depois de cadastrar, em Rastreio, o animal do H-01 e este novo caso apontam para o <strong>mesmo paciente</strong> (mesmo microchip, sem duplicar).</li>
+        <li>No dossiê, <em>Identificação do animal</em> permite corrigir nome, raça e idade; a correção aparece na linha do tempo.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+
+  <article class="cenario" data-id="H-04">
+    <div class="cab"><span class="id">H-04</span><h3>Cliente exige CNPJ, e-mail e telefone</h3><div class="meta"><span>Roberta</span><span>Clientes</span><span>3 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Clientes → Novo. Preencha só o nome. Salvar.</li>
+        <li>Complete CNPJ, e-mail e telefone. Salvar.</li>
+        <li>Veterinários → Novo sem CRMV. Salvar.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>Passo 1 é recusado com a mensagem apontando o que falta.</li>
+        <li>Passo 2 grava.</li>
+        <li>Passo 3 é recusado: veterinário exige nome e CRMV.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+</section>
+
+<!-- ============ BLOCO 2 ============ -->
+<section class="hom-bloco">
+  <div class="hom-bloco-cab"><h2>2. Entrada e recebimento: etiquetas, fragmentos, ressalva, fotos</h2><span class="pr">PR #77 · #74</span><span class="menu">Dossiê do caso · Recebimento</span></div>
+
+  <article class="cenario" data-id="H-05">
+    <div class="cab"><span class="id">H-05</span><h3>Etiquetas da entrada com código de barras</h3><div class="meta"><span>Roberta</span><span>Dossiê</span><span>3 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Abra o caso do H-01. No cabeçalho, <em>Etiquetas</em> → requisição.</li>
+        <li>De novo, <em>Etiquetas</em> → potes.</li>
+        <li>Imprima na impressora de etiquetas, no modelo de recipiente configurado.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>Um PDF com a etiqueta da requisição; outro com <strong>uma etiqueta por pote</strong>, cada uma com Code 128.</li>
+        <li>O leitor de código de barras lê a etiqueta do pote (vai ser usado no H-08).</li>
+        <li>O tamanho bate com o modelo de etiqueta definido em Configurações.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+
+  <article class="cenario" data-id="H-06">
+    <div class="cab"><span class="id">H-06</span><h3>Conferência: declarado × recebido, fragmentos, ressalva e fotos</h3><div class="meta"><span>Roberta</span><span>Recebimento</span><span>6 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Caso do H-01 → Recebimento.</li>
+        <li>Confira que ao lado de cada pote aparece o <strong>declarado</strong>: tipo, fixador, referência, amostras.</li>
+        <li>No pote, informe fragmentos = <strong>3</strong>. Num segundo teste, marque <em>múltiplos</em>.</li>
+        <li>Escolha uma ressalva no dropdown (por exemplo, sem fixador) e escreva um detalhe.</li>
+        <li>Tire uma foto da requisição pela câmera e envie um arquivo para o pote.</li>
+        <li>Confirmar recebimento.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>A linha do pote não estoura a largura no celular nem no notebook.</li>
+        <li>Fragmentos e ressalva ficam gravados e aparecem depois no cabeçalho da macroscopia (H-07).</li>
+        <li>As fotos aparecem na galeria do caso, identificadas como <em>entrada</em>.</li>
+        <li>A linha do tempo mostra <strong>quem</strong> conferiu, com nome.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+</section>
+
+<!-- ============ BLOCO 3 ============ -->
+<section class="hom-bloco">
+  <div class="hom-bloco-cab"><h2>3. Macroscopia: fila, bipagem, cartão do fragmento e descrição rápida</h2><span class="pr">PR #69 · #74 · #77</span><span class="menu">Menu: Macroscopia</span></div>
+
+  <article class="cenario" data-id="H-07">
+    <div class="cab"><span class="id">H-07</span><h3>Fila da macroscopia e cabeçalho do material</h3><div class="meta"><span>Hugo</span><span>Macroscopia</span><span>4 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Menu Macroscopia.</li>
+        <li>Busque pelo nome do animal, depois pelo responsável, depois pelo registro.</li>
+        <li>Abra o caso do H-01.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>A fila lista só os aptos, do <strong>mais antigo para o mais recente</strong> pela entrada.</li>
+        <li>Cada busca acha o caso.</li>
+        <li>O cabeçalho do material mostra: cliente, raça, idade, data de entrada, o que veio em cada pote (3 fragmentos), a ressalva do recebimento e as fotos da entrada.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+
+  <article class="cenario" data-id="H-08">
+    <div class="cab"><span class="id">H-08</span><h3>Bipar o pote abre a ficha</h3><div class="meta"><span>Hugo</span><span>Macroscopia</span><span>2 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Na fila, clique no campo de bipagem.</li>
+        <li>Leia a etiqueta do pote impressa no H-05 com o leitor (ou digite o código e <kbd>Enter</kbd>).</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>A ficha de macroscopia do caso abre direto, sem passar pela lista.</li>
+        <li>O caso <strong>não muda de responsável</strong> só por ter sido bipado aqui (isso é a bipagem do painel, H-11).</li>
+        <li>Um código inexistente dá uma mensagem clara, não uma tela em branco.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+
+  <article class="cenario" data-id="H-09">
+    <div class="cab"><span class="id">H-09</span><h3>Cartão do fragmento e descrição rápida</h3><div class="meta"><span>Hugo</span><span>Macroscopia</span><span>8 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Na amostra, preencha medidas em <strong>cm</strong> (3,0 × 2,0 × 1,0).</li>
+        <li>Nos bloquinhos, marque: Característica <em>Nodulectomia</em>, Cor <em>Marrom</em>, dois adjetivos de Aparência, um de Ao corte, e Representação <em>Todo o material</em>.</li>
+        <li>Observe a prévia da frase enquanto marca.</li>
+        <li>Clique <em>Compor descrição</em>. Escreva uma linha a mais à mão. Clique <em>Compor</em> de novo.</li>
+        <li>Deixe uma lesão sem nome e tente concluir.</li>
+        <li>Preencha o que falta e conclua a macroscopia.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>A frase concorda: "Fragmento de nodulectomia, acastanhada, … e …, medindo 3,0 × 2,0 × 1,0 cm. Todo o material incluído."</li>
+        <li>O bloquinho <em>Marrom</em> mostra a amostra de cor.</li>
+        <li>Compor duas vezes <strong>não duplica</strong> a frase; a linha escrita à mão fica.</li>
+        <li>Obrigatórios faltando aparecem em vermelho e o botão vira "Falta para concluir: …".</li>
+        <li>Ao concluir, a OS do caso fica <strong>faturável</strong> (confira na aba OS: "faturável em" com data de hoje, origem macroscopia).</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+</section>
+
+<!-- ============ BLOCO 4 ============ -->
+<section class="hom-bloco">
+  <div class="hom-bloco-cab"><h2>4. Destino do caso, bipagem do patologista e recorte</h2><span class="pr">PR #72 · #70</span><span class="menu">Painel · Dossiê · Solicitações</span></div>
+
+  <article class="cenario" data-id="H-10">
+    <div class="cab"><span class="id">H-10</span><h3>Mandar o caso para um patologista</h3><div class="meta"><span>Hugo</span><span>Dossiê</span><span>3 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>No cabeçalho do dossiê, no seletor de patologista, escolha outro patologista (ou você mesmo).</li>
+        <li>Entre com o usuário desse patologista e abra o Painel → Meus casos.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>O seletor lista só usuários com perfil de patologista.</li>
+        <li>O caso aparece em <em>Meus casos</em> de quem recebeu.</li>
+        <li>A linha do tempo registra "patologista atribuído" com quem fez.</li>
+        <li>Se este passo falhar por permissão, o pré-requisito 2 (sincronizar perfis) não rodou.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+
+  <article class="cenario" data-id="H-11">
+    <div class="cab"><span class="id">H-11</span><h3>Bipar a lâmina no painel puxa o caso para mim</h3><div class="meta"><span>Hugo</span><span>Painel</span><span>2 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Painel → cartão <em>Bipar lâmina</em>.</li>
+        <li>Leia o código de uma lâmina (ou de um cassete, bloco ou o próprio pote) e <kbd>Enter</kbd>.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>O caso abre e passa a ser <strong>seu</strong> (aparece em Meus casos).</li>
+        <li>Solicitações → aba <em>Minhas</em> lista o que você pediu e ainda está aberto.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+
+  <article class="cenario" data-id="H-12">
+    <div class="cab"><span class="id">H-12</span><h3>Recorte: reabre a macro, custa zero, prazo não reinicia</h3><div class="meta"><span>Hugo</span><span>Dossiê</span><span>4 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Num caso com macroscopia concluída, na amostra, clique <em>Recorte</em> e justifique.</li>
+        <li>Abra Solicitações e a aba OS do caso.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>A ficha da amostra volta a ficar editável na macroscopia.</li>
+        <li>Existe uma solicitação de recorte aberta.</li>
+        <li>A OS tem um item de retrabalho com <strong>R$ 0,00</strong>.</li>
+        <li>A previsão de liberação do caso <strong>não mudou</strong>.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+</section>
+
+<!-- ============ BLOCO 5 ============ -->
+<section class="hom-bloco">
+  <div class="hom-bloco-cab"><h2>5. Preços: tabelas por perfil de cliente e faixas por quantidade</h2><span class="pr">PR #71 · #77 · #79</span><span class="menu">Configurações · Clientes</span></div>
+
+  <article class="cenario" data-id="H-13">
+    <div class="cab"><span class="id">H-13</span><h3>Tabela de preço "Clínica" e cliente apontando para ela</h3><div class="meta"><span>Roberta</span><span>Fernando</span><span>Configurações</span><span>6 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Configurações → Tabelas de preço → criar <em>Clínica</em>. Dê um valor à Histopatologia diferente do padrão do serviço.</li>
+        <li>Na mesma tabela, em <em>Faixas</em>, cadastre para Histopatologia: 2 amostras = total X, 3 amostras = total Y.</li>
+        <li>Clientes → um cliente real → escolha a tabela <em>Clínica</em>. Abra <em>Preços</em> do cliente.</li>
+        <li>Cadastre um caso desse cliente com <strong>3 amostras</strong> e veja a OS.</li>
+        <li>Volte ao cliente, dê um <em>acordo individual</em> à Histopatologia, cadastre outro caso com 3 amostras.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>O diálogo de preços mostra as três colunas: padrão · tabela · acordo.</li>
+        <li>Passo 4: a OS traz <strong>1 × total da faixa de 3</strong>, com a quantidade na descrição.</li>
+        <li>Passo 5: o acordo vence a faixa: <strong>3 × valor do acordo</strong>.</li>
+        <li>Inativar a tabela tira ela da escolha, mas o cliente que já a usa continua com ela.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+</section>
+
+<!-- ============ BLOCO 6 ============ -->
+<section class="hom-bloco">
+  <div class="hom-bloco-cab"><h2>6. Financeiro: fechamento do período e produtividade</h2><span class="pr">PR #75 · #73</span><span class="menu">Menu: Financeiro → Fechamento</span></div>
+
+  <article class="cenario" data-id="H-14">
+    <div class="cab"><span class="id">H-14</span><h3>Fechamento do mês por cliente, com PDF</h3><div class="meta"><span>Roberta</span><span>Financeiro</span><span>5 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Financeiro → aba Fechamento. O período já vem como o mês corrente.</li>
+        <li>Confira o cliente do H-13 e o Particular do H-02.</li>
+        <li>Filtre por um cliente. Gere o PDF.</li>
+        <li>Mude a data de entrada de um caso (dossiê → Corrigir) para o mês passado e recarregue o fechamento.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>Agrupado por cliente: cada caso com status da OS, faturável, fatura, total e retrabalhos; subtotal por cliente; total do período.</li>
+        <li>O corte é pela <strong>data de entrada</strong>: o caso movido some do mês corrente e aparece no anterior.</li>
+        <li>O PDF sai pronto para mandar por e-mail (o envio automático ainda não existe, ver "Fora deste roteiro").</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+
+  <article class="cenario" data-id="H-15">
+    <div class="cab"><span class="id">H-15</span><h3>Produtividade por patologista</h3><div class="meta"><span>Roberta</span><span>Financeiro</span><span>2 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Na mesma aba, role até Produtividade.</li>
+        <li>Compare com os laudos que o Hugo liberou no mês.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>Laudos liberados por patologista no período batem com a contagem real.</li>
+        <li>Casos destinados e ainda abertos aparecem separados.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+</section>
+
+<!-- ============ BLOCO 7 ============ -->
+<section class="hom-bloco">
+  <div class="hom-bloco-cab"><h2>7. Link de autocadastro do cliente</h2><span class="pr">PR #78 · #79</span><span class="menu">Clientes → ficha → Link de autocadastro</span></div>
+
+  <article class="cenario" data-id="H-16">
+    <div class="cab"><span class="id">H-16</span><h3>Cliente preenche os próprios dados pelo link</h3><div class="meta"><span>Roberta</span><span>Clientes</span><span>6 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Na ficha de um cliente sem CNPJ, clique <em>Link de autocadastro</em> → Copiar link.</li>
+        <li>Abra o link numa <strong>janela anônima</strong> (sem sessão).</li>
+        <li>Preencha nome, razão social, CNPJ, e-mail e telefone. Envie.</li>
+        <li>Abra o mesmo link de novo.</li>
+        <li>Gere um segundo link para o mesmo cliente e tente abrir o primeiro (antes de usar o segundo).</li>
+        <li>Troque uma letra do token na URL e abra.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>A página pública mostra só os dados do cliente: nada de preços nem veterinários.</li>
+        <li>Passo 3: os dados aparecem na ficha do cliente na plataforma.</li>
+        <li>Passo 4: "link já utilizado".</li>
+        <li>Passo 5: o link antigo deixa de valer quando um novo é gerado.</li>
+        <li>Passo 6: "não encontrado", igual para link inválido ou expirado.</li>
+        <li>CNPJ com menos de 11 dígitos ou já usado por outro cliente é recusado com aviso.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+</section>
+
+<!-- ============ BLOCO 8 ============ -->
+<section class="hom-bloco">
+  <div class="hom-bloco-cab"><h2>8. Arquivo de laudos</h2><span class="pr">PR #75</span><span class="menu">Menu: Laudos</span></div>
+
+  <article class="cenario" data-id="H-17">
+    <div class="cab"><span class="id">H-17</span><h3>Busca por paciente, cliente, palavra do laudo, lâmina e OS</h3><div class="meta"><span>Hugo</span><span>Laudos</span><span>4 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Menu Laudos. Busque por uma palavra da conclusão de um laudo liberado.</li>
+        <li>Busque pelo nome do animal, pelo cliente, pelo número da lâmina e pelo número da OS.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>Cada busca acha o laudo e mostra um <strong>trecho ao redor do termo</strong>.</li>
+        <li>A busca cobre a versão corrente do laudo, não rascunhos antigos.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+</section>
+
+<!-- ============ BLOCO 9 ============ -->
+<section class="hom-bloco">
+  <div class="hom-bloco-cab"><h2>9. Painel e ordem das filas</h2><span class="pr">PR #73 · #79</span><span class="menu">Painel · Rastreio · Solicitações</span></div>
+
+  <article class="cenario" data-id="H-18">
+    <div class="cab"><span class="id">H-18</span><h3>Painel conta pela entrada; Rastreio ordena por prazo</h3><div class="meta"><span>Fernando</span><span>Painel</span><span>3 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Painel: confira "entraram hoje" contra os casos com entrada de hoje (o do H-01 entrou ontem e não conta).</li>
+        <li>Rastreio: confira a ordem da lista.</li>
+        <li>Macroscopia: confira a ordem da fila.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>O painel usa a data de entrada, não a data em que alguém digitou.</li>
+        <li>Rastreio e Solicitações: o mais <strong>urgente pelo prazo</strong> no topo.</li>
+        <li>Só a fila da macroscopia é por entrada, do mais antigo para o mais novo.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+</section>
+
+<section class="hom-fora bloco">
+  <h2>Fora deste roteiro</h2>
+  <p class="intro">Coisas citadas nas reuniões que ainda não existem na plataforma, para ninguém procurar e achar que quebrou:</p>
+  <ul>
+    <li>Envio automático do fechamento por e-mail (depende de servidor de e-mail).</li>
+    <li>Boleto e Pix na fatura.</li>
+    <li>Modelo do cabeçalho da macroscopia e lista de campos editáveis que o Hugo ia mandar.</li>
+    <li>Lista de preços por serviço da Roberta para carregar nas tabelas.</li>
+  </ul>
+  <p class="fecho">Quando terminar, mande para o Fernando os cenários marcados como <em>Falhou</em> ou <em>Bloqueado</em> com a observação. O que estiver <em>OK</em> não precisa de mensagem.</p>
+</section>
+
+  </div><!-- /painel-homologacao -->
 
   <footer class="rodape">
     Página de acompanhamento do desenvolvimento do LAPATO — Sistema Integrado de Gestão
-    Anatomopatológica Veterinária. Atualizada a cada entrega. Última atualização: 22 de agosto de 2026 (tarde).
+    Anatomopatológica Veterinária. Atualizada a cada entrega. Última atualização: 3 de setembro de 2026,
+    estado apurado no PR #79.
   </footer>
 
 </div>
 
+<script src="mapa.js" defer></script>
 </body>
 </html>

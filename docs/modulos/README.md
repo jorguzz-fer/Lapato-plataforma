@@ -30,10 +30,10 @@ Todo código, nome de módulo, evento e ADR deste repositório usa a numeração
 | 16 | Imagens e Scanner de Lâminas | Materiais e imagens | Implementado (WSI fora do v1, ADR-0004) |
 | 17 | Inteligência Artificial | Conhecimento | Implementado (Copiloto real opcional, ADR-0007) |
 | 18 | Bioteca e Gestão de Acervo Biológico | Materiais e imagens | Implementado |
-| 19 | Logística | Relacionamento e entrada | Documentado — a implementar |
-| 20 | Financeiro | Gestão institucional | Sem documentação |
+| 19 | Logística | Relacionamento e entrada | Documentado — primeira fatia implementada (solicitação, oferta, aceite competitivo) |
+| 20 | Financeiro | Gestão institucional | Sem documentação — construído parcialmente a partir das revisões com a operação (preços, OS, fatura, fechamento) |
 | 21 | Biblioteca | Gestão institucional | Documentado — a implementar |
-| 22 | Qualidade e Auditoria | Governança | Documentado — auditoria base implementada |
+| 22 | Qualidade e Auditoria | Governança | Documentado — trilha de auditoria base implementada, módulo a construir |
 | 23 | Ensino e Pesquisa | Conhecimento | Documentado — a implementar |
 | 24 | Perícia e Patologia Forense | Conhecimento | Documentado — a implementar |
 | 25 | Relatórios e Indicadores | Gestão institucional | Sem documentação |

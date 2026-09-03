@@ -5059,7 +5059,7 @@ describe('documento do Hugo: entrada, etiquetas, fila da macro e preço por faix
       (await req('POST', `/precos/tabelas/${tabelaId}/faixas`, { servicoId, quantidade: 2, valorTotal: 160 })).status,
     ).toBe(201);
     const faixas = await req('GET', `/precos/tabelas/${tabelaId}/faixas?servicoId=${servicoId}`);
-    expect(faixas.body).toEqual([{ quantidade: 2, valorTotal: '160.00' }]);
+    expect(faixas.body).toEqual([{ servicoId, quantidade: 2, valorTotal: '160.00' }]);
     expect((await req('POST', `/clientes/${clienteId}`, { tabelaPrecoId: tabelaId })).status).toBe(201);
 
     const recebido = await req('POST', `/casos/${casoId}/recebimento`, {
@@ -5212,5 +5212,324 @@ describe('documento do Hugo: link de autocadastro do cliente', () => {
     expect(ficha.body.email).toBe(`contato-${marca}@exemplo.test`);
     expect(ficha.body.telefone).toBe('85 97777-1111');
     expect(ficha.body.documento).toBe(`55${marca}000101`);
+  });
+});
+
+/**
+ * Regressores do code review dos PRs #69-#78: cada teste fixa um achado que
+ * saia certo na tela e errado no dinheiro ou na identidade.
+ */
+describe('code review dos PRs #69-#78: regressores', () => {
+  const marca = Date.now().toString().slice(-6);
+  let servicoId: string;
+
+  test('pseudo-cliente Particular não é um cliente real do tipo tutor_particular', async () => {
+    await entrar('admin@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    servicoId = servicos.body.find((s: any) => s.codigo === 'HISTO').id;
+
+    // Uma pessoa fisica cadastrada pela tela como cliente "responsavel particular".
+    const pessoa = await req('POST', '/clientes', {
+      nomeFantasia: `Joana Pessoa ${marca}`,
+      tipo: 'tutor_particular',
+      codigo: `J${marca.slice(-3)}`,
+    });
+    expect(pessoa.status, JSON.stringify(pessoa.body)).toBe(201);
+
+    const criado = await req('POST', '/casos', {
+      servicoId,
+      modalidade: 'particular',
+      paciente: { nome: `Fred ${marca}`, tutorNome: `Paulo ${marca}`, tutorTelefone: '11 90000-0000' },
+      amostras: [{ descricao: 'Fragmento' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    // Sigla reservada do pseudo-cliente, nunca a da Joana.
+    expect(criado.body.identificador.startsWith('PT')).toBe(true);
+    const dossie = await req('GET', `/casos/${criado.body.id}`);
+    expect(dossie.body.cliente.id).not.toBe(pessoa.body.id);
+    expect(dossie.body.cliente.nomeFantasia).toBe('Particular');
+  });
+
+  test('particular com paciente reaproveitado exige responsável com contato', async () => {
+    await entrar('admin@lapato.local');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const clienteId = (clientes.body.find((c: any) => c.codigo === 'CV') ?? clientes.body[0]).id;
+
+    // Animal cadastrado por convenio, sem responsavel.
+    const convenio = await req('POST', '/casos', {
+      servicoId,
+      clienteId,
+      paciente: { nome: `Sem Dono ${marca}`, especieId: '' },
+      amostras: [{ descricao: 'Fragmento' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    // especieId vazio nao pode virar 500 (achado do review).
+    expect(convenio.status, JSON.stringify(convenio.body)).toBe(201);
+    const pacienteId = (await req('GET', `/casos/${convenio.body.id}`)).body.paciente.id;
+
+    const particular = await req('POST', '/casos', {
+      servicoId,
+      modalidade: 'particular',
+      paciente: { id: pacienteId, nome: 'ignorado' },
+      amostras: [{ descricao: 'Fragmento' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(particular.status).toBe(400);
+    expect(particular.body.detail).toContain('responsável');
+
+    // Corrigida a identificacao com um contato, passa.
+    expect((await req('POST', `/pacientes/${pacienteId}`, { tutorNome: `Dona ${marca}`, tutorTelefone: '11 91111-1111' })).status).toBe(201);
+    const agora = await req('POST', '/casos', {
+      servicoId,
+      modalidade: 'particular',
+      paciente: { id: pacienteId, nome: 'ignorado' },
+      amostras: [{ descricao: 'Fragmento' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(agora.status, JSON.stringify(agora.body)).toBe(201);
+  });
+
+  test('acordo individual do cliente vence a faixa da tabela', async () => {
+    await entrar('admin@lapato.local');
+    const cli = await req('POST', '/clientes', {
+      nomeFantasia: `Clínica Acordo ${marca}`,
+      documento: `66${marca}0001`,
+      email: `acordo-${marca}@exemplo.test`,
+      telefone: '85 95555-0000',
+      tipo: 'clinica',
+      codigo: `Q${marca.slice(-3)}`,
+    });
+    expect(cli.status, JSON.stringify(cli.body)).toBe(201);
+    const clienteId = cli.body.id;
+
+    const tabela = await req('POST', '/precos/tabelas', { nome: `Acordo ${marca}` });
+    const tabelaId = tabela.body.id;
+    expect((await req('POST', `/precos/tabelas/${tabelaId}/itens`, { servicoId, valor: 100 })).status).toBe(201);
+    expect((await req('POST', `/precos/tabelas/${tabelaId}/faixas`, { servicoId, quantidade: 2, valorTotal: 180 })).status).toBe(201);
+    expect((await req('POST', `/clientes/${clienteId}`, { tabelaPrecoId: tabelaId })).status).toBe(201);
+    // Acordo individual: 60 por amostra.
+    expect((await req('POST', `/precos/clientes/${clienteId}`, { servicoId, valor: 60 })).status).toBe(201);
+
+    // Servico de outra instituicao (uuid aleatorio) nao entra na tabela.
+    const alheio = await req('POST', `/precos/tabelas/${tabelaId}/itens`, { servicoId: '00000000-0000-4000-8000-000000000000', valor: 1 });
+    expect(alheio.status).toBe(400);
+
+    // Todas as faixas da tabela, numa requisicao so.
+    const todas = await req('GET', `/precos/tabelas/${tabelaId}/faixas`);
+    expect(todas.body).toEqual([{ servicoId, quantidade: 2, valorTotal: '180.00' }]);
+
+    const criado = await req('POST', '/casos', {
+      servicoId,
+      clienteId,
+      paciente: { nome: `Dupla ${marca}` },
+      amostras: [{ descricao: 'A' }, { descricao: 'B' }],
+      recipientes: [{ quantidadeDeclarada: 2 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    const dossie = await req('GET', `/casos/${criado.body.id}`);
+    await req('POST', `/casos/${criado.body.id}/recebimento`, {
+      conferencia: dossie.body.recipientes.map((r: any) => ({ recipienteId: r.id, quantidadeRecebida: 2 })),
+    });
+    const ordem = await req('GET', `/ordens/casos/${criado.body.id}`);
+    // 2 x 60 = 120, e nao a faixa de 180.
+    expect(Number(ordem.body.total)).toBe(120);
+    expect(ordem.body.itens[0].descricao).not.toContain('amostras');
+  });
+
+  test('a listagem do fluxo segue por prazo; só a fila da macro pede entrada', async () => {
+    await entrar('admin@lapato.local');
+    const porPrazo = await req('GET', '/fluxo/casos?etapa=aguardando_macroscopia');
+    expect(porPrazo.status).toBe(200);
+    const previsoes = porPrazo.body.map((c: any) => c.previsaoLiberacao ?? '');
+    expect([...previsoes].sort()).toEqual(previsoes);
+
+    const porEntrada = await req('GET', '/fluxo/casos?etapa=aguardando_macroscopia&ordem=entrada');
+    const entradas = porEntrada.body.map((c: any) => c.entradaEm);
+    expect([...entradas].sort()).toEqual(entradas);
+  });
+
+  test('autocadastro: CNPJ com poucos dígitos é 400; documento de outro cliente é 409; novo link mata o anterior', async () => {
+    await entrar('admin@lapato.local');
+    const a = await req('POST', '/clientes', {
+      nomeFantasia: `Alfa ${marca}`, documento: `88${marca}0001`, email: `alfa-${marca}@exemplo.test`,
+      telefone: '85 90000-0001', tipo: 'clinica', codigo: `X${marca.slice(-3)}`,
+    });
+    const b = await req('POST', '/clientes', {
+      nomeFantasia: `Beta ${marca}`, documento: `88${marca}0002`, email: `beta-${marca}@exemplo.test`,
+      telefone: '85 90000-0002', tipo: 'clinica', codigo: `Y${marca.slice(-3)}`,
+    });
+    expect(a.status).toBe(201);
+    expect(b.status).toBe(201);
+
+    const primeiro = await req('POST', `/clientes/${b.body.id}/convite-cadastro`);
+    const segundo = await req('POST', `/clientes/${b.body.id}/convite-cadastro`);
+    const [, , slug, tokenAntigo] = primeiro.body.caminho.split('/');
+    const [, , , token] = segundo.body.caminho.split('/');
+    // O link anterior expirou ao gerar o novo.
+    expect((await fetch(`${servidor}${BASE}/cadastro-cliente/${slug}/${tokenAntigo}`)).status).toBe(404);
+
+    const enviar = (corpo: Record<string, unknown>) =>
+      fetch(`${servidor}${BASE}/cadastro-cliente/${slug}/${token}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ nomeFantasia: `Beta ${marca}`, email: `beta-${marca}@exemplo.test`, telefone: '85 90000-0002', ...corpo }),
+      });
+    expect((await enviar({ documento: '12.345.678/9' })).status).toBe(400);
+    expect((await enviar({ documento: `88${marca}0001` })).status).toBe(409);
+    // O link segue vivo depois das recusas.
+    expect((await enviar({ documento: `88${marca}0002` })).status).toBe(201);
+  });
+});
+
+/**
+ * Rotas que nunca tiveram teste (inventario da rotina de testes): a conversa da
+ * solicitacao (M10), o exame externo da necropsia (M14) e, na bioteca (M18),
+ * transferencia, restricoes e colecoes.
+ */
+describe('rotas sem cobertura: conversa, exame externo e bioteca', () => {
+  const marca = Date.now().toString().slice(-6);
+  let casoId: string;
+
+  test('a conversa da solicitação guarda quem falou (M10 §49)', async () => {
+    await entrar('admin@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: any) => s.codigo === 'HISTO').id,
+      clienteId: (clientes.body.find((c: any) => c.codigo === 'CV') ?? clientes.body[0]).id,
+      paciente: { nome: `Conversa ${marca}` },
+      amostras: [{ descricao: 'Fragmento' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    casoId = criado.body.id;
+
+    await entrar('patologista@lapato.local');
+    const sol = await req('POST', '/solicitacoes', {
+      casoId,
+      tipo: 'ihq',
+      descricao: 'Painel IHQ para a conversa.',
+    });
+    expect(sol.status, JSON.stringify(sol.body)).toBe(201);
+
+    const vazio = await req('POST', `/solicitacoes/${sol.body.id}/mensagens`, { texto: '' });
+    expect(vazio.status).toBe(400);
+    const comentario = await req('POST', `/solicitacoes/${sol.body.id}/mensagens`, {
+      texto: 'Pode usar o bloco A01, tem material de sobra.',
+    });
+    expect([200, 201]).toContain(comentario.status);
+
+    const mensagens = await req('GET', `/solicitacoes/${sol.body.id}/mensagens`);
+    expect(mensagens.status).toBe(200);
+    const ultima = mensagens.body.find((m: any) => m.texto.includes('bloco A01'));
+    expect(ultima).toBeDefined();
+    expect(ultima.autor).toBeTruthy();
+  });
+
+  test('exame externo da necropsia aceita limitações e conservação (M14 §§57 e 119)', async () => {
+    await entrar('admin@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    // Mesmo caminho do bloco M14: o caso nasce em HISTO e a necropsia e aberta nele.
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: any) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Necro ${marca}` },
+      amostras: [{ descricao: 'Cadáver inteiro' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+
+    await entrar('patologista@lapato.local');
+    const abertura = await req('POST', `/necropsia/casos/${criado.body.id}`, {
+      modalidade: 'diagnostica',
+      responsavelSolicitacao: 'Tutora',
+      conservacao: 'refrigerado',
+    });
+    expect(abertura.status, JSON.stringify(abertura.body)).toBe(201);
+
+    const invalido = await req('POST', `/necropsia/${abertura.body.id}/exame-externo`, {
+      limitacoes: ['nao_existe'],
+    });
+    expect(invalido.status).toBe(400);
+
+    const salvo = await req('POST', `/necropsia/${abertura.body.id}/exame-externo`, {
+      exameExterno: { escoreCorporal: 3, mucosas: 'pálidas' },
+      limitacoes: ['autolise'],
+      limitacoesObservacao: 'Autólise moderada em vísceras abdominais.',
+      conservacao: 'congelado_descongelado',
+      circunstanciasMorte: 'Encontrado morto pela manhã.',
+    });
+    expect([200, 201], JSON.stringify(salvo.body)).toContain(salvo.status);
+  });
+
+  test('bioteca: transferência entre posições, restrições e coleções (M18)', async () => {
+    await entrar('admin@lapato.local');
+    const unidades = await req('GET', '/administracao/unidades');
+    const gavetaA = await req('POST', '/administracao/locais', {
+      unidadeId: unidades.body[0].id, nome: 'Gaveta A', codigo: `CR-A-${marca}`,
+      categoria: 'gaveta', condicaoAmbiental: 'ambiente', capacidade: 10,
+    });
+    const gavetaB = await req('POST', '/administracao/locais', {
+      unidadeId: unidades.body[0].id, nome: 'Gaveta B', codigo: `CR-B-${marca}`,
+      categoria: 'gaveta', condicaoAmbiental: 'ambiente', capacidade: 10,
+    });
+    expect(gavetaA.status).toBe(201);
+    expect(gavetaB.status).toBe(201);
+
+    await entrar('tecnico@lapato.local');
+    const bloco = await req('POST', '/bioteca', {
+      tipo: 'bloco_parafina',
+      descricao: 'Bloco para o teste de transferência',
+      casoId,
+      localId: gavetaA.body.id,
+    });
+    expect(bloco.status, JSON.stringify(bloco.body)).toBe(201);
+    const objetoId = bloco.body.id;
+
+    const movido = await req('POST', `/bioteca/${objetoId}/transferencia`, {
+      localId: gavetaB.body.id,
+      motivo: 'Reorganização do armário',
+    });
+    expect([200, 201], JSON.stringify(movido.body)).toContain(movido.status);
+    const ficha = await req('GET', `/bioteca/${objetoId}`);
+    expect(ficha.body.localId ?? ficha.body.local?.id).toBe(gavetaB.body.id);
+
+    const inexistente = await req('POST', `/bioteca/${objetoId}/transferencia`, {
+      localId: '00000000-0000-4000-8000-000000000000',
+    });
+    expect([400, 404]).toContain(inexistente.status);
+
+    await entrar('admin@lapato.local');
+    const restrito = await req('POST', `/bioteca/${objetoId}/restricoes`, {
+      restricoes: ['nao_emprestar', 'confidencial'],
+      justificativa: 'Caso em disputa.',
+    });
+    expect([200, 201], JSON.stringify(restrito.body)).toContain(restrito.status);
+    const emprestimo = await req('POST', '/bioteca/emprestimos', {
+      objetoIds: [objetoId],
+      destinatario: 'Prof. Externo',
+      finalidade: 'ensino',
+      prazoDevolucao: '2030-01-01',
+    });
+    // "Nao emprestar" e recusado aqui, nao na entrega.
+    expect(emprestimo.status).toBe(400);
+
+    const colecao = await req('POST', '/bioteca/colecoes', {
+      nome: `Coleção Didática ${marca}`,
+      finalidade: 'ensino',
+    });
+    expect(colecao.status, JSON.stringify(colecao.body)).toBe(201);
+    const adicionado = await req('POST', `/bioteca/colecoes/${colecao.body.id}/itens`, {
+      objetoId,
+      nota: 'Exemplo de bloco bem processado.',
+    });
+    expect([200, 201], JSON.stringify(adicionado.body)).toContain(adicionado.status);
+    // Sem duplicar o registro (§67).
+    const repetido = await req('POST', `/bioteca/colecoes/${colecao.body.id}/itens`, { objetoId });
+    expect([200, 201, 400, 409]).toContain(repetido.status);
+    const curto = await req('POST', '/bioteca/colecoes', { nome: 'ab' });
+    expect(curto.status).toBe(400);
   });
 });

@@ -890,7 +890,10 @@ export class LaudosController {
 const autocadastroSchema = z.object({
   nomeFantasia: z.string().min(1, 'Informe o nome.').max(160),
   razaoSocial: z.string().max(200).optional(),
-  documento: z.string().min(11, 'Informe o CNPJ.').max(30),
+  documento: z
+    .string()
+    .max(30)
+    .refine((d) => d.replace(/\D/g, '').length >= 11, 'Informe o CNPJ (ou CPF) completo.'),
   email: z.string().email('E-mail inválido.'),
   telefone: z.string().min(8, 'Informe o telefone.').max(40),
 });
@@ -1175,7 +1178,7 @@ const vinculoSchema = z.object({
   principal: z.boolean().optional(),
 });
 
-@ApiTags('M03 - Clientes e Veterinários')
+@ApiTags('M05 - Pacientes')
 /**
  * Paciente longitudinal (M05): a busca para "so inserir o exame" e a correcao
  * da identificacao depois do cadastro (documento do Hugo).
@@ -1208,6 +1211,7 @@ export class PacientesController {
   }
 }
 
+@ApiTags('M03 - Clientes e Veterinários')
 @Controller('clientes')
 export class ClientesController {
   constructor(private readonly clientes: ClientesService) {}
@@ -1601,12 +1605,14 @@ export class FluxoController {
     @Query('etapa') etapa?: string,
     @Query('minhaFila') minhaFila?: string,
     @Query('q') q?: string,
+    @Query('ordem') ordem?: string,
   ) {
     return this.consulta.listar({
       // `etapa=a,b` lista varias etapas de uma vez (fila da macro).
       etapa: etapa ? (etapa.split(',').map((e) => e.trim()) as Etapa[]) : undefined,
       apenasMinhaFila: minhaFila === 'true',
       q,
+      ordem: ordem === 'entrada' ? 'entrada' : 'previsao',
     });
   }
 
@@ -3234,9 +3240,9 @@ export class PrecosController {
   @Get('tabelas/:id/faixas')
   @ExigePermissao(PERMISSOES.PRECO_GERENCIAR)
   @ApiOperation({ summary: 'Faixas por quantidade de um serviço na tabela' })
-  async faixasDaTabela(@Param('id', ParseUUIDPipe) id: string, @Query('servicoId') servicoId: string) {
-    if (!servicoId) throw new BadRequestException('Informe o serviço.');
-    return this.ordens.faixasDaTabela(id, servicoId);
+  async faixasDaTabela(@Param('id', ParseUUIDPipe) id: string, @Query('servicoId') servicoId?: string) {
+    // Sem servico: todas as faixas da tabela, numa requisicao so (a tela de valores).
+    return this.ordens.faixasDaTabela(id, servicoId || undefined);
   }
 
   @Post('tabelas/:id/faixas')

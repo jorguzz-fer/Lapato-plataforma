@@ -39,6 +39,7 @@ import {
 import { api, ErroApi, type BancadaNecropsia, type Dossie } from '../api';
 import { AjudaBiblioteca } from '../componentes/AjudaBiblioteca';
 import { BloqueioGuardian } from './BloqueioGuardian';
+import { MapaCorporal } from './necropsia/MapaCorporal';
 
 /**
  * M14 - bancada de necropsia.
@@ -218,6 +219,8 @@ export function Necropsia({ permissoes }: { permissoes: string[] }) {
       </Stack>
 
       <ExameExterno banca={banca} editavel={editavel} agir={agir} ocupado={ocupado} />
+
+      <MapaCorporal banca={banca} editavel={editavel} agir={agir} ocupado={ocupado} />
 
       <ExameInterno banca={banca} editavel={editavel} agir={agir} ocupado={ocupado} />
 

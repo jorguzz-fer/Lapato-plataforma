@@ -753,6 +753,17 @@ export interface LesaoNecroscopica {
   observacoes: string | null;
 }
 
+/** M14 secao 62: posicao numa silhueta, por mil da vista; pode apontar para uma lesao. */
+export interface MarcadorCorporal {
+  id: string;
+  tipo: string;
+  vista: string;
+  x: number;
+  y: number;
+  descricao: string | null;
+  lesaoId: string | null;
+}
+
 export interface BancadaNecropsia {
   necropsia: {
     id: string;
@@ -777,6 +788,7 @@ export interface BancadaNecropsia {
     tipo: string;
     observacao: string | null;
   }>;
+  marcadores: MarcadorCorporal[];
   causaMortis: {
     causaImediata: string | null;
     condicaoAntecedente: string | null;

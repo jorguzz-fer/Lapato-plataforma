@@ -6,12 +6,14 @@ import {
   caso,
   exameOrgao,
   lesaoNecroscopica,
+  marcadorCorporal,
   necropsia,
   relacaoLesao,
   type Transacao,
 } from '@lapato/db';
 import {
   CLASSIFICACOES_CAUSAIS,
+  ESCALA_MAPA_CORPORAL,
   MODULOS,
   type CavidadeNecropsia,
   type ClassificacaoLesao,
@@ -21,6 +23,8 @@ import {
   type MecanismoTerminal,
   type ModalidadeNecropsia,
   type RelacaoLesao,
+  type TipoMarcadorCorporal,
+  type VistaMapaCorporal,
 } from '@lapato/shared';
 import { DbService } from '../../core/db/db.service.js';
 import { EventosService } from '../../core/eventos/eventos.service.js';
@@ -48,6 +52,19 @@ export interface DadosLesao {
   classificacao?: ClassificacaoLesao | null;
   impressaoMacroscopica?: string | null;
   observacoes?: string | null;
+}
+
+export interface DadosMarcador {
+  tipo: TipoMarcadorCorporal;
+  vista: VistaMapaCorporal;
+  /** 0 a 1000, por mil da largura e da altura da vista (secao 62). */
+  x: number;
+  y: number;
+  descricao?: string | null;
+  /** Aponta para um Objeto Lesao ja existente... */
+  lesaoId?: string | null;
+  /** ...ou cria um na mesma transacao e aponta para ele. */
+  lesao?: DadosLesao | null;
 }
 
 export interface DadosCausaMortis {
@@ -233,12 +250,111 @@ export class NecropsiaService {
 
   /** Objeto Lesao (secoes 73-74). O codigo `L01`, `L02`… e sequencial na necropsia. */
   async criarLesao(necropsiaId: string, dados: DadosLesao): Promise<{ id: string; codigo: string }> {
+    return this.db.executar(async (tx) => {
+      const atual = await this.buscar(tx, necropsiaId);
+      this.garantirEmAndamento(atual);
+      return this.inserirLesao(tx, necropsiaId, dados);
+    });
+  }
+
+  /**
+   * Mapa corporal (secao 62). O marcador e uma posicao numa silhueta e pode
+   * apontar para um Objeto Lesao - existente ou criado aqui mesmo, na mesma
+   * transacao, para o gesto "marquei e descrevi" nao virar dois passos.
+   */
+  async criarMarcador(
+    necropsiaId: string,
+    dados: DadosMarcador,
+  ): Promise<{ id: string; lesaoId: string | null; codigoLesao: string | null }> {
     const ctx = exigirContexto();
 
     return this.db.executar(async (tx) => {
       const atual = await this.buscar(tx, necropsiaId);
       this.garantirEmAndamento(atual);
+      this.garantirPosicao(dados.x, dados.y);
 
+      let lesaoId = dados.lesaoId ?? null;
+      let codigoLesao: string | null = null;
+      if (lesaoId) {
+        codigoLesao = (await this.exigirLesaoDaNecropsia(tx, necropsiaId, lesaoId)).codigo;
+      } else if (dados.lesao) {
+        const criada = await this.inserirLesao(tx, necropsiaId, dados.lesao);
+        lesaoId = criada.id;
+        codigoLesao = criada.codigo;
+      }
+
+      const [novo] = await tx
+        .insert(marcadorCorporal)
+        .values({
+          tenantId: ctx.tenantId,
+          necropsiaId,
+          tipo: dados.tipo,
+          vista: dados.vista,
+          x: Math.round(dados.x),
+          y: Math.round(dados.y),
+          descricao: dados.descricao?.trim() || null,
+          lesaoId,
+          criadoPorId: ctx.usuarioId,
+        })
+        .returning({ id: marcadorCorporal.id });
+
+      return { id: novo!.id, lesaoId, codigoLesao };
+    });
+  }
+
+  async editarMarcador(
+    marcadorId: string,
+    dados: Partial<Omit<DadosMarcador, 'lesao'>>,
+  ): Promise<void> {
+    return this.db.executar(async (tx) => {
+      const atual = await this.exigirMarcador(tx, marcadorId);
+      this.garantirEmAndamento(await this.buscar(tx, atual.necropsiaId));
+
+      const x = dados.x ?? atual.x;
+      const y = dados.y ?? atual.y;
+      this.garantirPosicao(x, y);
+
+      // `undefined` mantem; `null` desliga da lesao.
+      let lesaoId = atual.lesaoId;
+      if (dados.lesaoId !== undefined) {
+        if (dados.lesaoId) await this.exigirLesaoDaNecropsia(tx, atual.necropsiaId, dados.lesaoId);
+        lesaoId = dados.lesaoId;
+      }
+
+      await tx
+        .update(marcadorCorporal)
+        .set({
+          tipo: dados.tipo ?? atual.tipo,
+          vista: dados.vista ?? atual.vista,
+          x: Math.round(x),
+          y: Math.round(y),
+          descricao: dados.descricao === undefined ? atual.descricao : dados.descricao?.trim() || null,
+          lesaoId,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(marcadorCorporal.id, marcadorId));
+    });
+  }
+
+  /**
+   * O marcador e rascunho da bancada, nao registro clinico: pode ser desfeito
+   * enquanto a necropsia esta em andamento. A lesao que ele apontava fica.
+   */
+  async removerMarcador(marcadorId: string): Promise<void> {
+    return this.db.executar(async (tx) => {
+      const atual = await this.exigirMarcador(tx, marcadorId);
+      this.garantirEmAndamento(await this.buscar(tx, atual.necropsiaId));
+      await tx.delete(marcadorCorporal).where(eq(marcadorCorporal.id, marcadorId));
+    });
+  }
+
+  private async inserirLesao(
+    tx: Transacao,
+    necropsiaId: string,
+    dados: DadosLesao,
+  ): Promise<{ id: string; codigo: string }> {
+    const ctx = exigirContexto();
+    {
       const [contagem] = await tx
         .select({ total: sql<number>`count(*)` })
         .from(lesaoNecroscopica)
@@ -270,7 +386,7 @@ export class NecropsiaService {
         .returning({ id: lesaoNecroscopica.id });
 
       return { id: nova!.id, codigo };
-    });
+    }
   }
 
   async editarLesao(lesaoId: string, dados: Partial<DadosLesao>): Promise<void> {
@@ -510,11 +626,23 @@ export class NecropsiaService {
         )
         .limit(1);
 
+      const marcadores = await tx
+        .select()
+        .from(marcadorCorporal)
+        .where(
+          and(
+            eq(marcadorCorporal.tenantId, ctx.tenantId),
+            eq(marcadorCorporal.necropsiaId, registro.id),
+          ),
+        )
+        .orderBy(asc(marcadorCorporal.criadoEm));
+
       return {
         necropsia: registro,
         orgaos,
         lesoes,
         relacoes,
+        marcadores,
         causaMortis: causa ?? null,
         /**
          * Secao 72: checklist de completude anatomica. Contar so os examinados
@@ -546,6 +674,43 @@ export class NecropsiaService {
         'Necropsia concluída não aceita edição. Reabra o exame para corrigir.',
       );
     }
+  }
+
+  private garantirPosicao(x: number, y: number): void {
+    const dentro = (v: number) => Number.isFinite(v) && v >= 0 && v <= ESCALA_MAPA_CORPORAL;
+    if (!dentro(x) || !dentro(y)) {
+      throw new BadRequestException(
+        `A posição do marcador é por mil da vista: x e y entre 0 e ${ESCALA_MAPA_CORPORAL}.`,
+      );
+    }
+  }
+
+  private async exigirMarcador(tx: Transacao, marcadorId: string) {
+    const ctx = exigirContexto();
+    const [registro] = await tx
+      .select()
+      .from(marcadorCorporal)
+      .where(and(eq(marcadorCorporal.tenantId, ctx.tenantId), eq(marcadorCorporal.id, marcadorId)))
+      .limit(1);
+    if (!registro) throw new NotFoundException('Marcador não encontrado.');
+    return registro;
+  }
+
+  private async exigirLesaoDaNecropsia(tx: Transacao, necropsiaId: string, lesaoId: string) {
+    const ctx = exigirContexto();
+    const [registro] = await tx
+      .select({ id: lesaoNecroscopica.id, codigo: lesaoNecroscopica.codigo })
+      .from(lesaoNecroscopica)
+      .where(
+        and(
+          eq(lesaoNecroscopica.tenantId, ctx.tenantId),
+          eq(lesaoNecroscopica.necropsiaId, necropsiaId),
+          eq(lesaoNecroscopica.id, lesaoId),
+        ),
+      )
+      .limit(1);
+    if (!registro) throw new BadRequestException('A lesão não pertence a esta necropsia.');
+    return registro;
   }
 
   private async buscar(tx: Transacao, necropsiaId: string) {

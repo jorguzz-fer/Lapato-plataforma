@@ -20,6 +20,8 @@ import {
   mecanismoTerminalEnum,
   modalidadeNecropsiaEnum,
   relacaoLesaoEnum,
+  tipoMarcadorCorporalEnum,
+  vistaMapaCorporalEnum,
 } from './_comum.js';
 import { cadaver } from './cadaveres.js';
 import { caso } from './caso.js';
@@ -170,6 +172,36 @@ export const lesaoNecroscopica = pgTable(
   ],
 );
 
+
+/**
+ * Mapa corporal (secao 62): um marcador e uma posicao numa silhueta, "por
+ * mil" da largura e da altura da vista. Pode apontar para um Objeto Lesao; nao
+ * precisa. Some quando a necropsia esta em andamento e o patologista desfaz a
+ * marcacao - e rascunho da bancada, nao registro clinico (a lesao e).
+ */
+export const marcadorCorporal = pgTable(
+  'marcador_corporal',
+  {
+    ...colunasTenant,
+    necropsiaId: uuid('necropsia_id')
+      .notNull()
+      .references(() => necropsia.id),
+    tipo: tipoMarcadorCorporalEnum('tipo').notNull(),
+    vista: vistaMapaCorporalEnum('vista').notNull(),
+    /** 0 a 1000, da esquerda para a direita da vista. */
+    x: integer('x').notNull(),
+    /** 0 a 1000, de cima para baixo da vista. */
+    y: integer('y').notNull(),
+    descricao: text('descricao'),
+    lesaoId: uuid('lesao_id').references(() => lesaoNecroscopica.id),
+    criadoPorId: uuid('criado_por_id')
+      .notNull()
+      .references(() => usuario.id),
+    ...colunasTempo,
+  },
+  (t) => [index('idx_marcador_corporal_necropsia').on(t.tenantId, t.necropsiaId)],
+);
+
 /**
  * Relacao entre lesoes (secao 76) - o mapa fisiopatologico (secao 102).
  *
@@ -247,10 +279,16 @@ export const necropsiaRelations = relations(necropsia, ({ one, many }) => ({
   orgaos: many(exameOrgao),
   lesoes: many(lesaoNecroscopica),
   relacoes: many(relacaoLesao),
+  marcadores: many(marcadorCorporal),
 }));
 
 export const exameOrgaoRelations = relations(exameOrgao, ({ one }) => ({
   necropsia: one(necropsia, { fields: [exameOrgao.necropsiaId], references: [necropsia.id] }),
+}));
+
+export const marcadorCorporalRelations = relations(marcadorCorporal, ({ one }) => ({
+  necropsia: one(necropsia, { fields: [marcadorCorporal.necropsiaId], references: [necropsia.id] }),
+  lesao: one(lesaoNecroscopica, { fields: [marcadorCorporal.lesaoId], references: [lesaoNecroscopica.id] }),
 }));
 
 export const lesaoNecroscopicaRelations = relations(lesaoNecroscopica, ({ one }) => ({

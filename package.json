@@ -35,10 +35,11 @@
     "typescript-eslint": "^8.18.1"
   },
   "pnpm": {
-    "//": "Overrides de seguranca: dependencias transitivas que os pacotes pais ainda nao atualizaram. `qs` e `esbuild` entraram na auditoria de 23/08/2026 (ver docs/auditoria-seguranca.md). Revisar a cada bump de NestJS, Vite e Vitest; remover assim que o pai passar a exigir a versao corrigida.",
+    "//": "Overrides de seguranca: dependencias transitivas que os pacotes pais ainda nao atualizaram. `qs` e `esbuild` entraram na auditoria de 23/08/2026 (ver docs/auditoria-seguranca.md); `multer` (DoS por nome de campo e por upload abortado, GHSA-wc9g-mqfw-jrwm, GHSA-qfvm-cv95-jqjf, GHSA-535w-7cp7-47q4) e o bump do `js-yaml` (GHSA-2883-xcg3-v3hh) em 09/09/2026. Revisar a cada bump de NestJS, Vite e Vitest; remover assim que o pai passar a exigir a versao corrigida.",
     "overrides": {
       "vite": "^6.4.3",
-      "js-yaml": "^4.3.1",
+      "js-yaml": "^4.3.2",
+      "multer": "^2.3.0",
       "qs": "^6.15.2",
       "esbuild": "^0.25.0"
     }

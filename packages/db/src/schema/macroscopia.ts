@@ -99,6 +99,12 @@ export const lesaoMacroscopica = pgTable(
     menorEixoCm: numeric('menor_eixo_cm', { precision: 8, scale: 2 }),
     /** Terceira revisao: tres eixos, "2,5 x 2,0 x 1,2 cm", da maior para a menor. */
     terceiroEixoCm: numeric('terceiro_eixo_cm', { precision: 8, scale: 2 }),
+    /**
+     * Terceira revisao com o Hugo: cada lesao tem a propria macroscopia - os
+     * bloquinhos marcados (`caracteristicas`) e o texto que eles viraram. A
+     * descricao da amostra e a soma delas.
+     */
+    descricaoTexto: text('descricao_texto'),
     delimitacao: text('delimitacao'),
     distribuicao: text('distribuicao'),
     /** unica | multiplas | incontaveis */
@@ -131,6 +137,8 @@ export const margemMacroscopica = pgTable(
       .references(() => macroscopia.id, { onDelete: 'cascade' }),
     nome: text('nome').notNull(),
     tipo: text('tipo'),
+    /** Terceira revisao: a margem e de uma lesao ("dos tres nodulos, so um tem margem"). */
+    lesaoId: uuid('lesao_id').references(() => lesaoMacroscopica.id),
     metodoAmostragem: metodoAmostragemEnum('metodo_amostragem'),
     distanciaCm: numeric('distancia_cm', { precision: 8, scale: 2 }),
     /** M08: tinta usada, com cor, fabricante e metodo de fixacao. */

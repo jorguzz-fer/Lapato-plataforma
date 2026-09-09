@@ -4,6 +4,7 @@ import {
   diaNaoUtil,
   localFisico,
   modeloEtiqueta,
+  modeloMacroscopia,
   servico,
   setor,
   tabelaMestre,
@@ -31,6 +32,13 @@ export interface DadosServico {
   prazoDiasUteis?: number;
   prazoUrgenteDiasUteis?: number | null;
   valorPadrao?: number | null;
+}
+
+export interface DadosModeloMacroscopia {
+  orgao: string;
+  titulo: string;
+  texto: string;
+  ordem?: number;
 }
 
 export interface DadosTermo {
@@ -342,6 +350,83 @@ export class AdministracaoService {
 
   async alternarTermo(id: string, ativar: boolean): Promise<void> {
     await this.alternarAtivacao(termo, 'termo', id, ativar, 'Termo');
+  }
+
+  // --- modelos de macroscopia (terceira revisao com o Hugo) ------------------
+
+  /**
+   * "Eu tenho essas mascaras todas prontas - baco com nodulo, sem nodulo,
+   * multiplos nodulos... so copio, colo e altero o que precisa." O modelo e
+   * texto por orgao com lacunas ({peca}, {lesao}, {peso}) que a bancada
+   * preenche com o que foi medido. Inativa, nunca exclui (M01).
+   */
+  async listarModelosMacroscopia(): Promise<unknown[]> {
+    const ctx = exigirContexto();
+    return this.db.executar((tx) =>
+      tx
+        .select({
+          id: modeloMacroscopia.id,
+          orgao: modeloMacroscopia.orgao,
+          titulo: modeloMacroscopia.titulo,
+          texto: modeloMacroscopia.texto,
+          ordem: modeloMacroscopia.ordem,
+          inativadoEm: modeloMacroscopia.inativadoEm,
+        })
+        .from(modeloMacroscopia)
+        .where(eq(modeloMacroscopia.tenantId, ctx.tenantId))
+        .orderBy(asc(modeloMacroscopia.orgao), asc(modeloMacroscopia.ordem), asc(modeloMacroscopia.titulo)),
+    );
+  }
+
+  async criarModeloMacroscopia(dados: DadosModeloMacroscopia): Promise<{ id: string }> {
+    const ctx = exigirContexto();
+    return this.db.executar(async (tx) => {
+      const [novo] = await tx
+        .insert(modeloMacroscopia)
+        .values({
+          tenantId: ctx.tenantId,
+          orgao: dados.orgao.trim(),
+          titulo: dados.titulo.trim(),
+          texto: dados.texto.trim(),
+          ordem: dados.ordem ?? 0,
+        })
+        .returning({ id: modeloMacroscopia.id });
+      await this.auditoria.registrar(tx, {
+        entidade: 'modelo_macroscopia',
+        entidadeId: novo!.id,
+        acao: 'criacao',
+        valorNovo: { ...dados },
+      });
+      return { id: novo!.id };
+    });
+  }
+
+  async editarModeloMacroscopia(id: string, dados: Partial<DadosModeloMacroscopia>): Promise<void> {
+    const ctx = exigirContexto();
+    return this.db.executar(async (tx) => {
+      const [atual] = await tx
+        .select()
+        .from(modeloMacroscopia)
+        .where(and(eq(modeloMacroscopia.tenantId, ctx.tenantId), eq(modeloMacroscopia.id, id)))
+        .limit(1);
+      if (!atual) throw new NotFoundException('Modelo de macroscopia não encontrado.');
+      const mudancas: Record<string, unknown> = {};
+      if (dados.orgao !== undefined) mudancas.orgao = dados.orgao.trim();
+      if (dados.titulo !== undefined) mudancas.titulo = dados.titulo.trim();
+      if (dados.texto !== undefined) mudancas.texto = dados.texto.trim();
+      if (dados.ordem !== undefined) mudancas.ordem = dados.ordem;
+      if (Object.keys(mudancas).length === 0) return;
+      await tx
+        .update(modeloMacroscopia)
+        .set({ ...mudancas, atualizadoEm: new Date() })
+        .where(eq(modeloMacroscopia.id, id));
+      const antes = { orgao: atual.orgao, titulo: atual.titulo, texto: atual.texto, ordem: atual.ordem };
+      await this.auditoria.registrarAlteracao(tx, 'modelo_macroscopia', id, antes, { ...antes, ...mudancas });
+    });
+  }
+
+  async alternarModeloMacroscopia(id: string, ativar: boolean): Promise<void> {
+    await this.alternarAtivacao(modeloMacroscopia, 'modelo_macroscopia', id, ativar, 'Modelo de macroscopia');
   }
 
   // --- unidades e setores (secoes 7-8) --------------------------------------
@@ -702,7 +787,8 @@ export class AdministracaoService {
       | typeof setor
       | typeof tabelaMestre
       | typeof localFisico
-      | typeof modeloEtiqueta,
+      | typeof modeloEtiqueta
+      | typeof modeloMacroscopia,
     id: string,
     rotulo: string,
   ) {
@@ -718,7 +804,13 @@ export class AdministracaoService {
 
   /** Inativacao/reativacao comum (secao 21) - com auditoria. */
   private async alternarAtivacao(
-    tabela: typeof servico | typeof termo | typeof unidade | typeof setor | typeof localFisico,
+    tabela:
+      | typeof servico
+      | typeof termo
+      | typeof unidade
+      | typeof setor
+      | typeof localFisico
+      | typeof modeloMacroscopia,
     entidade: string,
     id: string,
     ativar: boolean,

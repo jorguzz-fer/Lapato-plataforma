@@ -1,8 +1,9 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, ilike, isNull } from 'drizzle-orm';
 import {
   cliente,
+  modeloMacroscopia,
   servico,
   tabelaMestre,
   termo,
@@ -176,6 +177,35 @@ export class CatalogoController {
             isNull(termo.inativadoEm),
           ),
         );
+    });
+  }
+
+  @Get('modelos-macroscopia')
+  @ExigePermissao(PERMISSOES.CASO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Modelos prontos de macroscopia ativos (terceira revisão)',
+    description: 'Opcionalmente filtrados por órgão (busca parcial). O texto traz lacunas {peca}, {lesao} e {peso}.',
+  })
+  async modelosMacroscopia(@Query('orgao') orgao?: string) {
+    return this.db.executar(async (tx) => {
+      const ctx = exigirContexto();
+      const termoBusca = orgao?.trim();
+      return tx
+        .select({
+          id: modeloMacroscopia.id,
+          orgao: modeloMacroscopia.orgao,
+          titulo: modeloMacroscopia.titulo,
+          texto: modeloMacroscopia.texto,
+        })
+        .from(modeloMacroscopia)
+        .where(
+          and(
+            eq(modeloMacroscopia.tenantId, ctx.tenantId),
+            isNull(modeloMacroscopia.inativadoEm),
+            ...(termoBusca ? [ilike(modeloMacroscopia.orgao, `%${termoBusca}%`)] : []),
+          ),
+        )
+        .orderBy(asc(modeloMacroscopia.orgao), asc(modeloMacroscopia.ordem), asc(modeloMacroscopia.titulo));
     });
   }
 }

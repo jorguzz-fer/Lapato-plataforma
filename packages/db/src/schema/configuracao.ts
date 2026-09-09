@@ -149,6 +149,27 @@ export const termo = pgTable(
  * preservado mesmo quando o caso e cancelado. Por isso o contador so anda para
  * frente e a alocacao acontece dentro da transacao que cria o caso.
  */
+/**
+ * Terceira revisao com o Hugo: "eu tenho essas mascaras todas prontas - baco
+ * com nodulo, baco sem nodulo... so copio, colo e altero o que precisa". O
+ * modelo e texto por orgao, com lacunas para as medidas ({peca}, {lesao},
+ * {peso}) que a bancada preenche com o que foi medido. M01: inativa, nunca
+ * exclui; o texto ja inserido numa ficha e da ficha.
+ */
+export const modeloMacroscopia = pgTable(
+  'modelo_macroscopia',
+  {
+    ...colunasTenant,
+    orgao: text('orgao').notNull(),
+    titulo: text('titulo').notNull(),
+    texto: text('texto').notNull(),
+    ordem: integer('ordem').notNull().default(0),
+    ...colunasTempo,
+    ...colunasInativacao,
+  },
+  (t) => [index('idx_modelo_macroscopia_orgao').on(t.tenantId, t.orgao)],
+);
+
 export const sequenciaNumeracao = pgTable(
   'sequencia_numeracao',
   {

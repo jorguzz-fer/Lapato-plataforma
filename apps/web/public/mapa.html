@@ -884,8 +884,8 @@
 
   <nav class="abas" role="tablist" aria-label="Seções do mapa">
     <button class="aba" role="tab" id="aba-modulos" aria-controls="painel-modulos" aria-selected="true" data-aba="modulos">Módulos <span class="badge">26</span></button>
-    <button class="aba" role="tab" id="aba-entregas" aria-controls="painel-entregas" aria-selected="false" data-aba="entregas">Entregas <span class="badge">34 PRs</span></button>
-    <button class="aba" role="tab" id="aba-homologacao" aria-controls="painel-homologacao" aria-selected="false" data-aba="homologacao">Homologação <span class="badge">23 cenários</span></button>
+    <button class="aba" role="tab" id="aba-entregas" aria-controls="painel-entregas" aria-selected="false" data-aba="entregas">Entregas <span class="badge">35 PRs</span></button>
+    <button class="aba" role="tab" id="aba-homologacao" aria-controls="painel-homologacao" aria-selected="false" data-aba="homologacao">Homologação <span class="badge">24 cenários</span></button>
   </nav>
 
   <!-- ======================================================================
@@ -1227,7 +1227,7 @@
       <li class="passo">
         <div>
           <h3>Homologar em produção</h3>
-          <p class="marca">aba Homologação · 23 cenários · Hugo, Roberta e Raquel</p>
+          <p class="marca">aba Homologação · 24 cenários · Hugo, Roberta e Raquel</p>
           <p>Tudo o que entrou nas duas rodadas ainda não passou pelas mãos de quem opera. O roteiro diz quem testa o quê e o que tem de acontecer; o que falhar volta como correção antes de qualquer módulo novo.</p>
         </div>
       </li>
@@ -1256,9 +1256,9 @@
   <div class="painel" id="painel-entregas" role="tabpanel" aria-labelledby="aba-entregas" hidden>
 
   <section class="entregas-placar" aria-label="Resumo das entregas desde a última versão do mapa">
-    <div class="metrica"><span class="n">34</span><span class="r">PRs mergeados de 23/08 a 09/09</span></div>
-    <div class="metrica"><span class="n">10</span><span class="r">migrações de banco (0011–0020)</span></div>
-    <div class="metrica"><span class="n">318</span><span class="r">testes automatizados (212 na API, 72 no shared, 34 no db)</span></div>
+    <div class="metrica"><span class="n">35</span><span class="r">PRs mergeados de 23/08 a 09/09</span></div>
+    <div class="metrica"><span class="n">11</span><span class="r">migrações de banco (0011–0021)</span></div>
+    <div class="metrica"><span class="n">320</span><span class="r">testes automatizados (214 na API, 72 no shared, 34 no db)</span></div>
     <div class="metrica"><span class="n">10</span><span class="r">achados do code review, todos corrigidos</span></div>
   </section>
 
@@ -1322,6 +1322,7 @@
 
     <div class="entrega"><span class="pr">#80 · #81</span><div><p class="titulo">Mapa com as entregas e a aba Homologação; Raquel assume os cenários administrativos <span class="mods">docs</span></p><p class="detalhe">Esta página ganhou as abas Entregas e Homologação, com o resultado de cada cenário guardado no navegador de quem testa.</p></div></div>
     <div class="entrega"><span class="pr">#82</span><div><p class="titulo">Logística: execução com evidências, rota do dia, produção do encarregado e a tela <span class="mods">M19 · M16 · M20</span></p><p class="detalhe">Marcos do §150 no celular, foto e posição obrigatórias na retirada e na entrega, divergência de volumes com justificativa, recebedor na entrega, ocorrência, não realização e reagendamento. Rota com Guardian no encerramento. Serviço concluído vira item de produção no Financeiro. Migração 0017.</p></div></div>
+    <div class="entrega"><span class="pr">#87</span><div><p class="titulo">Terceira revisão, parte 3: uma macro por lesão, modelos prontos e resumo de cassetes <span class="mods">M08 · M01 · M16</span></p><p class="detalhe">"Vem uma cadeia mamária e nessa peça vem cinco nódulos — só conseguimos decidir isso na macroscopia." Cada lesão vira um painel com bloquinhos, texto composto (com as medidas dela), cassetes com fragmentos, margem própria e foto; "Adicionar macro" abre outro. Modelos prontos por órgão (Configurações), com as lacunas de medida preenchidas ao entrar no texto. Resumo de cassetes e fragmentos e a descrição da amostra montada a partir das macros. Migração 0021.</p></div></div>
     <div class="entrega"><span class="pr">#86</span><div><p class="titulo">Terceira revisão, parte 2: corrigir amostras e recipientes depois do cadastro <span class="mods">M05</span></p><p class="detalhe">"Inseri só um frasco, eram dois, e não achei onde editar depois." Incluir e corrigir amostras (descrição, margem, lateralidade, pote) e recipientes (tipo, fixador, identificação externa, quantidade declarada) até o laudo ser liberado. Cada mudança fica na auditoria campo a campo e na linha do tempo, com quem fez. Permissão caso:corrigir_material na recepção, no técnico e no patologista.</p></div></div>
     <div class="entrega"><span class="pr">#85</span><div><p class="titulo">Terceira revisão com o Hugo, parte 1: cadastro, fotos, macro e tabelas mestres <span class="mods">M05 · M08 · M01 · M16</span></p><p class="detalhe">Margem cirúrgica decidida no cadastro (no lugar de órgão e região) e a macroscopia só avalia margem quando há; Formol 10% já vem marcado; foto da requisição e dos potes no próprio cadastro; envio de imagem sem escolher "etapa" e erro de validação dizendo o campo; identificação do animal corrigível na macroscopia e no laudo; fragmentos por cassete e resumo de cassetes para quem lê a lâmina; terceiro eixo da lesão e medida "a x b x c cm"; termos das tabelas mestres e unidades editáveis; botão Necropsia só em caso de necropsia. Migração 0020.</p></div></div>
     <div class="entrega"><span class="pr">#84</span><div><p class="titulo">Necropsia: mapa corporal no exame externo <span class="mods">M14</span></p><p class="detalhe">Silhueta em quatro vistas; clique marca ferida, escoriação, hematoma, incisão, massa ou fratura suspeita, com posição guardada por mil da vista. O marcador aponta para uma lesão existente ou cria uma na mesma transação; desfazer a marcação não apaga a lesão. Migração 0019.</p></div></div>
@@ -1342,14 +1343,14 @@
   <div class="painel" id="painel-homologacao" role="tabpanel" aria-labelledby="aba-homologacao" hidden>
 
   <p class="resumo-texto">
-    O que entrou nos PRs #69 a #86 e ainda não passou pelas mãos de quem opera. Cada cenário diz
+    O que entrou nos PRs #69 a #87 e ainda não passou pelas mãos de quem opera. Cada cenário diz
     <strong>quem testa</strong>, onde, os passos e o que tem de acontecer. Marque o resultado
     embaixo de cada um: fica salvo neste navegador. Quando terminar, o que estiver
     <em>Falhou</em> ou <em>Bloqueado</em> vai para o Fernando com a observação.
   </p>
 
 <section class="hom-resumo" aria-label="Resumo do roteiro">
-  <div class="metrica"><span class="n">23</span><span class="r">cenários</span></div>
+  <div class="metrica"><span class="n">24</span><span class="r">cenários</span></div>
   <div class="metrica"><span class="n">12</span><span class="r">blocos de funcionalidade</span></div>
   <div class="metrica"><span class="n">3</span><span class="r">pessoas testando, e o Fernando nos pré-requisitos</span></div>
   <div class="metrica"><span class="n">~2 h 30</span><span class="r">de ponta a ponta, sem contar espera de laboratório</span></div>
@@ -1367,14 +1368,14 @@
   <thead><tr><th>Quem</th><th>Perfil na plataforma</th><th>Cenários</th></tr></thead>
   <tbody>
     <tr><td>Roberta</td><td>Recepção / Financeiro</td><td>H-01 a H-06, H-13 a H-16, H-19, H-23</td></tr>
-    <tr><td>Hugo</td><td>Patologista</td><td>H-07 a H-12, H-17, H-20 a H-22</td></tr>
+    <tr><td>Hugo</td><td>Patologista</td><td>H-07 a H-12, H-17, H-20 a H-22, H-24</td></tr>
     <tr><td>Raquel</td><td>Administrativo</td><td>H-04, H-13, H-18, H-19</td></tr>
     <tr><td>Fernando</td><td>Infra (Coolify)</td><td>Pré-requisitos, antes de todo mundo</td></tr>
   </tbody>
 </table>
 </div>
 
-<div class="hom-placar" id="placar"><span>OK <b data-conta="ok">0</b></span><span>Falhou <b data-conta="falhou">0</b></span><span>Bloqueado <b data-conta="bloqueado">0</b></span><span>Sem marcar <b data-conta="pendente">23</b></span><button type="button" id="limpar">Limpar marcações</button></div>
+<div class="hom-placar" id="placar"><span>OK <b data-conta="ok">0</b></span><span>Falhou <b data-conta="falhou">0</b></span><span>Bloqueado <b data-conta="bloqueado">0</b></span><span>Sem marcar <b data-conta="pendente">24</b></span><button type="button" id="limpar">Limpar marcações</button></div>
 
 <!-- ============ BLOCO 1 ============ -->
 <section class="hom-bloco">
@@ -1809,7 +1810,7 @@
 </section>
 
 <section class="hom-bloco">
-  <div class="hom-bloco-cab"><h2>12. Terceira revisão (9/9), partes 1 e 2</h2><span class="pr">PR #85 · #86</span><span class="menu">Novo caso · Recebimento · Macroscopia · Configurações</span></div>
+  <div class="hom-bloco-cab"><h2>12. Terceira revisão (9/9)</h2><span class="pr">PR #85 · #86 · #87</span><span class="menu">Novo caso · Recebimento · Macroscopia · Configurações</span></div>
 
   <article class="cenario" data-id="H-22">
     <div class="cab"><span class="id">H-22</span><h3>Margem no cadastro, foto na hora, fragmentos por cassete e correção na bancada</h3><div class="meta"><span>Hugo</span><span>Novo caso → Macroscopia</span><span>8 min</span></div></div>
@@ -1847,6 +1848,25 @@
     </div>
     <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
   </article>
+
+  <article class="cenario" data-id="H-24">
+    <div class="cab"><span class="id">H-24</span><h3>Cadeia mamária com dois nódulos: uma macro por lesão, modelo pronto e resumo</h3><div class="meta"><span>Hugo</span><span>Configurações → Macroscopia</span><span>10 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Configurações → Modelos de macroscopia → "Novo modelo": órgão Mama, título "Nódulo mamário", texto com <code>{peca}</code> e <code>{lesao}</code>.</li>
+        <li>Abra a macroscopia de um caso com margem cadastrada. Na Peça, meça 30 x 10 x 2 cm. Na Macro 1, dê tipo e três eixos, marque bloquinhos, "Compor descrição"; depois escolha o modelo pronto.</li>
+        <li>Gere 2 cassetes desta lesão com 3 e 2 fragmentos; adicione uma margem à lesão. Clique "Adicionar macro" e repita para o segundo nódulo, sem margem. Tire uma foto da Macro 2.</li>
+        <li>Salve o rascunho, clique "Montar a partir das macros" e conclua.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>A frase composta da Macro 1 traz a medida <strong>da lesão</strong> ("2,5 x 2,0 x 1,2 cm"), não a da peça; o modelo entra com as lacunas preenchidas.</li>
+        <li>Cada cassete gravado aparece na macro certa; o resumo diz "4 cassetes · N fragmentos" com L01 e L02.</li>
+        <li>A margem fica só na Macro 1; a foto, só na Macro 2. A descrição da amostra sai com "L01 — …" e "L02 — …".</li>
+        <li>No laudo, o cabeçalho mostra os cassetes e fragmentos da amostra; o texto do laudo é a descrição montada.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
 </section>
 
 <section class="hom-fora bloco">
@@ -1859,6 +1879,7 @@
     <li>Lista de preços por serviço da Roberta para carregar nas tabelas.</li>
     <li>Portal do cliente pedindo coleta, mapa e sugestão automática de rota (Logística).</li>
     <li>Busca semântica da Biblioteca pelo Copiloto e documento vinculado a caso.</li>
+    <li>Modelos prontos de macroscopia e descritores revisados do Hugo: o mecanismo está no ar, os textos entram quando o documento chegar.</li>
   </ul>
   <p class="fecho">Quando terminar, mande para o Fernando os cenários marcados como <em>Falhou</em> ou <em>Bloqueado</em> com a observação. O que estiver <em>OK</em> não precisa de mensagem.</p>
 </section>

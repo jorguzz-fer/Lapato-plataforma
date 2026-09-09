@@ -148,6 +148,13 @@
       "when": 1788966496175,
       "tag": "0020_heavy_white_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1788967930785,
+      "tag": "0021_lonely_slipstream",
+      "breakpoints": true
     }
   ]
 }

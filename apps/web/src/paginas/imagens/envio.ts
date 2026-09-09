@@ -63,12 +63,18 @@ export async function enviarImagemDoCaso(
   arquivo: File,
   tipo: string,
   moduloContexto: string,
+  /** Terceira revisão: a foto de uma lesão da macroscopia aponta para ela. */
+  objeto?: { objetoTipo: string; objetoId: string },
 ): Promise<void> {
   conferirImagem(arquivo);
   const corpo = new FormData();
   corpo.append('arquivo', arquivo);
   corpo.append('tipo', tipo);
   corpo.append('moduloContexto', moduloContexto);
+  if (objeto) {
+    corpo.append('objetoTipo', objeto.objetoTipo);
+    corpo.append('objetoId', objeto.objetoId);
+  }
   const mini = await gerarMiniatura(arquivo);
   if (mini) corpo.append('miniatura', mini, 'miniatura.jpg');
   await api.postForm(`/imagens/casos/${casoId}`, corpo);

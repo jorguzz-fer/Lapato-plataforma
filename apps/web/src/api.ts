@@ -286,6 +286,8 @@ export interface Dossie {
     /** Nomes (termos do M01), para a conferência ler o que foi declarado. */
     tipo: string | null;
     fixador: string | null;
+    tipoId: string | null;
+    fixadorId: string | null;
     identificacaoExterna: string | null;
     observacoes: string | null;
     quantidadeDeclarada: number | null;

@@ -9,6 +9,7 @@ import {
   estadoCaso,
   historicoClinico,
   lamina,
+  laudo,
   paciente,
   perfil,
   recipiente,
@@ -49,6 +50,20 @@ export interface DadosPaciente {
   tutorNome?: string;
   tutorTelefone?: string;
   tutorEmail?: string;
+}
+
+export interface DadosAmostraEdicao {
+  descricao?: string | null;
+  margemCirurgica?: MargemCirurgica;
+  lateralidade?: Lateralidade;
+  recipienteId?: string | null;
+}
+
+export interface DadosRecipienteEdicao {
+  tipoId?: string | null;
+  fixadorId?: string | null;
+  identificacaoExterna?: string | null;
+  quantidadeDeclarada?: number;
 }
 
 export interface DadosNovoCaso {
@@ -486,6 +501,222 @@ export class CasosService {
    * linha do tempo. Quem cadastrou ontem o que chegou anteontem conserta
    * aqui, e o caso deixa de nascer atrasado.
    */
+  /**
+   * Terceira revisao com o Hugo: "inseri so um frasco, eram dois, e nao achei
+   * onde editar depois". Amostras e recipientes mudam ate o laudo ser
+   * liberado (Fernando: "so nao pode editar depois que fechou"); cada mudanca
+   * fica na auditoria campo a campo e na linha do tempo, com quem fez.
+   */
+  async adicionarAmostra(
+    casoId: string,
+    dados: DadosAmostraEdicao,
+  ): Promise<{ id: string; identificador: string }> {
+    const ctx = exigirContexto();
+    return this.db.executar(async (tx) => {
+      const alvo = await this.exigirCasoAberto(tx, casoId);
+      if (dados.recipienteId) await this.exigirRecipienteDoCaso(tx, casoId, dados.recipienteId);
+
+      const [contagem] = await tx
+        .select({ total: sql<number>`count(*)` })
+        .from(amostra)
+        .where(and(eq(amostra.tenantId, ctx.tenantId), eq(amostra.casoId, casoId)));
+      const ordem = Number(contagem?.total ?? 0) + 1;
+      const identificador = identificadorAmostra(alvo.identificador, ordem);
+
+      const [nova] = await tx
+        .insert(amostra)
+        .values({
+          tenantId: ctx.tenantId,
+          casoId,
+          recipienteId: dados.recipienteId ?? null,
+          identificador,
+          ordem,
+          letra: String.fromCharCode(64 + ordem),
+          descricao: dados.descricao?.trim() || null,
+          margemCirurgica: dados.margemCirurgica ?? 'sem_margem',
+          lateralidade: dados.lateralidade ?? 'nao_aplicavel',
+        })
+        .returning({ id: amostra.id });
+
+      await this.auditoria.registrarAlteracao(tx, 'amostra', nova!.id, {}, { ...dados, identificador });
+      await this.eventos.publicar(tx, {
+        tipo: 'caso.material_alterado',
+        casoId,
+        moduloOrigem: MODULOS.M05_RECEBIMENTO,
+        payload: { objeto: 'amostra', identificador, acao: 'incluida', por: ctx.nomeCompleto },
+      });
+      return { id: nova!.id, identificador };
+    });
+  }
+
+  async editarAmostra(amostraId: string, dados: DadosAmostraEdicao): Promise<void> {
+    const ctx = exigirContexto();
+    return this.db.executar(async (tx) => {
+      const [atual] = await tx
+        .select()
+        .from(amostra)
+        .where(and(eq(amostra.tenantId, ctx.tenantId), eq(amostra.id, amostraId)))
+        .limit(1);
+      if (!atual) throw new NotFoundException('Amostra não encontrada.');
+      await this.exigirCasoAberto(tx, atual.casoId);
+      if (dados.recipienteId) await this.exigirRecipienteDoCaso(tx, atual.casoId, dados.recipienteId);
+
+      const depois = {
+        descricao: dados.descricao === undefined ? atual.descricao : dados.descricao?.trim() || null,
+        margemCirurgica: dados.margemCirurgica ?? atual.margemCirurgica,
+        lateralidade: dados.lateralidade ?? atual.lateralidade,
+        recipienteId: dados.recipienteId === undefined ? atual.recipienteId : dados.recipienteId,
+      };
+      await tx
+        .update(amostra)
+        .set({ ...depois, atualizadoEm: new Date() })
+        .where(eq(amostra.id, amostraId));
+
+      await this.auditoria.registrarAlteracao(
+        tx,
+        'amostra',
+        amostraId,
+        {
+          descricao: atual.descricao,
+          margemCirurgica: atual.margemCirurgica,
+          lateralidade: atual.lateralidade,
+          recipienteId: atual.recipienteId,
+        },
+        depois,
+      );
+      await this.eventos.publicar(tx, {
+        tipo: 'caso.material_alterado',
+        casoId: atual.casoId,
+        moduloOrigem: MODULOS.M05_RECEBIMENTO,
+        payload: { objeto: 'amostra', identificador: atual.identificador, acao: 'corrigida', por: ctx.nomeCompleto },
+      });
+    });
+  }
+
+  async adicionarRecipiente(
+    casoId: string,
+    dados: DadosRecipienteEdicao,
+  ): Promise<{ id: string; identificador: string }> {
+    const ctx = exigirContexto();
+    return this.db.executar(async (tx) => {
+      const alvo = await this.exigirCasoAberto(tx, casoId);
+      const [contagem] = await tx
+        .select({ total: sql<number>`count(*)` })
+        .from(recipiente)
+        .where(and(eq(recipiente.tenantId, ctx.tenantId), eq(recipiente.casoId, casoId)));
+      const ordem = Number(contagem?.total ?? 0) + 1;
+      const identificador = identificadorRecipiente(alvo.identificador, ordem);
+
+      const [novo] = await tx
+        .insert(recipiente)
+        .values({
+          tenantId: ctx.tenantId,
+          casoId,
+          identificador,
+          ordem,
+          tipoId: dados.tipoId ?? null,
+          fixadorId: dados.fixadorId ?? null,
+          identificacaoExterna: dados.identificacaoExterna?.trim() || null,
+          quantidadeDeclarada: dados.quantidadeDeclarada ?? 1,
+        })
+        .returning({ id: recipiente.id });
+
+      await this.auditoria.registrarAlteracao(tx, 'recipiente', novo!.id, {}, { ...dados, identificador });
+      await this.eventos.publicar(tx, {
+        tipo: 'caso.material_alterado',
+        casoId,
+        moduloOrigem: MODULOS.M05_RECEBIMENTO,
+        payload: { objeto: 'recipiente', identificador, acao: 'incluido', por: ctx.nomeCompleto },
+      });
+      return { id: novo!.id, identificador };
+    });
+  }
+
+  async editarRecipiente(recipienteId: string, dados: DadosRecipienteEdicao): Promise<void> {
+    const ctx = exigirContexto();
+    return this.db.executar(async (tx) => {
+      const [atual] = await tx
+        .select()
+        .from(recipiente)
+        .where(and(eq(recipiente.tenantId, ctx.tenantId), eq(recipiente.id, recipienteId)))
+        .limit(1);
+      if (!atual) throw new NotFoundException('Recipiente não encontrado.');
+      await this.exigirCasoAberto(tx, atual.casoId);
+
+      const depois = {
+        tipoId: dados.tipoId === undefined ? atual.tipoId : dados.tipoId,
+        fixadorId: dados.fixadorId === undefined ? atual.fixadorId : dados.fixadorId,
+        identificacaoExterna:
+          dados.identificacaoExterna === undefined
+            ? atual.identificacaoExterna
+            : dados.identificacaoExterna?.trim() || null,
+        quantidadeDeclarada: dados.quantidadeDeclarada ?? atual.quantidadeDeclarada,
+      };
+      await tx
+        .update(recipiente)
+        .set({ ...depois, atualizadoEm: new Date() })
+        .where(eq(recipiente.id, recipienteId));
+
+      await this.auditoria.registrarAlteracao(
+        tx,
+        'recipiente',
+        recipienteId,
+        {
+          tipoId: atual.tipoId,
+          fixadorId: atual.fixadorId,
+          identificacaoExterna: atual.identificacaoExterna,
+          quantidadeDeclarada: atual.quantidadeDeclarada,
+        },
+        depois,
+      );
+      await this.eventos.publicar(tx, {
+        tipo: 'caso.material_alterado',
+        casoId: atual.casoId,
+        moduloOrigem: MODULOS.M05_RECEBIMENTO,
+        payload: { objeto: 'recipiente', identificador: atual.identificador, acao: 'corrigido', por: ctx.nomeCompleto },
+      });
+    });
+  }
+
+  /** O material muda ate o laudo ser liberado; depois disso, o que vale e o que foi laudado e cobrado. */
+  private async exigirCasoAberto(tx: Transacao, casoId: string) {
+    const ctx = exigirContexto();
+    const [alvo] = await tx
+      .select({ id: caso.id, identificador: caso.identificador })
+      .from(caso)
+      .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.id, casoId)))
+      .limit(1);
+    if (!alvo) throw new NotFoundException('Caso não encontrado.');
+
+    const [liberado] = await tx
+      .select({ id: laudo.id })
+      .from(laudo)
+      .where(and(eq(laudo.tenantId, ctx.tenantId), eq(laudo.casoId, casoId), sql`${laudo.liberadoEm} is not null`))
+      .limit(1);
+    if (liberado) {
+      throw new BadRequestException(
+        'Caso com laudo liberado não aceita alteração de amostras ou recipientes.',
+      );
+    }
+    return alvo;
+  }
+
+  private async exigirRecipienteDoCaso(tx: Transacao, casoId: string, recipienteId: string) {
+    const ctx = exigirContexto();
+    const [alvo] = await tx
+      .select({ id: recipiente.id })
+      .from(recipiente)
+      .where(
+        and(
+          eq(recipiente.tenantId, ctx.tenantId),
+          eq(recipiente.casoId, casoId),
+          eq(recipiente.id, recipienteId),
+        ),
+      )
+      .limit(1);
+    if (!alvo) throw new BadRequestException('O recipiente não pertence a este caso.');
+  }
+
   async alterarEntrada(casoId: string, entradaEm: Date): Promise<void> {
     const ctx = exigirContexto();
 

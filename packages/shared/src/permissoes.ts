@@ -42,6 +42,12 @@ export const PERMISSOES = {
    * so a identificacao do animal, auditada campo a campo.
    */
   CASO_CORRIGIR_IDENTIFICACAO: 'caso:corrigir_identificacao',
+  /**
+   * Terceira revisao: "inseri so um frasco e nao achei onde editar depois".
+   * Amostras e recipientes mudam ate o laudo ser liberado; cada mudanca fica
+   * na auditoria e na linha do tempo.
+   */
+  CASO_CORRIGIR_MATERIAL: 'caso:corrigir_material',
   CASO_CANCELAR: 'caso:cancelar',
   /** M05: alteracoes criticas pos-recebimento (paciente, cliente, exame). */
   CASO_CORRIGIR_CRITICO: 'caso:corrigir_critico',

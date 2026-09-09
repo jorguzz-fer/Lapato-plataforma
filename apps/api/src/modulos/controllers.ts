@@ -203,6 +203,20 @@ const novoCasoSchema = z
     }
   });
 
+const amostraEdicaoSchema = z.object({
+  descricao: z.string().max(300).nullish(),
+  margemCirurgica: z.enum(MARGEM_CIRURGICA).optional(),
+  lateralidade: z.enum(LATERALIDADE).optional(),
+  recipienteId: z.string().uuid().nullish(),
+});
+
+const recipienteEdicaoSchema = z.object({
+  tipoId: z.string().uuid().nullish(),
+  fixadorId: z.string().uuid().nullish(),
+  identificacaoExterna: z.string().max(120).nullish(),
+  quantidadeDeclarada: z.number().int().positive().optional(),
+});
+
 const recebimentoSchema = z.object({
   conferencia: z
     .array(
@@ -314,6 +328,42 @@ export class CasosController {
     return new StreamableFile(bytes, {
       disposition: `inline; filename="${nomeParaCabecalho(nomeArquivo)}"`,
     });
+  }
+
+  @Post(':id/amostras')
+  @ExigePermissao(PERMISSOES.CASO_CORRIGIR_MATERIAL)
+  @ApiOperation({
+    summary: 'Inclui uma amostra depois do cadastro',
+    description: 'Terceira revisão: o cadastro errou e o caso segue. Vale até o laudo ser liberado; fica na auditoria e na linha do tempo.',
+  })
+  async adicionarAmostra(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    return this.casos.adicionarAmostra(id, validarCorpo(amostraEdicaoSchema, corpo));
+  }
+
+  @Post('amostras/:amostraId')
+  @ExigePermissao(PERMISSOES.CASO_CORRIGIR_MATERIAL)
+  @ApiOperation({ summary: 'Corrige descrição, margem, lateralidade ou recipiente da amostra' })
+  async editarAmostra(@Param('amostraId', ParseUUIDPipe) amostraId: string, @Body() corpo: unknown) {
+    await this.casos.editarAmostra(amostraId, validarCorpo(amostraEdicaoSchema, corpo));
+    return { ok: true };
+  }
+
+  @Post(':id/recipientes')
+  @ExigePermissao(PERMISSOES.CASO_CORRIGIR_MATERIAL)
+  @ApiOperation({ summary: 'Inclui um recipiente depois do cadastro' })
+  async adicionarRecipiente(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    return this.casos.adicionarRecipiente(id, validarCorpo(recipienteEdicaoSchema, corpo));
+  }
+
+  @Post('recipientes/:recipienteId')
+  @ExigePermissao(PERMISSOES.CASO_CORRIGIR_MATERIAL)
+  @ApiOperation({ summary: 'Corrige tipo, fixador, identificação externa ou quantidade declarada do recipiente' })
+  async editarRecipiente(
+    @Param('recipienteId', ParseUUIDPipe) recipienteId: string,
+    @Body() corpo: unknown,
+  ) {
+    await this.casos.editarRecipiente(recipienteId, validarCorpo(recipienteEdicaoSchema, corpo));
+    return { ok: true };
   }
 
   @Post(':id/recebimento')

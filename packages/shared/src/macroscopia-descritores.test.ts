@@ -50,7 +50,7 @@ describe('composição determinística dos bloquinhos', () => {
       { consistencia: ['macia'] },
       { comprimentoCm: 3, larguraCm: 2, alturaCm: 1, pesoG: 15 },
     );
-    expect(texto).toContain('Mede 3,0 × 2,0 × 1,0 cm');
+    expect(texto).toContain('Mede 3,0 x 2,0 x 1,0 cm');
     expect(texto).toContain('pesa 15 g');
   });
 

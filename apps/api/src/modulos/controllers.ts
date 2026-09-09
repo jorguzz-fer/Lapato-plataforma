@@ -76,6 +76,7 @@ import {
   GRAU_CERTEZA,
   INTENSIDADE,
   LATERALIDADE,
+  MARGEM_CIRURGICA,
   MODALIDADE_COBRANCA,
   RESSALVAS_RECEBIMENTO,
   METODO_AMOSTRAGEM,
@@ -180,6 +181,7 @@ const novoCasoSchema = z
           orgaoId: z.string().uuid().optional(),
           regiaoAnatomica: z.string().optional(),
           lateralidade: z.enum(LATERALIDADE).optional(),
+          margemCirurgica: z.enum(MARGEM_CIRURGICA).optional(),
           tipoRelacao: z.string().optional(),
         }),
       )
@@ -429,6 +431,7 @@ const macroscopiaSchema = z.object({
         lateralidade: z.enum(LATERALIDADE).optional(),
         maiorEixoCm: z.number().positive().optional(),
         menorEixoCm: z.number().positive().optional(),
+        terceiroEixoCm: z.number().positive().optional(),
       }),
     )
     .optional(),
@@ -449,6 +452,7 @@ const macroscopiaSchema = z.object({
         tecidoOrigem: z.string().min(1, 'Cassete exige tecido de origem (M08).'),
         descricao: z.string().optional(),
         exigeDescalcificacao: z.boolean().optional(),
+        fragmentos: z.number().int().nonnegative().max(999).optional(),
       }),
     )
     .optional(),
@@ -1221,7 +1225,7 @@ export class PacientesController {
   }
 
   @Post(':id')
-  @ExigePermissao(PERMISSOES.CASO_EDITAR)
+  @ExigePermissao(PERMISSOES.CASO_CORRIGIR_IDENTIFICACAO)
   @ApiOperation({
     summary: 'Corrige a identificação do animal e do responsável',
     description: 'Auditado campo a campo; o Guardian segue comparando identidade antes da assinatura.',

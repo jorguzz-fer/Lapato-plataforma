@@ -82,6 +82,7 @@ interface Lesao {
   lateralidade: Lateralidade;
   maiorEixoCm: string;
   menorEixoCm: string;
+  terceiroEixoCm: string;
 }
 
 interface Margem {
@@ -95,6 +96,8 @@ interface CasseteNovo {
   tecidoOrigem: string;
   descricao: string;
   exigeDescalcificacao: boolean;
+  /** Terceira revisão: quantos fragmentos foram para este cassete. */
+  fragmentos: string;
 }
 
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
@@ -115,6 +118,7 @@ const LESAO_VAZIA = (rotulo: string) => ({
   lateralidade: 'nao_aplicavel' as Lateralidade,
   maiorEixoCm: '',
   menorEixoCm: '',
+  terceiroEixoCm: '',
 });
 
 /** Linha que so tem o rotulo automatico: apresentada, mas nunca preenchida. */
@@ -123,7 +127,8 @@ const lesaoIntocada = (l: ReturnType<typeof LESAO_VAZIA>) =>
   l.localizacao.trim() === '' &&
   l.lateralidade === 'nao_aplicavel' &&
   l.maiorEixoCm === '' &&
-  l.menorEixoCm === '';
+  l.menorEixoCm === '' &&
+  l.terceiroEixoCm === '';
 
 export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
   const { id } = useParams<{ id: string }>();
@@ -191,6 +196,7 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
       lateralidade: (l.lateralidade as Lateralidade) ?? 'nao_aplicavel',
       maiorEixoCm: l.maiorEixoCm ?? '',
       menorEixoCm: l.menorEixoCm ?? '',
+      terceiroEixoCm: l.terceiroEixoCm ?? '',
     }));
     /**
      * Ficha aberta sem lesao ja apresenta uma linha pronta: na review, o botao
@@ -230,6 +236,8 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
     () => dossie?.amostras.find((a) => a.id === amostraId),
     [dossie, amostraId],
   );
+  /** Terceira revisão: a margem é decidida no cadastro; sem ela, a seção não oferece nada. */
+  const comMargem = (amostra?.margemCirurgica ?? 'sem_margem') !== 'sem_margem';
 
   /** M06 -> M08: material bloqueado ou recusado não chega à bancada. */
   const travadaNaTriagem =
@@ -359,6 +367,7 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
                   lateralidade: l.lateralidade,
                   ...(numero(l.maiorEixoCm) ? { maiorEixoCm: numero(l.maiorEixoCm) } : {}),
                   ...(numero(l.menorEixoCm) ? { menorEixoCm: numero(l.menorEixoCm) } : {}),
+                  ...(numero(l.terceiroEixoCm) ? { terceiroEixoCm: numero(l.terceiroEixoCm) } : {}),
                 })),
             }
           : {}),
@@ -382,6 +391,7 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
                 tecidoOrigem: c.tecidoOrigem.trim(),
                 ...(c.descricao.trim() ? { descricao: c.descricao.trim() } : {}),
                 exigeDescalcificacao: c.exigeDescalcificacao,
+                ...(numero(c.fragmentos) !== undefined ? { fragmentos: numero(c.fragmentos) } : {}),
               })),
             }
           : {}),
@@ -485,7 +495,11 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
         </Stack>
         {/* Documento do Hugo: tudo que foi cadastrado aparece no cabeçalho, com as
             fotos e ressalvas - é o que evita troca entre pacientes homônimos. */}
-        <CabecalhoDoMaterial dossie={dossie} />
+        <CabecalhoDoMaterial
+          dossie={dossie}
+          podeCorrigir={permissoes.includes('caso:corrigir_identificacao')}
+          aoMudar={() => api.get<DadosDossie>(`/casos/${id}`).then(setDossie)}
+        />
       </Card>
 
       {/* Uma ficha por amostra: as abas tornam isso estrutural em vez de implícito. */}
@@ -730,6 +744,7 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
                           lateralidade: 'nao_aplicavel',
                           maiorEixoCm: '',
                           menorEixoCm: '',
+                          terceiroEixoCm: '',
                         },
                       ])
                     }
@@ -819,6 +834,14 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
                       setLesoes((a) => a.map((x, j) => (i === j ? { ...x, menorEixoCm: v } : x)))
                     }
                   />
+                  <Medida
+                    rotulo="Terceiro eixo (cm)"
+                    valor={l.terceiroEixoCm}
+                    travado={concluida}
+                    aoMudar={(v) =>
+                      setLesoes((a) => a.map((x, j) => (i === j ? { ...x, terceiroEixoCm: v } : x)))
+                    }
+                  />
 
                   {!concluida && (
                     <Remover
@@ -834,7 +857,7 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
               titulo="Margens"
               descricao="O método de amostragem é o que permite ler a distância na microscopia — tangencial e perpendicular não significam a mesma coisa (M13)."
               acao={
-                !concluida && (
+                !concluida && comMargem && (
                   <Button
                     size="small"
                     startIcon={<AddOutlined />}
@@ -850,7 +873,15 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
                 )
               }
             >
-              {margens.length === 0 && <Vazio texto="Nenhuma margem avaliada." />}
+              {margens.length === 0 && (
+                <Vazio
+                  texto={
+                    comMargem
+                      ? 'Nenhuma margem avaliada.'
+                      : 'Cadastrada sem margem cirúrgica: não há margem a avaliar. Se a peça veio com margem, corrija no dossiê.'
+                  }
+                />
+              )}
 
               {margens.map((m, i) => (
                 <Stack
@@ -978,6 +1009,7 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
                             tecidoOrigem: tecido,
                             descricao: '',
                             exigeDescalcificacao: false,
+                            fragmentos: '',
                           })),
                         ]);
                       }}
@@ -1011,6 +1043,9 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
                   )}
                   {c.exigeDescalcificacao && (
                     <Chip size="small" variant="outlined" label="descalcificação" />
+                  )}
+                  {c.fragmentos != null && (
+                    <Chip size="small" variant="outlined" label={`${c.fragmentos} fragmento(s)`} />
                   )}
                 </Stack>
               ))}
@@ -1054,6 +1089,19 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
                       )
                     }
                     sx={{ flex: 2, width: { xs: '100%', md: 'auto' } }}
+                    helperText=" "
+                  />
+                  <TextField
+                    label="Fragmentos"
+                    type="number"
+                    value={c.fragmentos}
+                    onChange={(e) =>
+                      setNovosCassetes((a) =>
+                        a.map((x, j) => (i === j ? { ...x, fragmentos: e.target.value } : x)),
+                      )
+                    }
+                    slotProps={{ htmlInput: { min: 0, max: 999, inputMode: 'numeric' } }}
+                    sx={{ width: { xs: '100%', md: 120 } }}
                     helperText=" "
                   />
                   <FormControlLabel

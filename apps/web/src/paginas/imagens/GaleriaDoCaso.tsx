@@ -9,7 +9,6 @@ import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import IconButton from '@mui/material/IconButton';
-import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
@@ -20,6 +19,7 @@ import BlockOutlined from '@mui/icons-material/BlockOutlined';
 import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined';
 import { api, ErroApi, urlArquivo, type ImagemDoCaso } from '../../api';
 import { CapturaWebcam } from './CapturaWebcam';
+import { FORMATOS_IMAGEM, TAMANHO_MAXIMO_IMAGEM_MB, enviarImagemDoCaso } from './envio';
 
 /**
  * M16 - galeria do caso (secao 57).
@@ -36,15 +36,6 @@ import { CapturaWebcam } from './CapturaWebcam';
  * - **Selecionar para o laudo nao mexe no arquivo** (secao 134): e uma marca
  *   com ordem, e a numeracao do documento sai dela (secao 38).
  */
-
-/**
- * Espelho do que o servidor aceita (M16 secao 61: "limite de tamanho, formatos
- * permitidos... arquivos rejeitados deverao gerar mensagem clara"). Repetir a
- * regra aqui nao substitui a validacao do servidor - serve para o usuario saber
- * ANTES de escolher o arquivo, em vez de descobrir por erro.
- */
-const FORMATOS = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
-const TAMANHO_MAXIMO_MB = 25;
 
 const TIPO_LABEL: Record<string, string> = {
   recebimento: 'Recebimento',
@@ -66,52 +57,6 @@ const ORIGEM_LABEL: Record<string, string> = {
   pericial_externa: 'Pericial externa',
 };
 
-/**
- * Tipos que a tela oferece; `whole_slide` fica de fora (ADR 0004: WSI é v2).
- * `requisicao` é a folha digitalizada — o conselho exige a digitalização e a
- * guarda por no mínimo cinco anos, por isso ela tem tipo próprio e não entra
- * como "documento" genérico.
- */
-const TIPOS_OFERECIDOS = [
-  'recebimento',
-  'triagem',
-  'macroscopia',
-  'microfotografia',
-  'necropsia',
-  'requisicao',
-  'documento',
-] as const;
-
-/**
- * Miniatura gerada no navegador, no momento do envio.
- *
- * Redimensionar no servidor exigiria dependência nativa de imagem na imagem
- * Docker da API; aqui o arquivo já está na mão de quem envia. O original sobe
- * intacto — a miniatura é só para a galeria não baixar 8 MB por quadradinho
- * (M16 §73).
- */
-async function gerarMiniatura(arquivo: File, lado = 400): Promise<Blob | null> {
-  try {
-    const bitmap = await createImageBitmap(arquivo);
-    const escala = Math.min(1, lado / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(bitmap.width * escala);
-    canvas.height = Math.round(bitmap.height * escala);
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-
-    return await new Promise((resolve) =>
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.72),
-    );
-  } catch {
-    // Navegador sem createImageBitmap ou formato que ele não decodifica: segue
-    // sem miniatura, e a galeria cai no original.
-    return null;
-  }
-}
-
 interface Props {
   casoId: string;
   permissoes: string[];
@@ -132,7 +77,6 @@ export function GaleriaDoCaso({
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
-  const [novoTipo, setNovoTipo] = useState<string>(tipoPadrao);
   const entrada = useRef<HTMLInputElement>(null);
 
   const [emEdicao, setEmEdicao] = useState<ImagemDoCaso | null>(null);
@@ -164,32 +108,8 @@ export function GaleriaDoCaso({
       // Uma por vez: o módulo permite lote (§20), e enviar em série mantém o
       // relato de erro por arquivo em vez de um "falhou" para as 40.
       for (const arquivo of Array.from(arquivos)) {
-        /**
-         * Recusa antes de subir: mandar 30 MB pela rede para receber "não
-         * aceito" gasta o tempo de quem envia, e num laboratório isso costuma
-         * ser conexão de celular.
-         */
-        if (!FORMATOS.includes(arquivo.type)) {
-          throw new Error(
-            `"${arquivo.name}" não é um formato aceito. Envie JPEG, PNG, WebP ou HEIC — ` +
-              'PDF e documentos não entram no acervo de imagens.',
-          );
-        }
-        if (arquivo.size > TAMANHO_MAXIMO_MB * 1024 * 1024) {
-          throw new Error(
-            `"${arquivo.name}" tem ${(arquivo.size / 1024 / 1024).toFixed(1)} MB e o limite é ${TAMANHO_MAXIMO_MB} MB.`,
-          );
-        }
-
-        const corpo = new FormData();
-        corpo.append('arquivo', arquivo);
-        corpo.append('tipo', novoTipo);
-        corpo.append('moduloContexto', moduloContexto);
-
-        const mini = await gerarMiniatura(arquivo);
-        if (mini) corpo.append('miniatura', mini, 'miniatura.jpg');
-
-        await api.postForm(`/imagens/casos/${casoId}`, corpo);
+        // O tipo vem da tela que envia (terceira revisão: "só anexa").
+        await enviarImagemDoCaso(casoId, arquivo, tipoPadrao, moduloContexto);
       }
       carregar();
     } catch (err) {
@@ -267,7 +187,7 @@ export function GaleriaDoCaso({
           </Typography>
           {podeEnviar && (
             <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.5 }}>
-              JPEG, PNG, WebP ou HEIC · até {TAMANHO_MAXIMO_MB} MB por arquivo · o original é
+              JPEG, PNG, WebP ou HEIC · até {TAMANHO_MAXIMO_IMAGEM_MB} MB por arquivo · o original é
               preservado; recorte e anotação não alteram o arquivo enviado.
             </Typography>
           )}
@@ -275,21 +195,6 @@ export function GaleriaDoCaso({
 
         {podeEnviar && (
           <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-            <TextField
-              select
-              size="small"
-              label="Etapa"
-              value={novoTipo}
-              onChange={(e) => setNovoTipo(e.target.value)}
-              sx={{ minWidth: 170 }}
-            >
-              {TIPOS_OFERECIDOS.map((t) => (
-                <MenuItem key={t} value={t}>
-                  {TIPO_LABEL[t]}
-                </MenuItem>
-              ))}
-            </TextField>
-
             <Button
               variant="outlined"
               startIcon={<PhotoCameraOutlined />}
@@ -309,7 +214,7 @@ export function GaleriaDoCaso({
             <input
               ref={entrada}
               type="file"
-              accept={FORMATOS.join(',')}
+              accept={FORMATOS_IMAGEM.join(',')}
               multiple
               hidden
               onChange={(e) => void enviar(e.target.files)}

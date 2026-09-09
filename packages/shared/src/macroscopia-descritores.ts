@@ -200,6 +200,20 @@ function enumerar(itens: string[]): string {
  * estara completo e travar a composicao seria pior do que uma palavra fora da
  * curadoria.
  */
+/**
+ * Medida do jeito que sai no laudo (terceira revisao com o Hugo): sempre em
+ * centimetros, da maior para a menor, com "x" entre elas - "2,5 x 2,0 x 1,2 cm".
+ * Eixo vazio nao aparece; nenhum eixo, nada. A ordem e imposta aqui porque quem
+ * digita mede na ordem em que pega a peca, e o texto tem convencao propria.
+ */
+export function formatarMedidaCm(valores: Array<number | null | undefined>): string | null {
+  const validos = valores
+    .filter((v): v is number => v != null && Number.isFinite(v) && v > 0)
+    .sort((a, b) => b - a);
+  if (validos.length === 0) return null;
+  return `${validos.map((v) => v.toLocaleString('pt-BR', { minimumFractionDigits: 1 })).join(' x ')} cm`;
+}
+
 export function comporDescricaoMacro(
   selecoes: Record<string, string[]>,
   medidas?: { comprimentoCm?: number; larguraCm?: number; alturaCm?: number; pesoG?: number },
@@ -228,11 +242,9 @@ export function comporDescricaoMacro(
   }
 
   if (medidas) {
-    const dimensoes = [medidas.comprimentoCm, medidas.larguraCm, medidas.alturaCm]
-      .filter((m): m is number => m != null && m > 0)
-      .map((m) => m.toLocaleString('pt-BR', { minimumFractionDigits: 1 }));
+    const dimensoes = formatarMedidaCm([medidas.comprimentoCm, medidas.larguraCm, medidas.alturaCm]);
     const trechos: string[] = [];
-    if (dimensoes.length > 0) trechos.push(`Mede ${dimensoes.join(' × ')} cm`);
+    if (dimensoes) trechos.push(`Mede ${dimensoes}`);
     if (medidas.pesoG != null && medidas.pesoG > 0) {
       trechos.push(`pesa ${medidas.pesoG.toLocaleString('pt-BR')} g`);
     }

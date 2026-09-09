@@ -97,6 +97,8 @@ export const lesaoMacroscopica = pgTable(
     lateralidade: lateralidadeEnum('lateralidade').notNull().default('nao_aplicavel'),
     maiorEixoCm: numeric('maior_eixo_cm', { precision: 8, scale: 2 }),
     menorEixoCm: numeric('menor_eixo_cm', { precision: 8, scale: 2 }),
+    /** Terceira revisao: tres eixos, "2,5 x 2,0 x 1,2 cm", da maior para a menor. */
+    terceiroEixoCm: numeric('terceiro_eixo_cm', { precision: 8, scale: 2 }),
     delimitacao: text('delimitacao'),
     distribuicao: text('distribuicao'),
     /** unica | multiplas | incontaveis */
@@ -173,6 +175,13 @@ export const cassete = pgTable(
     /** Tecido de origem - obrigatorio pela regra do M08. */
     tecidoOrigem: text('tecido_origem').notNull(),
     descricao: text('descricao'),
+    /**
+     * Terceira revisao com o Hugo: quantos fragmentos foram para este cassete.
+     * Quem le a lamina confere que os N fragmentos estao la - na inclusao
+     * perde-se fragmento - e que nao esqueceu uma lamina. Aparece na bancada do
+     * patologista, nao no laudo.
+     */
+    fragmentos: integer('fragmentos'),
 
     /** M09: sinaliza necessidade de descalcificacao para o processamento. */
     exigeDescalcificacao: boolean('exige_descalcificacao').notNull().default(false),

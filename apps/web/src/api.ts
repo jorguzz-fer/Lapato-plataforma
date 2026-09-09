@@ -88,10 +88,22 @@ async function requisitar<T>(
       observadorDeEstagio?.(dados.estagio as EstagioSessao);
     }
 
+    /**
+     * Terceira revisão com o Hugo: "o corpo da requisição não passou na
+     * validação" não diz o que corrigir. O servidor manda o campo e a
+     * mensagem em `errors`; a tela mostra os dois.
+     */
+    const campos: string[] = Array.isArray(dados?.errors)
+      ? (dados.errors as Array<{ campo?: string; mensagem?: string }>)
+          .map((e) => (e.campo ? `${e.campo}: ${e.mensagem ?? ''}` : (e.mensagem ?? '')))
+          .filter((t) => t.trim() !== '')
+      : [];
+    const detalhe = dados?.detail ?? 'Não foi possível concluir a operação.';
+
     throw new ErroApi(
       resposta.status,
       dados?.title ?? 'Erro',
-      dados?.detail ?? 'Não foi possível concluir a operação.',
+      campos.length > 0 ? `${detalhe} ${campos.join('; ')}` : detalhe,
       dados?.achados,
       dados?.estagio,
       dados?.duplicidades,
@@ -262,6 +274,8 @@ export interface Dossie {
     descricao: string | null;
     regiaoAnatomica: string | null;
     lateralidade: string;
+    /** Terceira revisão: decidido no cadastro; a macroscopia só avalia margem quando há. */
+    margemCirurgica: string;
     resultadoTriagem: string | null;
     /** Preenchido quando a macroscopia da amostra foi concluída — é o que libera o recorte. */
     macroscopiaConcluidaEm: string | null;
@@ -690,6 +704,7 @@ export interface FichaMacroscopia {
     lateralidade: string;
     maiorEixoCm: string | null;
     menorEixoCm: string | null;
+    terceiroEixoCm: string | null;
   }>;
   margens: Array<{
     nome: string;
@@ -703,6 +718,7 @@ export interface FichaMacroscopia {
     tecidoOrigem: string;
     descricao: string | null;
     exigeDescalcificacao: boolean;
+    fragmentos: number | null;
   }>;
 }
 

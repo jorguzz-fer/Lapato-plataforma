@@ -202,6 +202,19 @@ export const PERMISSOES = {
   /** Criar e emitir fatura, registrar pagamento, lancar entrada e saida. */
   FINANCEIRO_LANCAR: 'financeiro:lancar',
 
+  // M21 Biblioteca
+  /** Ler o que e vigente e confirmar ciencia (secoes 36, 69). Todo colaborador tem. */
+  BIBLIOTECA_VISUALIZAR: 'biblioteca:visualizar',
+  /** Criar documento, abrir versao, anexar arquivo, enviar para revisao (secoes 13-16, 24). */
+  BIBLIOTECA_EDITAR: 'biblioteca:editar',
+  /** Revisar: comentar, pedir ajuste, concluir a revisao (secoes 25-26). */
+  BIBLIOTECA_REVISAR: 'biblioteca:revisar',
+  /**
+   * Aprovar, publicar, tornar obsoleto, arquivar, ver o painel de ciencia e
+   * o conteudo restrito (secoes 27-28, 33-35, 72, 89). E quem administra.
+   */
+  BIBLIOTECA_APROVAR: 'biblioteca:aprovar',
+
   // M22 Qualidade e auditoria
   AUDITORIA_VISUALIZAR: 'auditoria:visualizar',
 } as const;

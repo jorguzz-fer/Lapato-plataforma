@@ -26,6 +26,7 @@ const ITENS = [
   { para: '/portal', rotulo: 'Início', exato: true },
   { para: '/portal/exames', rotulo: 'Exames' },
   { para: '/portal/solicitacoes', rotulo: 'Solicitações' },
+  { para: '/portal/orientacoes', rotulo: 'Orientações' },
 ];
 
 export function ShellPortal({ aoSair, children }: { aoSair: () => void; children: ReactNode }) {

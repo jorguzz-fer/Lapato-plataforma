@@ -6012,3 +6012,248 @@ describe('M19 fatia 2: execução com evidências, rota e produção', () => {
     expect(Array.isArray(varredura.body)).toBe(true);
   });
 });
+
+/**
+ * M21 - Biblioteca: a versao certa, ao usuario certo, no contexto certo.
+ */
+describe('M21 Biblioteca: versões, revisão, ciência e contexto', () => {
+  const marca = Date.now().toString(36);
+  let documentoId = '';
+  let versao1Id = '';
+  let versao2Id = '';
+  let tecnicoCookie = '';
+
+  async function reqCom(cookieProprio: string, metodo: string, caminho: string, corpo?: unknown) {
+    const resposta = await fetch(`${servidor}${BASE}${caminho}`, {
+      method: metodo,
+      headers: { 'content-type': 'application/json', cookie: cookieProprio },
+      body: corpo === undefined ? undefined : JSON.stringify(corpo),
+    });
+    const texto = await resposta.text();
+    return { status: resposta.status, body: texto ? JSON.parse(texto) : null };
+  }
+
+  test('o documento nasce com código estável e versão 1.0 em rascunho (§§10-13)', async () => {
+    await entrar('patologista@lapato.local');
+    const criado = await req('POST', '/biblioteca/documentos', {
+      titulo: `Acondicionamento de biópsias ${marca}`,
+      tipo: 'guia',
+      categoria: 'recebimento_triagem',
+      subcategoria: 'Biópsias > Frascos',
+      palavrasChave: ['formol', 'frasco', 'acondicionamento'],
+      resumo: 'Como preparar o frasco para transporte.',
+      publico: 'clientes',
+      contextos: ['recebimento', 'logistica', 'portal'],
+      exigeAprovacao: true,
+      exigeCiencia: true,
+      revisaoPeriodicaMeses: 12,
+      versao: { conteudo: 'Use formol a 10%, volume dez vezes o da peça.' },
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    expect(criado.body.codigo).toMatch(/^GUIA-REC-\d{3}$/);
+    documentoId = criado.body.id;
+    versao1Id = criado.body.versaoId;
+
+    const ficha = await req('GET', `/biblioteca/documentos/${documentoId}`);
+    expect(ficha.body.status).toBe('rascunho');
+    expect(ficha.body.versoes).toHaveLength(1);
+    expect(ficha.body.versoes[0].numero).toBe('1.0');
+    expect(ficha.body.versoes[0].status).toBe('rascunho');
+
+    // Rascunho nao aparece na busca padrao: so o vigente e orientacao (§129.5).
+    const busca = await req('GET', `/biblioteca/documentos?q=${marca}`);
+    expect(busca.body).toHaveLength(0);
+
+    // Codigo repetido e recusado.
+    const repetido = await req('POST', '/biblioteca/documentos', {
+      titulo: 'Outro', tipo: 'guia', categoria: 'recebimento_triagem', codigo: criado.body.codigo,
+    });
+    expect(repetido.status).toBe(400);
+  });
+
+  test('documento controlado: revisão devolve, revisão concluída aguarda aprovação, só aprovada publica (§§24-28)', async () => {
+    // Publicar direto e barrado: exige aprovacao.
+    const cedo = await req('POST', `/biblioteca/versoes/${versao1Id}/publicacao`);
+    expect(cedo.status).toBe(400);
+
+    const enviada = await req('POST', `/biblioteca/versoes/${versao1Id}/revisao`);
+    expect(enviada.status, JSON.stringify(enviada.body)).toBe(201);
+
+    // O autor nao conclui a propria revisao num documento controlado.
+    const propria = await req('POST', `/biblioteca/versoes/${versao1Id}/parecer`, {
+      desfecho: 'revisao_concluida', texto: 'ok',
+    });
+    expect(propria.status).toBe(400);
+
+    // Outro revisor pede ajuste: volta a rascunho.
+    await entrar('admin@lapato.local');
+    const ajuste = await req('POST', `/biblioteca/versoes/${versao1Id}/parecer`, {
+      desfecho: 'ajuste_solicitado', texto: 'Falta o volume mínimo de fixador.',
+    });
+    expect(ajuste.status, JSON.stringify(ajuste.body)).toBe(201);
+    let ficha = await req('GET', `/biblioteca/documentos/${documentoId}`);
+    expect(ficha.body.versoes[0].status).toBe('rascunho');
+    expect(ficha.body.comentarios).toHaveLength(1);
+
+    await entrar('patologista@lapato.local');
+    await req('POST', `/biblioteca/versoes/${versao1Id}`, {
+      conteudo: 'Use formol a 10%, volume dez vezes o da peça. Frasco de boca larga.',
+    });
+    await req('POST', `/biblioteca/versoes/${versao1Id}/revisao`);
+
+    await entrar('admin@lapato.local');
+    const concluida = await req('POST', `/biblioteca/versoes/${versao1Id}/parecer`, {
+      desfecho: 'revisao_concluida', texto: 'Agora sim.',
+    });
+    expect(concluida.status).toBe(201);
+    ficha = await req('GET', `/biblioteca/documentos/${documentoId}`);
+    expect(ficha.body.versoes[0].status).toBe('aguardando_aprovacao');
+
+    const fila = await req('GET', '/biblioteca/revisao');
+    expect(fila.body.map((f: any) => f.versaoId)).toContain(versao1Id);
+
+    const aprovada = await req('POST', `/biblioteca/versoes/${versao1Id}/aprovacao`);
+    expect(aprovada.status, JSON.stringify(aprovada.body)).toBe(201);
+    const publicada = await req('POST', `/biblioteca/versoes/${versao1Id}/publicacao`);
+    expect(publicada.status, JSON.stringify(publicada.body)).toBe(201);
+
+    ficha = await req('GET', `/biblioteca/documentos/${documentoId}`);
+    expect(ficha.body.status).toBe('publicado');
+    expect(ficha.body.versaoVigenteId).toBe(versao1Id);
+    expect(ficha.body.versoes[0].status).toBe('vigente');
+    // §31: revisao programada em 12 meses.
+    expect(ficha.body.proximaRevisaoEm).toBeTruthy();
+  });
+
+  test('a busca acha pelo conteúdo e pelo contexto; o Portal só vê o público (§§37, 51, 59-60)', async () => {
+    await entrar('tecnico@lapato.local');
+    const porConteudo = await req('GET', '/biblioteca/documentos?q=boca%20larga');
+    expect(porConteudo.status, JSON.stringify(porConteudo.body)).toBe(200);
+    expect(porConteudo.body.map((d: any) => d.id)).toContain(documentoId);
+    expect(porConteudo.body.find((d: any) => d.id === documentoId).numeroVigente).toBe('1.0');
+
+    const noRecebimento = await req('GET', '/biblioteca/contexto/recebimento');
+    expect(noRecebimento.body.map((d: any) => d.id)).toContain(documentoId);
+    const naMacro = await req('GET', '/biblioteca/contexto/macroscopia');
+    expect(naMacro.body.map((d: any) => d.id)).not.toContain(documentoId);
+
+    // §104: pesquisa sem resultado e registrada, e nao quebra.
+    const nada = await req('GET', `/biblioteca/documentos?q=zzz-${marca}`);
+    expect(nada.status).toBe(200);
+    expect(nada.body).toHaveLength(0);
+
+    await entrar('portal@clinicacentral.local');
+    const portal = await req('GET', '/portal/orientacoes');
+    expect(portal.status, JSON.stringify(portal.body)).toBe(200);
+    const orientacao = portal.body.find((d: any) => d.id === documentoId);
+    expect(orientacao).toBeTruthy();
+    expect(orientacao.conteudo).toContain('boca larga');
+    // O externo nao entra na Biblioteca interna.
+    const interna = await req('GET', '/biblioteca/documentos');
+    expect(interna.status).toBe(403);
+  });
+
+  test('ciência é por versão: nova versão publicada zera a leitura (§§69-72)', async () => {
+    await entrar('tecnico@lapato.local');
+    tecnicoCookie = cookie;
+    const painelAntes = await req('GET', '/biblioteca/painel');
+    expect(painelAntes.body.leiturasPendentes.map((d: any) => d.id)).toContain(documentoId);
+
+    const ciencia = await req('POST', `/biblioteca/versoes/${versao1Id}/ciencia`);
+    expect(ciencia.status, JSON.stringify(ciencia.body)).toBe(201);
+    const painelDepois = await req('GET', '/biblioteca/painel');
+    expect(painelDepois.body.leiturasPendentes.map((d: any) => d.id)).not.toContain(documentoId);
+
+    // O painel de ciencia e de quem administra.
+    const negado = await req('GET', `/biblioteca/documentos/${documentoId}/ciencia`);
+    expect(negado.status).toBe(403);
+
+    await entrar('patologista@lapato.local');
+    const painel = await req('GET', `/biblioteca/documentos/${documentoId}/ciencia`);
+    expect(painel.status, JSON.stringify(painel.body)).toBe(200);
+    expect(painel.body.numero).toBe('1.0');
+    expect(painel.body.leram.length).toBeGreaterThanOrEqual(1);
+    expect(painel.body.leram[0].confirmadaEm).toBeTruthy();
+    expect(painel.body.naoLeram.length).toBeGreaterThan(0);
+
+    // Nova versao relevante: 2.0. Sem aprovacao pendente, o admin publica; a 1.0 vira obsoleta.
+    const nova = await req('POST', `/biblioteca/documentos/${documentoId}/versoes`, {
+      conteudo: 'Use formol a 10%. Frasco de boca larga. Identifique com nome do animal e do tutor.',
+      motivoRevisao: 'Faltava a identificação do frasco.',
+      relevante: true,
+    });
+    expect(nova.status, JSON.stringify(nova.body)).toBe(201);
+    expect(nova.body.numero).toBe('2.0');
+    versao2Id = nova.body.id;
+
+    // Duas em elaboracao nao existem.
+    const outra = await req('POST', `/biblioteca/documentos/${documentoId}/versoes`, { conteudo: 'x' });
+    expect(outra.status).toBe(400);
+
+    await req('POST', `/biblioteca/versoes/${versao2Id}/revisao`);
+    await entrar('admin@lapato.local');
+    await req('POST', `/biblioteca/versoes/${versao2Id}/parecer`, { desfecho: 'revisao_concluida', texto: 'ok' });
+    await req('POST', `/biblioteca/versoes/${versao2Id}/aprovacao`);
+    const publicada = await req('POST', `/biblioteca/versoes/${versao2Id}/publicacao`);
+    expect(publicada.status, JSON.stringify(publicada.body)).toBe(201);
+
+    const ficha = await req('GET', `/biblioteca/documentos/${documentoId}`);
+    expect(ficha.body.versaoVigenteId).toBe(versao2Id);
+    const porNumero = Object.fromEntries(ficha.body.versoes.map((v: any) => [v.numero, v.status]));
+    expect(porNumero['1.0']).toBe('obsoleta');
+    expect(porNumero['2.0']).toBe('vigente');
+
+    // §71: o tecnico que leu a 1.0 precisa ler a 2.0.
+    const painelTecnico = await reqCom(tecnicoCookie, 'GET', '/biblioteca/painel');
+    expect(painelTecnico.body.leiturasPendentes.map((d: any) => d.id)).toContain(documentoId);
+  });
+
+  test('público restrito, feedback ao responsável e saída de uso sem apagar (§§33-35, 89, 105)', async () => {
+    await entrar('patologista@lapato.local');
+    const restrito = await req('POST', '/biblioteca/documentos', {
+      titulo: `Política de preços internos ${marca}`,
+      tipo: 'norma_interna',
+      categoria: 'administracao',
+      publico: 'restrito',
+      versao: { conteudo: 'Confidencial.' },
+    });
+    expect(restrito.status).toBe(201);
+    await req('POST', `/biblioteca/versoes/${restrito.body.versaoId}/publicacao`);
+
+    // O tecnico nao ve nem na busca nem na ficha.
+    const busca = await reqCom(tecnicoCookie, 'GET', `/biblioteca/documentos?q=${marca}`);
+    expect(busca.body.map((d: any) => d.id)).not.toContain(restrito.body.id);
+    const ficha = await reqCom(tecnicoCookie, 'GET', `/biblioteca/documentos/${restrito.body.id}`);
+    expect(ficha.status).toBe(403);
+
+    // Feedback do tecnico sobre o guia, visivel ao responsavel.
+    const fb = await reqCom(tecnicoCookie, 'POST', `/biblioteca/documentos/${documentoId}/feedback`, {
+      tipo: 'desatualizado', texto: 'O fornecedor mudou o frasco.',
+    });
+    expect(fb.status).toBe(201);
+    const comFeedback = await req('GET', `/biblioteca/documentos/${documentoId}`);
+    expect(comFeedback.body.feedbacks).toHaveLength(1);
+    expect(comFeedback.body.feedbacks[0].tipo).toBe('desatualizado');
+
+    // Obsoleto com motivo: some da busca padrao, continua na ficha; o Portal deixa de mostrar.
+    const saida = await req('POST', `/biblioteca/documentos/${documentoId}/saida`, {
+      destino: 'obsoleto', motivo: 'Substituído pelo guia consolidado.',
+    });
+    expect(saida.status, JSON.stringify(saida.body)).toBe(201);
+    const depois = await req('GET', `/biblioteca/documentos/${documentoId}`);
+    expect(depois.body.status).toBe('obsoleto');
+    expect(depois.body.versaoVigenteId).toBeNull();
+    expect(depois.body.versoes.every((v: any) => v.status === 'obsoleta')).toBe(true);
+    const busca2 = await req('GET', `/biblioteca/documentos?q=${marca}`);
+    expect(busca2.body.map((d: any) => d.id)).not.toContain(documentoId);
+
+    // §100: obsoleto que ainda e chamado por contexto e achado do Guardian.
+    const guardian = await req('GET', '/biblioteca/guardian');
+    expect(guardian.status).toBe(200);
+    expect(guardian.body.some((a: any) => a.codigo === 'BIBLIOTECA_OBSOLETO_REFERENCIADO' && a.evidencias?.documentoId === documentoId)).toBe(true);
+
+    await entrar('portal@clinicacentral.local');
+    const portal = await req('GET', '/portal/orientacoes');
+    expect(portal.body.map((d: any) => d.id)).not.toContain(documentoId);
+  });
+});

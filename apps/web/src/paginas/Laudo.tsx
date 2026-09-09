@@ -42,6 +42,7 @@ import {
   type LaudoDoCaso,
   type VocabularioCitologia,
 } from '../api';
+import { AjudaBiblioteca } from '../componentes/AjudaBiblioteca';
 import { BloqueioGuardian } from './BloqueioGuardian';
 import { CabecalhoDoMaterial } from './CabecalhoDoMaterial';
 import { AvisoBancadaBloqueada, impedimentoDeBancada } from './AvisoBancadaBloqueada';
@@ -512,6 +513,7 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
       >
         <Typography variant="h2">Microscopia e laudo</Typography>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <AjudaBiblioteca contexto="microscopia" permissoes={permissoes} />
           {laudo && (
             <Chip
               size="small"

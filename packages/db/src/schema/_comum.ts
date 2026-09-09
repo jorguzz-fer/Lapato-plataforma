@@ -2,6 +2,14 @@ import { pgEnum, timestamp, uuid } from 'drizzle-orm/pg-core';
 import {
   ADEQUACAO_CITOLOGICA,
   CANAL_ORIGEM_LOGISTICO,
+  CATEGORIA_DOCUMENTO,
+  CONTEXTO_BIBLIOTECA,
+  DESFECHO_REVISAO,
+  PUBLICO_DOCUMENTO,
+  STATUS_DOCUMENTO,
+  STATUS_VERSAO_DOCUMENTO,
+  TIPO_DOCUMENTO,
+  TIPO_FEEDBACK_DOCUMENTO,
   CONDICAO_MATERIAL_LOGISTICA,
   SITUACAO_PRODUCAO_LOGISTICA,
   STATUS_ROTA_LOGISTICA,
@@ -253,3 +261,13 @@ export const motivoNaoRealizacaoEnum = pgEnum(
   'motivo_nao_realizacao',
   MOTIVO_NAO_REALIZACAO,
 );
+
+// --- M21 Biblioteca ------------------------------------------------------------
+export const tipoDocumentoEnum = pgEnum('tipo_documento', TIPO_DOCUMENTO);
+export const categoriaDocumentoEnum = pgEnum('categoria_documento', CATEGORIA_DOCUMENTO);
+export const statusDocumentoEnum = pgEnum('status_documento', STATUS_DOCUMENTO);
+export const statusVersaoDocumentoEnum = pgEnum('status_versao_documento', STATUS_VERSAO_DOCUMENTO);
+export const publicoDocumentoEnum = pgEnum('publico_documento', PUBLICO_DOCUMENTO);
+export const contextoBibliotecaEnum = pgEnum('contexto_biblioteca', CONTEXTO_BIBLIOTECA);
+export const desfechoRevisaoEnum = pgEnum('desfecho_revisao', DESFECHO_REVISAO);
+export const tipoFeedbackDocumentoEnum = pgEnum('tipo_feedback_documento', TIPO_FEEDBACK_DOCUMENTO);

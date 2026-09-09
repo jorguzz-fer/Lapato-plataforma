@@ -18,6 +18,14 @@ import { z } from 'zod';
 import {
   ADEQUACAO_CITOLOGICA,
   CANAL_ORIGEM_LOGISTICO,
+  CATEGORIA_DOCUMENTO,
+  CONTEXTO_BIBLIOTECA,
+  DESFECHO_REVISAO,
+  PUBLICO_DOCUMENTO,
+  STATUS_DOCUMENTO,
+  TAMANHO_MAXIMO_ANEXO_BIBLIOTECA,
+  TIPO_DOCUMENTO,
+  TIPO_FEEDBACK_DOCUMENTO,
   CONDICAO_MATERIAL_LOGISTICA,
   MARCO_EVIDENCIA_LOGISTICA,
   MOTIVO_CONTATO_SEM_SUCESSO,
@@ -111,6 +119,7 @@ import { PainelService } from './m07-fluxo/painel.service.js';
 import { LogisticaService } from './m19-logistica/logistica.service.js';
 import { LogisticaExecucaoService } from './m19-logistica/logistica-execucao.service.js';
 import { LogisticaRotasService } from './m19-logistica/logistica-rotas.service.js';
+import { BibliotecaService } from './m21-biblioteca/biblioteca.service.js';
 import { OrdensService } from './m20-ordens/ordens.service.js';
 import { EtiquetasService } from './m09-processamento/etiquetas.service.js';
 import { FinanceiroService } from './m20-ordens/financeiro.service.js';
@@ -2134,6 +2143,256 @@ export class LogisticaController {
 
 
 // ---------------------------------------------------------------------------
+// M21 - Biblioteca
+// ---------------------------------------------------------------------------
+
+const documentoSchema = z.object({
+  titulo: z.string().min(1, 'Informe o título.'),
+  tipo: z.enum(TIPO_DOCUMENTO),
+  categoria: z.enum(CATEGORIA_DOCUMENTO),
+  subcategoria: z.string().nullish(),
+  colecoes: z.array(z.string()).optional(),
+  palavrasChave: z.array(z.string()).optional(),
+  resumo: z.string().nullish(),
+  responsavelId: z.string().uuid().nullish(),
+  publico: z.enum(PUBLICO_DOCUMENTO).optional(),
+  contextos: z.array(z.enum(CONTEXTO_BIBLIOTECA)).optional(),
+  exigeAprovacao: z.boolean().optional(),
+  exigeCiencia: z.boolean().optional(),
+  critico: z.boolean().optional(),
+  permiteDownload: z.boolean().optional(),
+  revisaoPeriodicaMeses: z.number().int().positive().max(120).nullish(),
+  codigo: z.string().max(40).nullish(),
+});
+
+const versaoSchema = z.object({
+  conteudo: z.string().nullish(),
+  linkExterno: z.string().url().nullish().or(z.literal('').transform(() => null)),
+  motivoRevisao: z.string().nullish(),
+  relevante: z.boolean().optional(),
+});
+
+@ApiTags('M21 - Biblioteca')
+@Controller('biblioteca')
+export class BibliotecaController {
+  constructor(private readonly biblioteca: BibliotecaService) {}
+
+  @Get('documentos')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Busca (M21 §§36-38)',
+    description: 'Por padrão só o vigente. Procura no título, código, palavras-chave, resumo e conteúdo.',
+  })
+  async buscar(
+    @Query('q') q?: string,
+    @Query('categoria') categoria?: string,
+    @Query('tipo') tipo?: string,
+    @Query('status') status?: string,
+    @Query('contexto') contexto?: string,
+    @Query('colecao') colecao?: string,
+    @Query('criticos') criticos?: string,
+  ) {
+    const f = validarCorpo(
+      z.object({
+        q: z.string().optional(),
+        categoria: z.enum(CATEGORIA_DOCUMENTO).optional(),
+        tipo: z.enum(TIPO_DOCUMENTO).optional(),
+        status: z.enum([...STATUS_DOCUMENTO, 'todos']).optional(),
+        contexto: z.enum(CONTEXTO_BIBLIOTECA).optional(),
+        colecao: z.string().optional(),
+      }),
+      { q, categoria, tipo, status, contexto, colecao },
+    );
+    return this.biblioteca.buscar({ ...f, apenasCriticos: criticos === 'true' });
+  }
+
+  @Get('painel')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_VISUALIZAR)
+  @ApiOperation({ summary: 'Painel da Biblioteca (M21 §102) e leituras pendentes de quem consulta' })
+  async painel() {
+    return this.biblioteca.painel();
+  }
+
+  @Get('revisao')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_REVISAR)
+  @ApiOperation({ summary: 'Fila de revisão e aprovação (M21 §§24-28)' })
+  async fila() {
+    return this.biblioteca.filaDeRevisao();
+  }
+
+  @Get('contexto/:contexto')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Documentos vigentes de uma tela (M21 §§51-58)',
+    description: 'O que o botão "Consultar Biblioteca" mostra no Recebimento, na Macroscopia, no laudo…',
+  })
+  async contexto(@Param('contexto') contexto: string) {
+    const c = validarCorpo(z.object({ contexto: z.enum(CONTEXTO_BIBLIOTECA) }), { contexto });
+    return this.biblioteca.porContexto(c.contexto);
+  }
+
+  @Get('documentos/:id')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_VISUALIZAR)
+  @ApiOperation({ summary: 'Ficha do documento com versões, comentários e ciência (M21 §§9, 23)' })
+  async ficha(@Param('id', ParseUUIDPipe) id: string) {
+    return this.biblioteca.ficha(id);
+  }
+
+  @Post('documentos')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_EDITAR)
+  @ApiOperation({ summary: 'Cria o documento e a versão 1.0 em rascunho (M21 §13)' })
+  async criar(@Body() corpo: unknown) {
+    const dados = validarCorpo(documentoSchema.extend({ versao: versaoSchema.optional() }), corpo);
+    const { versao, ...documento } = dados;
+    return this.biblioteca.criar(documento, versao ?? {});
+  }
+
+  @Post('documentos/:id')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_EDITAR)
+  @ApiOperation({ summary: 'Edita os metadados; o código não muda (M21 §11)' })
+  async editar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const { codigo: _codigo, ...dados } = validarCorpo(documentoSchema.partial(), corpo);
+    void _codigo;
+    await this.biblioteca.editar(id, dados);
+    return { ok: true };
+  }
+
+  @Post('documentos/:id/versoes')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_EDITAR)
+  @ApiOperation({ summary: 'Abre uma versão nova (M21 §§17-18)' })
+  async novaVersao(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    return this.biblioteca.novaVersao(id, validarCorpo(versaoSchema, corpo ?? {}));
+  }
+
+  @Post('documentos/:id/saida')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_APROVAR)
+  @ApiOperation({ summary: 'Torna obsoleto ou arquiva, com motivo; nunca apaga (M21 §§33-35)' })
+  async saida(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const d = validarCorpo(z.object({ destino: z.enum(['obsoleto', 'arquivado']), motivo: z.string().min(1) }), corpo);
+    await this.biblioteca.retirarDeUso(id, d.destino, d.motivo);
+    return { ok: true };
+  }
+
+  @Get('documentos/:id/ciencia')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_APROVAR)
+  @ApiOperation({ summary: 'Painel de ciência: quem leu, quem não leu, qual versão (M21 §72)' })
+  async painelCiencia(@Param('id', ParseUUIDPipe) id: string) {
+    return this.biblioteca.painelCiencia(id);
+  }
+
+  @Post('documentos/:id/feedback')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_VISUALIZAR)
+  @ApiOperation({ summary: 'Feedback sobre o documento (M21 §105)' })
+  async feedback(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const d = validarCorpo(z.object({ tipo: z.enum(TIPO_FEEDBACK_DOCUMENTO), texto: z.string().nullish() }), corpo);
+    await this.biblioteca.registrarFeedback(id, d.tipo, d.texto);
+    return { ok: true };
+  }
+
+  @Post('solicitacoes')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_VISUALIZAR)
+  @ApiOperation({ summary: 'Pede um conteúdo que não existe (M21 §106)' })
+  async solicitar(@Body() corpo: unknown) {
+    const d = validarCorpo(z.object({ texto: z.string().min(1) }), corpo);
+    await this.biblioteca.registrarFeedback(null, 'solicitacao_novo', d.texto);
+    return { ok: true };
+  }
+
+  @Post('feedback/:id/tratado')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_APROVAR)
+  @ApiOperation({ summary: 'Marca o feedback como tratado' })
+  async tratar(@Param('id', ParseUUIDPipe) id: string) {
+    await this.biblioteca.tratarFeedback(id);
+    return { ok: true };
+  }
+
+  // --- versoes ------------------------------------------------------------------
+
+  @Post('versoes/:id')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_EDITAR)
+  @ApiOperation({ summary: 'Edita o conteúdo de uma versão não publicada' })
+  async editarVersao(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.biblioteca.editarVersao(id, validarCorpo(versaoSchema, corpo));
+    return { ok: true };
+  }
+
+  @Post('versoes/:id/anexo')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_EDITAR)
+  @UseInterceptors(
+    FileFieldsInterceptor([{ name: 'arquivo', maxCount: 1 }], {
+      limits: { fileSize: TAMANHO_MAXIMO_ANEXO_BIBLIOTECA, files: 1, fields: 5 },
+    }),
+  )
+  @ApiOperation({ summary: 'Anexa PDF, DOCX, PPTX, XLSX, imagem ou MP4 à versão (M21 §15)' })
+  async anexar(@Param('id', ParseUUIDPipe) id: string, @UploadedFiles() arquivos: { arquivo?: ArquivoRecebido[] }) {
+    const arquivo = arquivos?.arquivo?.[0];
+    if (!arquivo) throw new BadRequestException('Envie o arquivo.');
+    await this.biblioteca.anexar(id, arquivo);
+    return { ok: true };
+  }
+
+  @Get('versoes/:id/anexo')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_VISUALIZAR)
+  @ApiOperation({ summary: 'Bytes do anexo, respeitando público e permissão de download (M21 §91)' })
+  async baixar(@Param('id', ParseUUIDPipe) id: string) {
+    const { bytes, mimeType, nome } = await this.biblioteca.baixarAnexo(id);
+    return new StreamableFile(bytes, { type: mimeType, disposition: `inline; filename="${nomeParaCabecalho(nome)}"` });
+  }
+
+  @Post('versoes/:id/revisao')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_EDITAR)
+  @ApiOperation({ summary: 'Envia a versão para revisão (M21 §24)' })
+  async enviarRevisao(@Param('id', ParseUUIDPipe) id: string) {
+    await this.biblioteca.enviarParaRevisao(id);
+    return { ok: true };
+  }
+
+  @Post('versoes/:id/parecer')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_REVISAR)
+  @ApiOperation({ summary: 'Parecer do revisor: comentário, ajuste solicitado ou revisão concluída (M21 §26)' })
+  async parecer(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const d = validarCorpo(z.object({ desfecho: z.enum(DESFECHO_REVISAO), texto: z.string().min(1) }), corpo);
+    await this.biblioteca.revisar(id, d.desfecho, d.texto);
+    return { ok: true };
+  }
+
+  @Post('versoes/:id/aprovacao')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_APROVAR)
+  @ApiOperation({ summary: 'Aprovação formal (M21 §§27-28)' })
+  async aprovar(@Param('id', ParseUUIDPipe) id: string) {
+    await this.biblioteca.aprovar(id);
+    return { ok: true };
+  }
+
+  @Post('versoes/:id/publicacao')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_APROVAR)
+  @ApiOperation({
+    summary: 'Publica: vira a vigente, a anterior vira obsoleta (M21 §§19-20)',
+    description: 'Documento controlado só publica versão aprovada. Se exige ciência, a contagem recomeça (§71).',
+  })
+  async publicar(@Param('id', ParseUUIDPipe) id: string) {
+    await this.biblioteca.publicar(id);
+    return { ok: true };
+  }
+
+  @Post('versoes/:id/ciencia')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_VISUALIZAR)
+  @ApiOperation({ summary: 'Confirma leitura da versão vigente (M21 §§69-70)' })
+  async ciencia(@Param('id', ParseUUIDPipe) id: string) {
+    await this.biblioteca.confirmarCiencia(id);
+    return { ok: true };
+  }
+
+  @Get('guardian')
+  @ExigePermissao(PERMISSOES.BIBLIOTECA_VISUALIZAR)
+  @ApiOperation({ summary: 'Coerência documental (M21 §100)' })
+  async guardian() {
+    return this.biblioteca.varreduraGuardian();
+  }
+}
+
+
+// ---------------------------------------------------------------------------
 // M12 - Citopatologia
 // ---------------------------------------------------------------------------
 
@@ -2422,7 +2681,10 @@ export class ImagensController {
 @ApiTags('M04 - Portal do Cliente')
 @Controller('portal')
 export class PortalController {
-  constructor(private readonly portal: PortalService) {}
+  constructor(
+    private readonly portal: PortalService,
+    private readonly biblioteca: BibliotecaService,
+  ) {}
 
   @Get('painel')
   @ExigePermissao(PERMISSOES.PORTAL_ACESSAR)
@@ -2489,6 +2751,24 @@ export class PortalController {
   @ApiOperation({ summary: 'Solicitações do cliente e seu andamento (§31)' })
   async solicitacoes() {
     return this.portal.solicitacoes();
+  }
+
+  @Get('orientacoes')
+  @ExigePermissao(PERMISSOES.PORTAL_ACESSAR)
+  @ApiOperation({
+    summary: 'Orientações da Biblioteca liberadas ao cliente (M21 §§59-61)',
+    description: 'Só o que está explicitamente marcado como público para clientes, na versão vigente.',
+  })
+  async orientacoes() {
+    return this.biblioteca.orientacoesParaClientes();
+  }
+
+  @Get('orientacoes/:versaoId/arquivo')
+  @ExigePermissao(PERMISSOES.PORTAL_ACESSAR)
+  @ApiOperation({ summary: 'Anexo de uma orientação pública' })
+  async orientacaoArquivo(@Param('versaoId', ParseUUIDPipe) versaoId: string) {
+    const { bytes, mimeType, nome } = await this.biblioteca.baixarAnexoPublico(versaoId);
+    return new StreamableFile(bytes, { type: mimeType, disposition: `inline; filename="${nomeParaCabecalho(nome)}"` });
   }
 
   @Get('laudos/:versaoId/pdf')

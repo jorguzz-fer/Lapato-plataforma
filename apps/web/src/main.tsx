@@ -28,6 +28,7 @@ import { Financeiro } from './paginas/ordens/Financeiro';
 import { Cadaveres } from './paginas/Cadaveres';
 import { Bioteca } from './paginas/Bioteca';
 import { Logistica } from './paginas/logistica/Logistica';
+import { Biblioteca } from './paginas/biblioteca/Biblioteca';
 import { Necropsia } from './paginas/Necropsia';
 import { Clientes } from './paginas/Clientes';
 import { Veterinarios } from './paginas/Veterinarios';
@@ -41,6 +42,7 @@ import { PortalPainel } from './portal/PortalPainel';
 import { PortalExames } from './portal/PortalExames';
 import { PortalExame } from './portal/PortalExame';
 import { PortalSolicitacoes } from './portal/PortalSolicitacoes';
+import { PortalOrientacoes } from './portal/PortalOrientacoes';
 import './estilos.css';
 
 /**
@@ -174,6 +176,14 @@ function App() {
             </ShellPortal>
           }
         />
+        <Route
+          path="/portal/orientacoes"
+          element={
+            <ShellPortal aoSair={sair}>
+              <PortalOrientacoes />
+            </ShellPortal>
+          }
+        />
         <Route path="*" element={<Navigate to="/portal" replace />} />
       </Routes>
     );
@@ -247,6 +257,7 @@ function App() {
             <Processamento
               parceiro={sessao.laboratorioApoioId !== null}
               podeEnviarLote={sessao.permissoes.includes('processamento:enviar_lote')}
+              permissoes={sessao.permissoes}
             />
           </Shell>
         }
@@ -291,6 +302,15 @@ function App() {
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Controle de Cadáveres">
             <Cadaveres permissoes={sessao.permissoes} />
+          </Shell>
+        }
+      />
+      {/* M21: a memoria documental - protocolos, POPs e guias, na versao vigente. */}
+      <Route
+        path="/biblioteca"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Biblioteca">
+            <Biblioteca permissoes={sessao.permissoes} />
           </Shell>
         }
       />
@@ -348,7 +368,7 @@ function App() {
         path="/casos/:id/macroscopia"
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Macroscopia" etapa="macroscopia">
-            <Macroscopia exigeSupervisao={sessao.exigeSupervisao} />
+            <Macroscopia exigeSupervisao={sessao.exigeSupervisao} permissoes={sessao.permissoes} />
           </Shell>
         }
       />

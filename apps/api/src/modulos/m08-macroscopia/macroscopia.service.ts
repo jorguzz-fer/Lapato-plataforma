@@ -44,6 +44,9 @@ export interface DadosMacroscopia {
     maiorEixoCm?: number;
     menorEixoCm?: number;
     terceiroEixoCm?: number;
+    /** Terceira revisao: a macro desta lesao - bloquinhos marcados e o texto. */
+    caracteristicas?: Record<string, unknown>;
+    descricaoTexto?: string | null;
   }>;
   margens?: Array<{
     nome: string;
@@ -51,12 +54,16 @@ export interface DadosMacroscopia {
     distanciaCm?: number;
     tinta?: Record<string, unknown>;
     naoAvaliavel?: boolean;
+    /** Rotulo da lesao a que a margem pertence (L01...). */
+    lesaoRotulo?: string | null;
   }>;
   cassetes?: Array<{
     tecidoOrigem: string;
     descricao?: string;
     exigeDescalcificacao?: boolean;
     fragmentos?: number;
+    /** Rotulo da lesao de onde o cassete saiu (L01...). */
+    lesaoRotulo?: string | null;
   }>;
 }
 
@@ -189,6 +196,8 @@ export class MacroscopiaService {
               maiorEixoCm: l.maiorEixoCm?.toString() ?? null,
               menorEixoCm: l.menorEixoCm?.toString() ?? null,
               terceiroEixoCm: l.terceiroEixoCm?.toString() ?? null,
+              caracteristicas: l.caracteristicas ?? {},
+              descricaoTexto: l.descricaoTexto ?? null,
             })
             .onConflictDoUpdate({
               target: [lesaoMacroscopica.macroscopiaId, lesaoMacroscopica.rotulo],
@@ -199,11 +208,29 @@ export class MacroscopiaService {
                 maiorEixoCm: l.maiorEixoCm?.toString() ?? null,
                 menorEixoCm: l.menorEixoCm?.toString() ?? null,
                 terceiroEixoCm: l.terceiroEixoCm?.toString() ?? null,
+                ...(l.caracteristicas !== undefined ? { caracteristicas: l.caracteristicas } : {}),
+                ...(l.descricaoTexto !== undefined ? { descricaoTexto: l.descricaoTexto } : {}),
                 atualizadoEm: new Date(),
               },
             });
         }
       }
+
+      // Terceira revisao: margem e cassete apontam para a lesao pelo rotulo.
+      const lesaoPorRotulo = new Map(
+        (
+          await tx
+            .select({ id: lesaoMacroscopica.id, rotulo: lesaoMacroscopica.rotulo })
+            .from(lesaoMacroscopica)
+            .where(eq(lesaoMacroscopica.macroscopiaId, macroscopiaId))
+        ).map((l) => [l.rotulo, l.id]),
+      );
+      const lesaoDe = (rotulo?: string | null) => {
+        if (!rotulo) return null;
+        const id = lesaoPorRotulo.get(rotulo);
+        if (!id) throw new BadRequestException(`Lesão "${rotulo}" não existe nesta ficha.`);
+        return id;
+      };
 
       if (dados.margens) {
         for (const m of dados.margens) {
@@ -218,6 +245,7 @@ export class MacroscopiaService {
               distanciaCm: m.distanciaCm?.toString() ?? null,
               tinta: m.tinta ?? null,
               naoAvaliavel: m.naoAvaliavel ?? false,
+              lesaoId: lesaoDe(m.lesaoRotulo ?? null),
             })
             .onConflictDoUpdate({
               target: [margemMacroscopica.macroscopiaId, margemMacroscopica.nome],
@@ -226,6 +254,8 @@ export class MacroscopiaService {
                 distanciaCm: m.distanciaCm?.toString() ?? null,
                 tinta: m.tinta ?? null,
                 naoAvaliavel: m.naoAvaliavel ?? false,
+                // `undefined` mantem a lesao; `null` desliga.
+                ...(m.lesaoRotulo !== undefined ? { lesaoId: lesaoDe(m.lesaoRotulo) } : {}),
                 atualizadoEm: new Date(),
               },
             });
@@ -233,7 +263,11 @@ export class MacroscopiaService {
       }
 
       if (dados.cassetes?.length) {
-        await this.gerarCassetes(tx, registro, dados.cassetes);
+        await this.gerarCassetes(
+          tx,
+          registro,
+          dados.cassetes.map((c) => ({ ...c, lesaoId: lesaoDe(c.lesaoRotulo) })),
+        );
       }
     });
   }
@@ -442,6 +476,7 @@ export class MacroscopiaService {
         iniciadaEm: ficha.iniciadaEm,
         concluidaEm: ficha.concluidaEm,
         lesoes: lesoes.map((l) => ({
+          id: l.id,
           rotulo: l.rotulo,
           tipo: l.tipo,
           localizacao: l.localizacao,
@@ -449,9 +484,12 @@ export class MacroscopiaService {
           maiorEixoCm: l.maiorEixoCm,
           menorEixoCm: l.menorEixoCm,
           terceiroEixoCm: l.terceiroEixoCm,
+          caracteristicas: l.caracteristicas,
+          descricaoTexto: l.descricaoTexto,
         })),
         margens: margens.map((m) => ({
           nome: m.nome,
+          lesaoRotulo: lesoes.find((l) => l.id === m.lesaoId)?.rotulo ?? null,
           metodoAmostragem: m.metodoAmostragem,
           distanciaCm: m.distanciaCm,
           naoAvaliavel: m.naoAvaliavel,
@@ -463,6 +501,7 @@ export class MacroscopiaService {
           descricao: c.descricao,
           exigeDescalcificacao: c.exigeDescalcificacao,
           fragmentos: c.fragmentos,
+          lesaoRotulo: lesoes.find((l) => l.id === c.lesaoId)?.rotulo ?? null,
         })),
       };
     });
@@ -499,7 +538,7 @@ export class MacroscopiaService {
   private async gerarCassetes(
     tx: Transacao,
     registro: { id: string; casoId: string; amostraId: string },
-    novos: NonNullable<DadosMacroscopia['cassetes']>,
+    novos: Array<NonNullable<DadosMacroscopia['cassetes']>[number] & { lesaoId?: string | null }>,
   ): Promise<void> {
     const ctx = exigirContexto();
 
@@ -545,6 +584,7 @@ export class MacroscopiaService {
         descricao: c.descricao ?? null,
         exigeDescalcificacao: c.exigeDescalcificacao ?? false,
         fragmentos: c.fragmentos ?? null,
+        lesaoId: c.lesaoId ?? null,
       });
     }
   }
@@ -567,6 +607,7 @@ export class MacroscopiaService {
   async comporDescricao(
     macroscopiaId: string,
     selecoes: Record<string, string[]>,
+    lesaoRotulo?: string | null,
   ): Promise<{ texto: string; origem: 'ia' | 'padrao' }> {
     // Medidas sozinhas nao sao descricao: exige ao menos um bloquinho marcado.
     if (Object.values(selecoes).every((v) => v.filter((s) => s.trim()).length === 0)) {
@@ -575,12 +616,36 @@ export class MacroscopiaService {
 
     const registro = await this.db.executar((tx) => this.buscarMacroscopia(tx, macroscopiaId));
 
-    const base = comporDescricaoMacro(selecoes, {
+    /**
+     * Terceira revisao: a frase de uma lesao leva as medidas DELA (os tres
+     * eixos), nao as da peca inteira. Sem rotulo, e a frase da peca.
+     */
+    let medidas = {
       comprimentoCm: registro.comprimentoCm ? Number(registro.comprimentoCm) : undefined,
       larguraCm: registro.larguraCm ? Number(registro.larguraCm) : undefined,
       alturaCm: registro.alturaCm ? Number(registro.alturaCm) : undefined,
       pesoG: registro.pesoG ? Number(registro.pesoG) : undefined,
-    });
+    };
+    if (lesaoRotulo) {
+      const [lesao] = await this.db.executar((tx) =>
+        tx
+          .select()
+          .from(lesaoMacroscopica)
+          .where(
+            and(eq(lesaoMacroscopica.macroscopiaId, macroscopiaId), eq(lesaoMacroscopica.rotulo, lesaoRotulo)),
+          )
+          .limit(1),
+      );
+      if (!lesao) throw new BadRequestException(`Lesão "${lesaoRotulo}" não existe nesta ficha.`);
+      medidas = {
+        comprimentoCm: lesao.maiorEixoCm ? Number(lesao.maiorEixoCm) : undefined,
+        larguraCm: lesao.menorEixoCm ? Number(lesao.menorEixoCm) : undefined,
+        alturaCm: lesao.terceiroEixoCm ? Number(lesao.terceiroEixoCm) : undefined,
+        pesoG: undefined,
+      };
+    }
+
+    const base = comporDescricaoMacro(selecoes, medidas);
     if (!base) {
       throw new BadRequestException('Marque ao menos um descritor para compor a descrição.');
     }

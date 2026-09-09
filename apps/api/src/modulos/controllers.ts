@@ -482,6 +482,8 @@ const macroscopiaSchema = z.object({
         maiorEixoCm: z.number().positive().optional(),
         menorEixoCm: z.number().positive().optional(),
         terceiroEixoCm: z.number().positive().optional(),
+        caracteristicas: z.record(z.unknown()).optional(),
+        descricaoTexto: z.string().nullish(),
       }),
     )
     .optional(),
@@ -493,6 +495,7 @@ const macroscopiaSchema = z.object({
         distanciaCm: z.number().nonnegative().optional(),
         tinta: z.record(z.unknown()).optional(),
         naoAvaliavel: z.boolean().optional(),
+        lesaoRotulo: z.string().nullish(),
       }),
     )
     .optional(),
@@ -503,6 +506,7 @@ const macroscopiaSchema = z.object({
         descricao: z.string().optional(),
         exigeDescalcificacao: z.boolean().optional(),
         fragmentos: z.number().int().nonnegative().max(999).optional(),
+        lesaoRotulo: z.string().nullish(),
       }),
     )
     .optional(),
@@ -566,10 +570,14 @@ export class MacroscopiaController {
   })
   async comporDescricao(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
     const dados = validarCorpo(
-      z.object({ selecoes: z.record(z.string(), z.array(z.string().min(1).max(80)).max(12)) }),
+      z.object({
+        selecoes: z.record(z.string(), z.array(z.string().min(1).max(80)).max(12)),
+        /** Terceira revisão: a frase de uma lesão leva as medidas dela. */
+        lesaoRotulo: z.string().max(20).nullish(),
+      }),
       corpo,
     );
-    return this.macro.comporDescricao(id, dados.selecoes);
+    return this.macro.comporDescricao(id, dados.selecoes, dados.lesaoRotulo);
   }
 
   @Post(':id/conclusao')

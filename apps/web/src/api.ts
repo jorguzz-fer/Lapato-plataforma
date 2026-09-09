@@ -682,6 +682,15 @@ export interface VocabularioCitologia {
 
 // --- M08: ficha de macroscopia ----------------------------------------------
 
+/** Terceira revisão: modelo pronto por órgão, com lacunas {peca}, {lesao} e {peso}. */
+export interface ModeloMacroscopia {
+  id: string;
+  orgao: string;
+  titulo: string;
+  texto: string;
+}
+
+
 /**
  * Numéricos chegam como string: `numeric` do Postgres preserva a escala, e
  * converter para `number` no caminho perderia o "2.50" que o profissional
@@ -700,6 +709,7 @@ export interface FichaMacroscopia {
   iniciadaEm: string | null;
   concluidaEm: string | null;
   lesoes: Array<{
+    id: string;
     rotulo: string;
     tipo: string | null;
     localizacao: string | null;
@@ -707,12 +717,16 @@ export interface FichaMacroscopia {
     maiorEixoCm: string | null;
     menorEixoCm: string | null;
     terceiroEixoCm: string | null;
+    /** Terceira revisão: a macro desta lesão — bloquinhos marcados e o texto. */
+    caracteristicas: Record<string, unknown>;
+    descricaoTexto: string | null;
   }>;
   margens: Array<{
     nome: string;
     metodoAmostragem: string | null;
     distanciaCm: string | null;
     naoAvaliavel: boolean;
+    lesaoRotulo: string | null;
   }>;
   cassetes: Array<{
     id: string;
@@ -721,6 +735,7 @@ export interface FichaMacroscopia {
     descricao: string | null;
     exigeDescalcificacao: boolean;
     fragmentos: number | null;
+    lesaoRotulo: string | null;
   }>;
 }
 

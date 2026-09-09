@@ -46,6 +46,13 @@ const termoSchema = z.object({
   ordem: z.number().int().optional(),
 });
 
+const modeloMacroscopiaSchema = z.object({
+  orgao: z.string().min(1, 'Informe o órgão.').max(80),
+  titulo: z.string().min(1, 'Informe o título.').max(120),
+  texto: z.string().min(1, 'Informe o texto.').max(4000),
+  ordem: z.number().int().min(0).max(999).optional(),
+});
+
 const unidadeSchema = z.object({
   nome: z.string().min(1),
   codigo: z
@@ -225,6 +232,49 @@ export class AdministracaoController {
   })
   async inativarTermo(@Param('id', ParseUUIDPipe) id: string) {
     await this.admin.alternarTermo(id, false);
+    return { ok: true };
+  }
+
+  // --- modelos de macroscopia (terceira revisão) -------------------------------
+
+  @Get('modelos-macroscopia')
+  @ExigePermissao(PERMISSOES.CONFIG_VISUALIZAR)
+  @ApiOperation({ summary: 'Modelos prontos de macroscopia por órgão, inclusive inativos' })
+  async modelosMacroscopia() {
+    return this.admin.listarModelosMacroscopia();
+  }
+
+  @Post('modelos-macroscopia')
+  @ExigePermissao(PERMISSOES.TABELA_MESTRE_GERENCIAR)
+  @ApiOperation({
+    summary: 'Cria um modelo pronto de macroscopia',
+    description: 'Texto por órgão com lacunas {peca}, {lesao} e {peso}, preenchidas na bancada com o que foi medido.',
+  })
+  async criarModeloMacroscopia(@Body() corpo: unknown) {
+    return this.admin.criarModeloMacroscopia(validarCorpo(modeloMacroscopiaSchema, corpo));
+  }
+
+  @Post('modelos-macroscopia/:id')
+  @ExigePermissao(PERMISSOES.TABELA_MESTRE_GERENCIAR)
+  @ApiOperation({ summary: 'Edita um modelo de macroscopia' })
+  async editarModeloMacroscopia(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.admin.editarModeloMacroscopia(id, validarCorpo(modeloMacroscopiaSchema.partial(), corpo));
+    return { ok: true };
+  }
+
+  @Post('modelos-macroscopia/:id/inativacao')
+  @ExigePermissao(PERMISSOES.TABELA_MESTRE_GERENCIAR)
+  @ApiOperation({ summary: 'Inativa um modelo: some da bancada, o texto já inserido fica' })
+  async inativarModeloMacroscopia(@Param('id', ParseUUIDPipe) id: string) {
+    await this.admin.alternarModeloMacroscopia(id, false);
+    return { ok: true };
+  }
+
+  @Post('modelos-macroscopia/:id/reativacao')
+  @ExigePermissao(PERMISSOES.TABELA_MESTRE_GERENCIAR)
+  @ApiOperation({ summary: 'Reativa um modelo de macroscopia' })
+  async reativarModeloMacroscopia(@Param('id', ParseUUIDPipe) id: string) {
+    await this.admin.alternarModeloMacroscopia(id, true);
     return { ok: true };
   }
 

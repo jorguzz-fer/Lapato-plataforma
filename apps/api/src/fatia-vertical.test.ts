@@ -438,12 +438,22 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
       larguraCm: 2.0,
       alturaCm: 1.5,
       lesoes: [
-        { rotulo: 'L01', tipo: 'nódulo', lateralidade: 'direito', maiorEixoCm: 2.5, terceiroEixoCm: 1.2 },
+        {
+          rotulo: 'L01',
+          tipo: 'nódulo',
+          lateralidade: 'direito',
+          maiorEixoCm: 2.5,
+          terceiroEixoCm: 1.2,
+          // Terceira revisão: cada lesão tem a própria macro (bloquinhos e texto).
+          caracteristicas: { cor: ['acastanhada'] },
+          descricaoTexto: 'Nódulo acastanhado, firme.',
+        },
       ],
-      margens: [{ nome: 'Profunda', metodoAmostragem: 'perpendicular', distanciaCm: 0.4 }],
+      // Terceira revisão: margem e cassete apontam para a lesão pelo rótulo.
+      margens: [{ nome: 'Profunda', metodoAmostragem: 'perpendicular', distanciaCm: 0.4, lesaoRotulo: 'L01' }],
       // Terceira revisão (Hugo): fragmentos por cassete, para quem lê a lâmina conferir.
       cassetes: [
-        { tecidoOrigem: 'Nódulo — centro', descricao: 'Corte representativo', fragmentos: 3 },
+        { tecidoOrigem: 'Nódulo — centro', descricao: 'Corte representativo', fragmentos: 3, lesaoRotulo: 'L01' },
         { tecidoOrigem: 'Margem profunda' },
       ],
     });
@@ -470,6 +480,24 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
     expect(ficha.body.cassetes).toHaveLength(2);
     expect(ficha.body.cassetes[0].fragmentos).toBe(3);
     expect(ficha.body.cassetes[1].fragmentos).toBeNull();
+    expect(ficha.body.cassetes[0].lesaoRotulo).toBe('L01');
+    expect(ficha.body.cassetes[1].lesaoRotulo).toBeNull();
+    expect(ficha.body.margens[0].lesaoRotulo).toBe('L01');
+    // A correção não mandou caracteristicas nem texto: ficam como estavam.
+    expect(ficha.body.lesoes[0].descricaoTexto).toBe('Nódulo acastanhado, firme.');
+    expect(ficha.body.lesoes[0].caracteristicas).toEqual({ cor: ['acastanhada'] });
+    const rotuloInexistente = await req('POST', `/macroscopia/${macroscopiaId}`, {
+      cassetes: [{ tecidoOrigem: 'X', lesaoRotulo: 'L09' }],
+    });
+    expect(rotuloInexistente.status, 'cassete de lesão que não existe').toBe(400);
+    // Compor pela lesão usa as medidas DELA (2,8 é o maior eixo corrigido).
+    const porLesao = await req('POST', `/macroscopia/${macroscopiaId}/composicao`, {
+      selecoes: { cor: ['acastanhada'] },
+      lesaoRotulo: 'L01',
+    });
+    expect(porLesao.status, JSON.stringify(porLesao.body)).toBe(201);
+    expect(porLesao.body.texto).toContain('2,8');
+    expect(porLesao.body.texto).not.toContain('2,5 x 2,0 x 1,5');
     const cassetesDoCaso = await req('GET', `/macroscopia/casos/${casoId}/cassetes`);
     expect(cassetesDoCaso.body.map((c: { fragmentos: number | null }) => c.fragmentos)).toEqual([3, null]);
 
@@ -6453,5 +6481,45 @@ describe('terceira revisão (Hugo, 9/9): corrigir amostras e recipientes depois 
     expect((await req('POST', `/casos/amostras/${amostraId}`, { descricao: 'Nódulo mamário esquerdo' })).status).toBe(201);
     await entrar('portal@clinicacentral.local');
     expect((await req('POST', `/casos/amostras/${amostraId}`, { descricao: 'X' })).status).toBe(403);
+  });
+});
+
+describe('terceira revisão (Hugo, 9/9): modelos prontos de macroscopia', () => {
+  /**
+   * "Eu tenho essas máscaras todas prontas — baço com nódulo, sem nódulo... só
+   * copio, colo e altero o que precisa." O admin mantém; a bancada lê só os
+   * ativos, por órgão.
+   */
+  let modeloId: string;
+
+  test('admin cria e edita; a bancada lista por órgão', async () => {
+    await entrar('admin@lapato.local');
+    const criado = await req('POST', '/administracao/modelos-macroscopia', {
+      orgao: 'Baço',
+      titulo: 'Baço com nódulo único',
+      texto: 'Baço medindo {peca}, com nódulo de {lesao} ao corte.',
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    modeloId = criado.body.id;
+    expect((await req('POST', '/administracao/modelos-macroscopia', { orgao: 'Baço', titulo: '', texto: 'x' })).status).toBe(400);
+    expect((await req('POST', `/administracao/modelos-macroscopia/${modeloId}`, { titulo: 'Baço — nódulo único' })).status).toBe(201);
+
+    await entrar('tecnico@lapato.local');
+    const daBancada = await req('GET', '/catalogo/modelos-macroscopia?orgao=ba');
+    expect(daBancada.status).toBe(200);
+    const meu = daBancada.body.find((m: { id: string }) => m.id === modeloId);
+    expect(meu.titulo).toBe('Baço — nódulo único');
+    expect(meu.texto).toContain('{peca}');
+  });
+
+  test('inativado some da bancada, mas continua no admin', async () => {
+    await entrar('admin@lapato.local');
+    expect((await req('POST', `/administracao/modelos-macroscopia/${modeloId}/inativacao`)).status).toBe(201);
+    const todos = await req('GET', '/administracao/modelos-macroscopia');
+    expect(todos.body.find((m: { id: string }) => m.id === modeloId).inativadoEm).toBeTruthy();
+
+    await entrar('tecnico@lapato.local');
+    const daBancada = await req('GET', '/catalogo/modelos-macroscopia');
+    expect(daBancada.body.map((m: { id: string }) => m.id)).not.toContain(modeloId);
   });
 });

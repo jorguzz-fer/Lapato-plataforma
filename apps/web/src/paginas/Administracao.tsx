@@ -72,7 +72,7 @@ const FLAGS_SERVICO = [
 
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
 
-type Aba = 'servicos' | 'precos' | 'tabelas' | 'unidades' | 'locais' | 'etiquetas' | 'calendario';
+type Aba = 'servicos' | 'precos' | 'tabelas' | 'modelos' | 'unidades' | 'locais' | 'etiquetas' | 'calendario';
 
 export function Administracao({ permissoes }: { permissoes: string[] }) {
   const [aba, setAba] = useState<Aba>('servicos');
@@ -100,6 +100,7 @@ export function Administracao({ permissoes }: { permissoes: string[] }) {
         <Tab value="servicos" label="Serviços" />
         {podePrecos && <Tab value="precos" label="Tabelas de preço" />}
         <Tab value="tabelas" label="Tabelas mestres" />
+        <Tab value="modelos" label="Modelos de macroscopia" />
         <Tab value="unidades" label="Unidades e setores" />
         <Tab value="locais" label="Locais físicos" />
         <Tab value="etiquetas" label="Etiquetas" />
@@ -108,6 +109,7 @@ export function Administracao({ permissoes }: { permissoes: string[] }) {
 
       {aba === 'servicos' && <AbaServicos podeEditar={podeConfig} />}
       {aba === 'tabelas' && <AbaTabelas podeEditar={podeTabelas} />}
+      {aba === 'modelos' && <AbaModelosMacroscopia podeEditar={podeTabelas} />}
       {aba === 'unidades' && <AbaUnidades podeEditar={podeUnidades} />}
       {aba === 'locais' && <AbaLocais podeEditar={podeUnidades} />}
       {aba === 'etiquetas' && <AbaEtiquetas podeEditar={podeConfig} />}
@@ -601,6 +603,175 @@ function DialogoTermo({
         </Button>
         <Button variant="contained" onClick={() => void salvar()} disabled={ocupado || !valor.trim()}>
           {termo ? 'Salvar' : 'Criar'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+// --- modelos de macroscopia (terceira revisão com o Hugo) ---------------------
+
+interface ModeloAdmin {
+  id: string;
+  orgao: string;
+  titulo: string;
+  texto: string;
+  ordem: number;
+  inativadoEm: string | null;
+}
+
+/**
+ * "Eu tenho essas máscaras todas prontas — baço com nódulo, sem nódulo,
+ * múltiplos nódulos... só copio, colo e altero o que precisa." Texto por
+ * órgão, com lacunas que a bancada preenche com o que foi medido.
+ */
+function AbaModelosMacroscopia({ podeEditar }: { podeEditar: boolean }) {
+  const [modelos, setModelos] = useState<ModeloAdmin[] | null>(null);
+  const [editando, setEditando] = useState<ModeloAdmin | 'novo' | null>(null);
+  const [busca, setBusca] = useState('');
+
+  const recarregar = useCallback(() => {
+    api.get<ModeloAdmin[]>('/administracao/modelos-macroscopia').then(setModelos).catch(() => setModelos([]));
+  }, []);
+  useEffect(recarregar, [recarregar]);
+
+  const filtrados = (modelos ?? []).filter(
+    (m) => !busca.trim() || `${m.orgao} ${m.titulo}`.toLowerCase().includes(busca.trim().toLowerCase()),
+  );
+  const porOrgao = new Map<string, ModeloAdmin[]>();
+  for (const m of filtrados) porOrgao.set(m.orgao, [...(porOrgao.get(m.orgao) ?? []), m]);
+
+  return (
+    <Stack spacing={1.5}>
+      <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+        <Box>
+          <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+            Máscaras de descrição macroscópica por órgão. Na bancada, o modelo entra no texto da lesão com as
+            lacunas preenchidas: <code>{'{peca}'}</code> (medida da peça), <code>{'{lesao}'}</code> (medida da lesão),{' '}
+            <code>{'{peso}'}</code>.
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={1}>
+          <TextField size="small" placeholder="Buscar órgão ou título" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          {podeEditar && (
+            <Button size="small" variant="contained" startIcon={<AddOutlined />} onClick={() => setEditando('novo')}>
+              Novo modelo
+            </Button>
+          )}
+        </Stack>
+      </Stack>
+
+      {!modelos && <Skeleton variant="rounded" height={200} />}
+      {modelos && filtrados.length === 0 && (
+        <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>Nenhum modelo cadastrado ainda.</Typography>
+      )}
+
+      {[...porOrgao.entries()].map(([orgao, lista]) => (
+        <Box key={orgao}>
+          <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'text.secondary', mb: 0.75 }}>
+            {orgao}
+          </Typography>
+          <Stack spacing={1}>
+            {lista.map((m) => (
+              <Card key={m.id} sx={{ p: 1.5 }}>
+                <Stack direction="row" sx={{ alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                      <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{m.titulo}</Typography>
+                      {m.inativadoEm && <Chip size="small" label="Inativo" />}
+                    </Stack>
+                    <Typography sx={{ fontSize: 12.5, color: 'text.secondary', whiteSpace: 'pre-wrap' }}>{m.texto}</Typography>
+                  </Box>
+                  {podeEditar && (
+                    <Stack direction="row" spacing={1} sx={{ flexShrink: 0, alignItems: 'center' }}>
+                      <Button size="small" onClick={() => setEditando(m)}>
+                        Editar
+                      </Button>
+                      <BotaoAtivacao
+                        inativo={m.inativadoEm !== null}
+                        caminho={`/administracao/modelos-macroscopia/${m.id}`}
+                        aoMudar={recarregar}
+                      />
+                    </Stack>
+                  )}
+                </Stack>
+              </Card>
+            ))}
+          </Stack>
+        </Box>
+      ))}
+
+      {editando && (
+        <DialogoModeloMacroscopia
+          modelo={editando === 'novo' ? undefined : editando}
+          aoFechar={() => setEditando(null)}
+          aoSalvar={() => {
+            setEditando(null);
+            recarregar();
+          }}
+        />
+      )}
+    </Stack>
+  );
+}
+
+function DialogoModeloMacroscopia({
+  modelo,
+  aoFechar,
+  aoSalvar,
+}: {
+  modelo?: ModeloAdmin;
+  aoFechar: () => void;
+  aoSalvar: () => void;
+}) {
+  const [orgao, setOrgao] = useState(modelo?.orgao ?? '');
+  const [titulo, setTitulo] = useState(modelo?.titulo ?? '');
+  const [texto, setTexto] = useState(modelo?.texto ?? '');
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+
+  async function salvar() {
+    setOcupado(true);
+    setErro(null);
+    try {
+      const corpo = { orgao: orgao.trim(), titulo: titulo.trim(), texto: texto.trim() };
+      if (modelo) await api.post(`/administracao/modelos-macroscopia/${modelo.id}`, corpo);
+      else await api.post('/administracao/modelos-macroscopia', corpo);
+      aoSalvar();
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível salvar o modelo.');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <Dialog open onClose={aoFechar} fullWidth maxWidth="sm">
+      <DialogTitle>{modelo ? 'Editar modelo' : 'Novo modelo de macroscopia'}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <TextField label="Órgão" value={orgao} onChange={(e) => setOrgao(e.target.value)} required autoFocus sx={{ flex: 1 }} />
+            <TextField label="Título" value={titulo} onChange={(e) => setTitulo(e.target.value)} required sx={{ flex: 1.5 }} helperText="Ex.: Baço com nódulo único" />
+          </Stack>
+          <TextField
+            label="Texto"
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            multiline
+            minRows={4}
+            required
+            helperText="Lacunas: {peca} vira a medida da peça, {lesao} a da lesão e {peso} o peso — preenchidas na bancada."
+          />
+          {erro && <Alert severity="error">{erro}</Alert>}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={aoFechar} disabled={ocupado}>
+          Cancelar
+        </Button>
+        <Button variant="contained" onClick={() => void salvar()} disabled={ocupado || !orgao.trim() || !titulo.trim() || !texto.trim()}>
+          {modelo ? 'Salvar' : 'Criar'}
         </Button>
       </DialogActions>
     </Dialog>

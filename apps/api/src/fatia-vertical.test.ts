@@ -437,10 +437,13 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
       comprimentoCm: 2.5,
       larguraCm: 2.0,
       alturaCm: 1.5,
-      lesoes: [{ rotulo: 'L01', tipo: 'nódulo', lateralidade: 'direito', maiorEixoCm: 2.5 }],
+      lesoes: [
+        { rotulo: 'L01', tipo: 'nódulo', lateralidade: 'direito', maiorEixoCm: 2.5, terceiroEixoCm: 1.2 },
+      ],
       margens: [{ nome: 'Profunda', metodoAmostragem: 'perpendicular', distanciaCm: 0.4 }],
+      // Terceira revisão (Hugo): fragmentos por cassete, para quem lê a lâmina conferir.
       cassetes: [
-        { tecidoOrigem: 'Nódulo — centro', descricao: 'Corte representativo' },
+        { tecidoOrigem: 'Nódulo — centro', descricao: 'Corte representativo', fragmentos: 3 },
         { tecidoOrigem: 'Margem profunda' },
       ],
     });
@@ -460,9 +463,15 @@ describe('fatia vertical: histopatologia de ponta a ponta', () => {
     const ficha = await req('GET', `/macroscopia/amostras/${amostraId}`);
     expect(ficha.body.lesoes).toHaveLength(1);
     expect(Number(ficha.body.lesoes[0].maiorEixoCm)).toBe(2.8);
+    // A correção não mandou o terceiro eixo: a coluna some junto — a ficha é o que foi enviado.
+    expect(ficha.body.lesoes[0].terceiroEixoCm).toBeNull();
     expect(Number(ficha.body.margens[0].distanciaCm)).toBe(0.6);
     // Os cassetes não foram reenviados, então continuam dois — e não quatro.
     expect(ficha.body.cassetes).toHaveLength(2);
+    expect(ficha.body.cassetes[0].fragmentos).toBe(3);
+    expect(ficha.body.cassetes[1].fragmentos).toBeNull();
+    const cassetesDoCaso = await req('GET', `/macroscopia/casos/${casoId}/cassetes`);
+    expect(cassetesDoCaso.body.map((c: { fragmentos: number | null }) => c.fragmentos)).toEqual([3, null]);
 
     const concluir = await req('POST', `/macroscopia/${macroscopiaId}/conclusao`);
     expect(concluir.status, JSON.stringify(concluir.body)).toBe(201);
@@ -4371,7 +4380,7 @@ describe('descrição rápida em bloquinhos e etiquetas do parceiro (M08 + M09)'
       expect(composicao.body.texto).toContain(trecho);
     }
     // As medidas gravadas na ficha entram na frase.
-    expect(composicao.body.texto).toContain('3,0 × 2,0 × 1,0 cm');
+    expect(composicao.body.texto).toContain('3,0 x 2,0 x 1,0 cm');
     expect(composicao.body.texto).toContain('15 g');
     // A representação fecha o texto, depois das medidas.
     expect(composicao.body.texto).toMatch(/15 g\.\s+Representação: todo o material incluído\.$/);
@@ -6321,5 +6330,48 @@ describe('M21 Biblioteca: versões, revisão, ciência e contexto', () => {
     await entrar('portal@clinicacentral.local');
     const portal = await req('GET', '/portal/orientacoes');
     expect(portal.body.map((d: any) => d.id)).not.toContain(documentoId);
+  });
+});
+
+describe('terceira revisão (Hugo, 9/9): margem no cadastro', () => {
+  /**
+   * "Na maioria das vezes a gente não tem essas informações de órgão e região;
+   * o que tem é se tem margem — sem margem, margem simples ou identificada."
+   * A margem é decidida no cadastro porque é cobrada à parte; a macroscopia só
+   * avalia margem quando ela existe.
+   */
+  test('a amostra guarda a margem cirúrgica decidida no cadastro', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const base = {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Margem ${Date.now().toString().slice(-5)}` },
+      recipientes: [{ quantidadeDeclarada: 2 }],
+    };
+
+    const invalida = await req('POST', '/casos', {
+      ...base,
+      amostras: [{ descricao: 'Nódulo', margemCirurgica: 'margem_dupla' }],
+    });
+    expect(invalida.status).toBe(400);
+
+    const criado = await req('POST', '/casos', {
+      ...base,
+      amostras: [
+        { descricao: 'Nódulo mamário', margemCirurgica: 'margem_identificada' },
+        { descricao: 'Linfonodo' },
+      ],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+
+    const dossie = await req('GET', `/casos/${criado.body.id}`);
+    const porDescricao = new Map(
+      dossie.body.amostras.map((a: { descricao: string; margemCirurgica: string }) => [a.descricao, a.margemCirurgica]),
+    );
+    expect(porDescricao.get('Nódulo mamário')).toBe('margem_identificada');
+    // Sem informar, nasce "sem margem": a bancada não oferece a seção de margens.
+    expect(porDescricao.get('Linfonodo')).toBe('sem_margem');
   });
 });

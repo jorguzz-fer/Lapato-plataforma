@@ -59,6 +59,7 @@ import {
   GRAVIDADE_NC,
   INTENSIDADE,
   LATERALIDADE,
+  MARGEM_CIRURGICA,
   METODO_AMOSTRAGEM,
   NIVEL_BLOQUEIO,
   NIVEL_IA,
@@ -107,6 +108,7 @@ export const statusPendenciaEnum = pgEnum('status_pendencia', STATUS_PENDENCIA);
 export const nivelBloqueioEnum = pgEnum('nivel_bloqueio', NIVEL_BLOQUEIO);
 export const metodoAmostragemEnum = pgEnum('metodo_amostragem', METODO_AMOSTRAGEM);
 export const lateralidadeEnum = pgEnum('lateralidade', LATERALIDADE);
+export const margemCirurgicaEnum = pgEnum('margem_cirurgica', MARGEM_CIRURGICA);
 export const resultadoMargemEnum = pgEnum('resultado_margem', RESULTADO_MARGEM);
 export const statusLaudoEnum = pgEnum('status_laudo', STATUS_LAUDO);
 export const tipoVersaoLaudoEnum = pgEnum('tipo_versao_laudo', TIPO_VERSAO_LAUDO);

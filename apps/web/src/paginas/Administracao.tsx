@@ -379,6 +379,7 @@ function AbaTabelas({ podeEditar }: { podeEditar: boolean }) {
   const [selecionada, setSelecionada] = useState<TabelaAdmin | null>(null);
   const [termos, setTermos] = useState<TermoAdmin[] | null>(null);
   const [criando, setCriando] = useState(false);
+  const [editando, setEditando] = useState<TermoEditavel | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
@@ -463,11 +464,16 @@ function AbaTabelas({ podeEditar }: { podeEditar: boolean }) {
               )}
             </Box>
             {podeEditar && (
-              <BotaoAtivacao
-                inativo={t.inativadoEm !== null}
-                caminho={`/administracao/termos/${t.id}`}
-                aoMudar={() => carregarTermos(selecionada)}
-              />
+              <Stack direction="row" spacing={1} sx={{ flexShrink: 0, alignItems: 'center' }}>
+                <Button size="small" onClick={() => setEditando(t)}>
+                  Editar
+                </Button>
+                <BotaoAtivacao
+                  inativo={t.inativadoEm !== null}
+                  caminho={`/administracao/termos/${t.id}`}
+                  aoMudar={() => carregarTermos(selecionada)}
+                />
+              </Stack>
             )}
           </Stack>
         </Card>
@@ -483,37 +489,79 @@ function AbaTabelas({ podeEditar }: { podeEditar: boolean }) {
           }}
         />
       )}
+
+      {editando && (
+        <DialogoTermo
+          tabela={selecionada}
+          termo={editando}
+          aoFechar={() => setEditando(null)}
+          aoCriar={() => {
+            setEditando(null);
+            carregarTermos(selecionada);
+          }}
+        />
+      )}
     </Stack>
   );
 }
 
+interface TermoEditavel {
+  id: string;
+  valor: string;
+  codigo: string;
+  abreviacao: string | null;
+  sinonimos: string[];
+}
+
+/**
+ * Cria ou edita um termo. Terceira revisão com o Hugo: "aqui eu só consigo
+ * ativar ou inativar, mas editar não" — o valor, a abreviação e os sinônimos
+ * mudam; o código não (M01: é ele que os outros módulos referenciam), e os
+ * casos já registrados guardam o nome que valia na época.
+ */
 function DialogoTermo({
   tabela,
+  termo,
   aoFechar,
   aoCriar,
 }: {
   tabela: TabelaAdmin;
+  termo?: TermoEditavel;
   aoFechar: () => void;
   aoCriar: () => void;
 }) {
-  const [valor, setValor] = useState('');
-  const [codigo, setCodigo] = useState('');
-  const [abreviacao, setAbreviacao] = useState('');
+  const [valor, setValor] = useState(termo?.valor ?? '');
+  const [codigo, setCodigo] = useState(termo?.codigo ?? '');
+  const [abreviacao, setAbreviacao] = useState(termo?.abreviacao ?? '');
+  const [sinonimos, setSinonimos] = useState(termo?.sinonimos.join(', ') ?? '');
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
-  async function criar() {
+  async function salvar() {
     setOcupado(true);
     setErro(null);
+    const listaSinonimos = sinonimos
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean);
     try {
-      await api.post(`/administracao/tabelas/${tabela.id}/termos`, {
-        valor: valor.trim(),
-        codigo: (codigo.trim() || valor.trim()).toLowerCase().replace(/\s+/g, '_'),
-        ...(abreviacao.trim() ? { abreviacao: abreviacao.trim() } : {}),
-      });
+      if (termo) {
+        await api.post(`/administracao/termos/${termo.id}`, {
+          valor: valor.trim(),
+          abreviacao: abreviacao.trim(),
+          sinonimos: listaSinonimos,
+        });
+      } else {
+        await api.post(`/administracao/tabelas/${tabela.id}/termos`, {
+          valor: valor.trim(),
+          codigo: (codigo.trim() || valor.trim()).toLowerCase().replace(/\s+/g, '_'),
+          ...(abreviacao.trim() ? { abreviacao: abreviacao.trim() } : {}),
+          ...(listaSinonimos.length > 0 ? { sinonimos: listaSinonimos } : {}),
+        });
+      }
       aoCriar();
     } catch (err) {
-      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível criar o termo.');
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível salvar o termo.');
     } finally {
       setOcupado(false);
     }
@@ -521,7 +569,7 @@ function DialogoTermo({
 
   return (
     <Dialog open onClose={aoFechar} fullWidth maxWidth="xs">
-      <DialogTitle>Novo termo — {tabela.nome}</DialogTitle>
+      <DialogTitle>{termo ? 'Editar termo' : 'Novo termo'} — {tabela.nome}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
           <TextField label="Valor" value={valor} onChange={(e) => setValor(e.target.value)} required autoFocus />
@@ -529,9 +577,21 @@ function DialogoTermo({
             label="Código"
             value={codigo}
             onChange={(e) => setCodigo(e.target.value)}
-            helperText="Opcional — derivado do valor se vazio. Imutável depois."
+            disabled={Boolean(termo)}
+            helperText={termo ? 'Imutável: é o que os módulos referenciam.' : 'Opcional — derivado do valor se vazio. Imutável depois.'}
           />
           <TextField label="Abreviação" value={abreviacao} onChange={(e) => setAbreviacao(e.target.value)} />
+          <TextField
+            label="Sinônimos"
+            value={sinonimos}
+            onChange={(e) => setSinonimos(e.target.value)}
+            helperText="Separados por vírgula."
+          />
+          {termo && (
+            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+              Vale daqui para a frente: os casos já registrados guardam o nome da época.
+            </Typography>
+          )}
           {erro && <Alert severity="error">{erro}</Alert>}
         </Stack>
       </DialogContent>
@@ -539,8 +599,8 @@ function DialogoTermo({
         <Button onClick={aoFechar} disabled={ocupado}>
           Cancelar
         </Button>
-        <Button variant="contained" onClick={() => void criar()} disabled={ocupado || !valor.trim()}>
-          Criar
+        <Button variant="contained" onClick={() => void salvar()} disabled={ocupado || !valor.trim()}>
+          {termo ? 'Salvar' : 'Criar'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -552,6 +612,7 @@ function DialogoTermo({
 function AbaUnidades({ podeEditar }: { podeEditar: boolean }) {
   const [unidades, setUnidades] = useState<UnidadeAdmin[] | null>(null);
   const [criando, setCriando] = useState(false);
+  const [editando, setEditando] = useState<UnidadeEditavel | null>(null);
   const [setorEm, setSetorEm] = useState<UnidadeAdmin | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -607,6 +668,9 @@ function AbaUnidades({ podeEditar }: { podeEditar: boolean }) {
 
             {podeEditar && (
               <Stack direction="row" spacing={1} sx={{ flexShrink: 0, alignSelf: 'center' }}>
+                <Button size="small" onClick={() => setEditando(u)}>
+                  Editar
+                </Button>
                 <Button size="small" onClick={() => setSetorEm(u)}>
                   + Setor
                 </Button>
@@ -631,6 +695,17 @@ function AbaUnidades({ podeEditar }: { podeEditar: boolean }) {
         />
       )}
 
+      {editando && (
+        <DialogoUnidade
+          unidade={editando}
+          aoFechar={() => setEditando(null)}
+          aoCriar={() => {
+            setEditando(null);
+            recarregar();
+          }}
+        />
+      )}
+
       {setorEm && (
         <DialogoSetor
           unidade={setorEm}
@@ -645,11 +720,27 @@ function AbaUnidades({ podeEditar }: { podeEditar: boolean }) {
   );
 }
 
-function DialogoUnidade({ aoFechar, aoCriar }: { aoFechar: () => void; aoCriar: () => void }) {
-  const [nome, setNome] = useState('');
-  const [codigo, setCodigo] = useState('');
-  const [tipo, setTipo] = useState('filial');
-  const [responsavel, setResponsavel] = useState('');
+interface UnidadeEditavel {
+  id: string;
+  nome: string;
+  codigo: string;
+  tipo: string;
+  responsavel?: string | null;
+}
+
+function DialogoUnidade({
+  unidade,
+  aoFechar,
+  aoCriar,
+}: {
+  unidade?: UnidadeEditavel;
+  aoFechar: () => void;
+  aoCriar: () => void;
+}) {
+  const [nome, setNome] = useState(unidade?.nome ?? '');
+  const [codigo, setCodigo] = useState(unidade?.codigo ?? '');
+  const [tipo, setTipo] = useState(unidade?.tipo ?? 'filial');
+  const [responsavel, setResponsavel] = useState(unidade?.responsavel ?? '');
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
@@ -657,15 +748,23 @@ function DialogoUnidade({ aoFechar, aoCriar }: { aoFechar: () => void; aoCriar: 
     setOcupado(true);
     setErro(null);
     try {
-      await api.post('/administracao/unidades', {
-        nome: nome.trim(),
-        codigo: codigo.trim().toUpperCase(),
-        tipo,
-        ...(responsavel.trim() ? { responsavel: responsavel.trim() } : {}),
-      });
+      if (unidade) {
+        // Código e tipo são imutáveis (M01); nome e responsável mudam.
+        await api.post(`/administracao/unidades/${unidade.id}`, {
+          nome: nome.trim(),
+          responsavel: responsavel.trim(),
+        });
+      } else {
+        await api.post('/administracao/unidades', {
+          nome: nome.trim(),
+          codigo: codigo.trim().toUpperCase(),
+          tipo,
+          ...(responsavel.trim() ? { responsavel: responsavel.trim() } : {}),
+        });
+      }
       aoCriar();
     } catch (err) {
-      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível criar a unidade.');
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível salvar a unidade.');
     } finally {
       setOcupado(false);
     }
@@ -673,7 +772,7 @@ function DialogoUnidade({ aoFechar, aoCriar }: { aoFechar: () => void; aoCriar: 
 
   return (
     <Dialog open onClose={aoFechar} fullWidth maxWidth="xs">
-      <DialogTitle>Nova unidade</DialogTitle>
+      <DialogTitle>{unidade ? 'Editar unidade' : 'Nova unidade'}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
           <TextField label="Nome" value={nome} onChange={(e) => setNome(e.target.value)} required autoFocus />
@@ -683,6 +782,7 @@ function DialogoUnidade({ aoFechar, aoCriar }: { aoFechar: () => void; aoCriar: 
               value={codigo}
               onChange={(e) => setCodigo(e.target.value.toUpperCase())}
               required
+              disabled={Boolean(unidade)}
               sx={{ width: 130 }}
             />
             <TextField
@@ -690,6 +790,7 @@ function DialogoUnidade({ aoFechar, aoCriar }: { aoFechar: () => void; aoCriar: 
               label="Tipo"
               value={tipo}
               onChange={(e) => setTipo(e.target.value)}
+              disabled={Boolean(unidade)}
               sx={{ flex: 1 }}
               helperText="Imutável: do tipo deriva o isolamento de acesso (M09)."
             >

@@ -160,6 +160,21 @@ export const METODO_AMOSTRAGEM = ['perpendicular', 'tangencial_en_face', 'radial
 export type MetodoAmostragem = (typeof METODO_AMOSTRAGEM)[number];
 
 export const LATERALIDADE = ['direito', 'esquerdo', 'bilateral', 'nao_aplicavel'] as const;
+
+/**
+ * Terceira revisao com o Hugo: no cadastro quase nunca se sabe orgao e regiao
+ * anatomica - o que se sabe e se a peca veio para avaliacao de margem. E a
+ * margem e cobrada a parte, entao a decisao precisa estar no cadastro, nao na
+ * bancada: a macroscopia so oferece a secao de margens quando ela existe.
+ */
+export const MARGEM_CIRURGICA = ['sem_margem', 'margem_simples', 'margem_identificada'] as const;
+export type MargemCirurgica = (typeof MARGEM_CIRURGICA)[number];
+
+export const MARGEM_CIRURGICA_LABEL: Record<MargemCirurgica, string> = {
+  sem_margem: 'Sem margem',
+  margem_simples: 'Margem simples',
+  margem_identificada: 'Margem identificada',
+};
 export type Lateralidade = (typeof LATERALIDADE)[number];
 
 // --- M13 Histopatologia ----------------------------------------------------

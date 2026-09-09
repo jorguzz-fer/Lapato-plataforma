@@ -43,6 +43,7 @@ export interface DadosMacroscopia {
     lateralidade?: Lateralidade;
     maiorEixoCm?: number;
     menorEixoCm?: number;
+    terceiroEixoCm?: number;
   }>;
   margens?: Array<{
     nome: string;
@@ -55,6 +56,7 @@ export interface DadosMacroscopia {
     tecidoOrigem: string;
     descricao?: string;
     exigeDescalcificacao?: boolean;
+    fragmentos?: number;
   }>;
 }
 
@@ -186,6 +188,7 @@ export class MacroscopiaService {
               lateralidade: l.lateralidade ?? 'nao_aplicavel',
               maiorEixoCm: l.maiorEixoCm?.toString() ?? null,
               menorEixoCm: l.menorEixoCm?.toString() ?? null,
+              terceiroEixoCm: l.terceiroEixoCm?.toString() ?? null,
             })
             .onConflictDoUpdate({
               target: [lesaoMacroscopica.macroscopiaId, lesaoMacroscopica.rotulo],
@@ -195,6 +198,7 @@ export class MacroscopiaService {
                 lateralidade: l.lateralidade ?? 'nao_aplicavel',
                 maiorEixoCm: l.maiorEixoCm?.toString() ?? null,
                 menorEixoCm: l.menorEixoCm?.toString() ?? null,
+                terceiroEixoCm: l.terceiroEixoCm?.toString() ?? null,
                 atualizadoEm: new Date(),
               },
             });
@@ -444,6 +448,7 @@ export class MacroscopiaService {
           lateralidade: l.lateralidade,
           maiorEixoCm: l.maiorEixoCm,
           menorEixoCm: l.menorEixoCm,
+          terceiroEixoCm: l.terceiroEixoCm,
         })),
         margens: margens.map((m) => ({
           nome: m.nome,
@@ -457,6 +462,7 @@ export class MacroscopiaService {
           tecidoOrigem: c.tecidoOrigem,
           descricao: c.descricao,
           exigeDescalcificacao: c.exigeDescalcificacao,
+          fragmentos: c.fragmentos,
         })),
       };
     });
@@ -480,6 +486,7 @@ export class MacroscopiaService {
           tecidoOrigem: cassete.tecidoOrigem,
           exigeDescalcificacao: cassete.exigeDescalcificacao,
           statusTecnico: cassete.statusTecnico,
+          fragmentos: cassete.fragmentos,
         })
         .from(cassete)
         .where(and(eq(cassete.tenantId, ctx.tenantId), eq(cassete.casoId, casoId)))
@@ -537,6 +544,7 @@ export class MacroscopiaService {
         tecidoOrigem: c.tecidoOrigem,
         descricao: c.descricao ?? null,
         exigeDescalcificacao: c.exigeDescalcificacao ?? false,
+        fragmentos: c.fragmentos ?? null,
       });
     }
   }

@@ -563,7 +563,11 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
             <Typography sx={{ fontSize: 13.5 }}>{dossie.servico.nome}</Typography>
           </Box>
         </Stack>
-        <CabecalhoDoMaterial dossie={dossie} />
+        <CabecalhoDoMaterial
+          dossie={dossie}
+          podeCorrigir={permissoes.includes('caso:corrigir_identificacao')}
+          aoMudar={() => api.get<DadosDossie>(`/casos/${id}`).then(setDossie)}
+        />
       </Card>
 
       {!laudo ? (
@@ -967,6 +971,7 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
                   casoId={id}
                   permissoes={permissoes}
                   moduloContexto="M11_LAUDOS"
+                  tipoPadrao="microfotografia"
                 />
               )}
             </Secao>

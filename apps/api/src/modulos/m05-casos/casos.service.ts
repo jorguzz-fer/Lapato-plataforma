@@ -27,6 +27,7 @@ import {
   identificadorRecipiente,
   type Lateralidade,
   type ModalidadeCobranca,
+  type MargemCirurgica,
 } from '@lapato/shared';
 import { DbService } from '../../core/db/db.service.js';
 import { EventosService } from '../../core/eventos/eventos.service.js';
@@ -72,6 +73,7 @@ export interface DadosNovoCaso {
     descricao?: string;
     orgaoId?: string;
     regiaoAnatomica?: string;
+    margemCirurgica?: MargemCirurgica;
     lateralidade?: Lateralidade;
     tipoRelacao?: string;
   }>;
@@ -998,6 +1000,7 @@ export class CasosService {
         descricao: a.descricao ?? null,
         orgaoId: a.orgaoId ?? null,
         regiaoAnatomica: a.regiaoAnatomica ?? null,
+        margemCirurgica: a.margemCirurgica ?? 'sem_margem',
         lateralidade: a.lateralidade ?? 'nao_aplicavel',
         tipoRelacao: a.tipoRelacao ?? null,
       });

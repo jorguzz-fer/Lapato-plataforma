@@ -17,6 +17,7 @@ import {
   gravidadeNcEnum,
   modalidadeCobrancaEnum,
   lateralidadeEnum,
+  margemCirurgicaEnum,
   prioridadeEnum,
   resultadoTriagemEnum,
 } from './_comum.js';
@@ -276,6 +277,11 @@ export const amostra = pgTable(
     tecidoId: uuid('tecido_id'),
     regiaoAnatomica: text('regiao_anatomica'),
     lateralidade: lateralidadeEnum('lateralidade').notNull().default('nao_aplicavel'),
+    /**
+     * Terceira revisao com o Hugo: a margem e decidida no cadastro (e cobrada a
+     * parte). A macroscopia so mostra a secao de margens quando ela existe.
+     */
+    margemCirurgica: margemCirurgicaEnum('margem_cirurgica').notNull().default('sem_margem'),
 
     /** M05: lesao principal, adicional, margem, linfonodo regional, controle... */
     tipoRelacao: text('tipo_relacao'),

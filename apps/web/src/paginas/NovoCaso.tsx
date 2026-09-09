@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Alert from '@mui/material/Alert';
 import Autocomplete from '@mui/material/Autocomplete';
@@ -17,7 +17,19 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import DeleteOutline from '@mui/icons-material/DeleteOutlined';
-import { LATERALIDADE, PRIORIDADE, type Lateralidade, type Prioridade } from '@lapato/shared';
+import PhotoCameraOutlined from '@mui/icons-material/PhotoCameraOutlined';
+import AddPhotoAlternateOutlined from '@mui/icons-material/AddPhotoAlternateOutlined';
+import {
+  LATERALIDADE,
+  MARGEM_CIRURGICA,
+  MARGEM_CIRURGICA_LABEL,
+  PRIORIDADE,
+  type Lateralidade,
+  type MargemCirurgica,
+  type Prioridade,
+} from '@lapato/shared';
+import { CapturaWebcam } from './imagens/CapturaWebcam';
+import { FORMATOS_IMAGEM, enviarImagemDoCaso } from './imagens/envio';
 import {
   api,
   ErroApi,
@@ -60,8 +72,11 @@ const LATERALIDADE_LABEL: Record<Lateralidade, string> = {
 
 interface Amostra {
   descricao: string;
-  orgaoId: string;
-  regiaoAnatomica: string;
+  /**
+   * Terceira revisão com o Hugo: órgão e região quase nunca se sabem no
+   * cadastro; o que se sabe é se veio com margem — e isso é cobrado à parte.
+   */
+  margemCirurgica: MargemCirurgica;
   lateralidade: Lateralidade;
 }
 
@@ -74,10 +89,22 @@ interface Recipiente {
 
 const AMOSTRA_VAZIA: Amostra = {
   descricao: '',
-  orgaoId: '',
-  regiaoAnatomica: '',
+  margemCirurgica: 'sem_margem',
   lateralidade: 'nao_aplicavel',
 };
+
+/**
+ * Terceira revisão: "99,9% é formol 10%, e muitas vezes a gente nem sabe se é
+ * tamponado". O recipiente já nasce com ele marcado; troca-se quando for outro.
+ */
+function fixadorPadrao(lista: Termo[]): string {
+  const porOrdem = [/^formol\s*10\s*%$/i, /formol\s*10\s*%.*n[aã]o tamponado/i, /formol\s*10\s*%/i];
+  for (const teste of porOrdem) {
+    const achado = lista.find((t) => teste.test(t.valor));
+    if (achado) return achado.id;
+  }
+  return '';
+}
 
 const RECIPIENTE_VAZIO: Recipiente = {
   tipoId: '',
@@ -93,9 +120,14 @@ export function NovoCaso() {
   const [clientes, setClientes] = useState<ClienteResumo[]>([]);
   const [veterinarios, setVeterinarios] = useState<VeterinarioResumo[]>([]);
   const [especies, setEspecies] = useState<Termo[]>([]);
-  const [orgaos, setOrgaos] = useState<Termo[]>([]);
   const [tiposRecipiente, setTiposRecipiente] = useState<Termo[]>([]);
   const [fixadores, setFixadores] = useState<Termo[]>([]);
+  const [fixadorPadraoId, setFixadorPadraoId] = useState('');
+  /** Fotos da requisição e dos potes, tiradas no cadastro; sobem logo depois de criar o caso. */
+  const [fotos, setFotos] = useState<File[]>([]);
+  const [cameraAberta, setCameraAberta] = useState(false);
+  const [criadoId, setCriadoId] = useState<string | null>(null);
+  const entradaFotos = useRef<HTMLInputElement>(null);
 
   const [servicoId, setServicoId] = useState('');
   const [cliente, setCliente] = useState<ClienteResumo | null>(null);
@@ -188,9 +220,13 @@ export function NovoCaso() {
       api.get<Servico[]>('/catalogo/servicos').then(setServicos),
       api.get<ClienteResumo[]>('/catalogo/clientes').then(setClientes),
       api.get<Termo[]>('/catalogo/tabelas/especie').then(setEspecies),
-      api.get<Termo[]>('/catalogo/tabelas/orgao').then(setOrgaos),
       api.get<Termo[]>('/catalogo/tabelas/recipiente').then(setTiposRecipiente),
-      api.get<Termo[]>('/catalogo/tabelas/fixador').then(setFixadores),
+      api.get<Termo[]>('/catalogo/tabelas/fixador').then((lista) => {
+        setFixadores(lista);
+        const padrao = fixadorPadrao(lista);
+        setFixadorPadraoId(padrao);
+        if (padrao) setRecipientes((rs) => rs.map((r) => (r.fixadorId ? r : { ...r, fixadorId: padrao })));
+      }),
     ]).catch(() => setErro('Não foi possível carregar os dados de cadastro.'));
   }, []);
 
@@ -280,8 +316,7 @@ export function NovoCaso() {
         ...(historicoClinico.trim() ? { historicoClinico: historicoClinico.trim() } : {}),
         amostras: amostras.map((a) => ({
           ...(a.descricao.trim() ? { descricao: a.descricao.trim() } : {}),
-          ...(a.orgaoId ? { orgaoId: a.orgaoId } : {}),
-          ...(a.regiaoAnatomica.trim() ? { regiaoAnatomica: a.regiaoAnatomica.trim() } : {}),
+          margemCirurgica: a.margemCirurgica,
           lateralidade: a.lateralidade,
         })),
         recipientes: recipientes.map((r) => ({
@@ -295,6 +330,26 @@ export function NovoCaso() {
             : {}),
         })),
       });
+
+      /**
+       * Terceira revisão: a foto da requisição e dos potes é tirada no momento
+       * em que o material chega — sobe junto com o cadastro. Uma foto que falhe
+       * não desfaz o caso: avisa, e o recebimento aceita de novo.
+       */
+      const falhas: string[] = [];
+      for (const foto of fotos) {
+        try {
+          await enviarImagemDoCaso(caso.id, foto, 'requisicao', 'M05_CADASTRO');
+        } catch (e) {
+          falhas.push(`${foto.name}: ${e instanceof Error ? e.message : 'não subiu'}`);
+        }
+      }
+      if (falhas.length > 0) {
+        setCriadoId(caso.id);
+        setErro(`Caso cadastrado, mas ${falhas.length === 1 ? 'uma foto não subiu' : `${falhas.length} fotos não subiram`} — envie pelo recebimento. ${falhas.join('; ')}`);
+        setEnviando(false);
+        return;
+      }
 
       navegar(`/casos/${caso.id}`);
     } catch (err) {
@@ -666,24 +721,18 @@ export function NovoCaso() {
               />
               <TextField
                 select
-                label="Órgão"
-                value={a.orgaoId}
-                onChange={(e) => alterarAmostra(i, 'orgaoId', e.target.value)}
-                sx={{ flex: 1, minWidth: 130 }}
+                label="Margem cirúrgica"
+                value={a.margemCirurgica}
+                onChange={(e) => alterarAmostra(i, 'margemCirurgica', e.target.value)}
+                sx={{ flex: 1, minWidth: 190 }}
+                helperText="Cobrada à parte; a macroscopia só avalia margem quando há."
               >
-                <MenuItem value="">—</MenuItem>
-                {orgaos.map((t) => (
-                  <MenuItem key={t.id} value={t.id}>
-                    {t.valor}
+                {MARGEM_CIRURGICA.map((m) => (
+                  <MenuItem key={m} value={m}>
+                    {MARGEM_CIRURGICA_LABEL[m]}
                   </MenuItem>
                 ))}
               </TextField>
-              <TextField
-                label="Região anatômica"
-                value={a.regiaoAnatomica}
-                onChange={(e) => alterarAmostra(i, 'regiaoAnatomica', e.target.value)}
-                sx={{ flex: 1 }}
-              />
               <TextField
                 select
                 label="Lateralidade"
@@ -714,7 +763,7 @@ export function NovoCaso() {
             <Button
               size="small"
               startIcon={<AddOutlined />}
-              onClick={() => setRecipientes((r) => [...r, { ...RECIPIENTE_VAZIO }])}
+              onClick={() => setRecipientes((r) => [...r, { ...RECIPIENTE_VAZIO, fixadorId: fixadorPadraoId }])}
             >
               Adicionar
             </Button>
@@ -747,6 +796,7 @@ export function NovoCaso() {
                 value={r.fixadorId}
                 onChange={(e) => alterarRecipiente(i, 'fixadorId', e.target.value)}
                 sx={{ flex: 1, minWidth: 150 }}
+                helperText={fixadorPadraoId && r.fixadorId === fixadorPadraoId ? 'Padrão; troque se for outro.' : ' '}
               >
                 <MenuItem value="">—</MenuItem>
                 {fixadores.map((t) => (
@@ -780,7 +830,69 @@ export function NovoCaso() {
           ))}
         </Secao>
 
-        {erro && <Alert severity="error">{erro}</Alert>}
+        <Secao
+          titulo="Fotos da requisição e dos potes"
+          descricao="Tire a foto na hora em que o material chega. Sobe junto com o cadastro e aparece no recebimento, na macroscopia e no laudo."
+          acao={
+            <Stack direction="row" spacing={1}>
+              <Button size="small" startIcon={<PhotoCameraOutlined />} onClick={() => setCameraAberta(true)}>
+                Tirar foto
+              </Button>
+              <Button size="small" startIcon={<AddPhotoAlternateOutlined />} onClick={() => entradaFotos.current?.click()}>
+                Enviar imagens
+              </Button>
+              <input
+                ref={entradaFotos}
+                type="file"
+                accept={FORMATOS_IMAGEM.join(',')}
+                multiple
+                hidden
+                onChange={(e) => {
+                  const novos = Array.from(e.target.files ?? []);
+                  setFotos((a) => [...a, ...novos]);
+                  e.target.value = '';
+                }}
+              />
+            </Stack>
+          }
+        >
+          {fotos.length === 0 ? (
+            <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+              Nenhuma foto ainda. JPEG, PNG, WebP ou HEIC.
+            </Typography>
+          ) : (
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+              {fotos.map((f, i) => (
+                <Chip
+                  key={`${f.name}-${i}`}
+                  label={f.name}
+                  onDelete={() => setFotos((a) => a.filter((_, j) => j !== i))}
+                  variant="outlined"
+                />
+              ))}
+            </Stack>
+          )}
+          <CapturaWebcam
+            aberto={cameraAberta}
+            aoFechar={() => setCameraAberta(false)}
+            aoCapturar={(arquivo) => setFotos((a) => [...a, arquivo])}
+          />
+        </Secao>
+
+        {erro && (
+          <Alert
+            severity={criadoId ? 'warning' : 'error'}
+            action={
+              criadoId ? (
+                <Button color="inherit" size="small" onClick={() => navegar(`/casos/${criadoId}`)}>
+                  Abrir o caso
+                </Button>
+              ) : undefined
+            }
+          >
+            {erro}
+          </Alert>
+        )}
 
         <Stack direction="row" spacing={1.5} sx={{ justifyContent: 'flex-end' }}>
           <Button onClick={() => navegar('/casos')} disabled={enviando}>

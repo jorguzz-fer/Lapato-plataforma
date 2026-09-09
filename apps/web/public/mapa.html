@@ -884,8 +884,8 @@
 
   <nav class="abas" role="tablist" aria-label="Seções do mapa">
     <button class="aba" role="tab" id="aba-modulos" aria-controls="painel-modulos" aria-selected="true" data-aba="modulos">Módulos <span class="badge">26</span></button>
-    <button class="aba" role="tab" id="aba-entregas" aria-controls="painel-entregas" aria-selected="false" data-aba="entregas">Entregas <span class="badge">32 PRs</span></button>
-    <button class="aba" role="tab" id="aba-homologacao" aria-controls="painel-homologacao" aria-selected="false" data-aba="homologacao">Homologação <span class="badge">21 cenários</span></button>
+    <button class="aba" role="tab" id="aba-entregas" aria-controls="painel-entregas" aria-selected="false" data-aba="entregas">Entregas <span class="badge">33 PRs</span></button>
+    <button class="aba" role="tab" id="aba-homologacao" aria-controls="painel-homologacao" aria-selected="false" data-aba="homologacao">Homologação <span class="badge">22 cenários</span></button>
   </nav>
 
   <!-- ======================================================================
@@ -1227,7 +1227,7 @@
       <li class="passo">
         <div>
           <h3>Homologar em produção</h3>
-          <p class="marca">aba Homologação · 21 cenários · Hugo, Roberta e Raquel</p>
+          <p class="marca">aba Homologação · 22 cenários · Hugo, Roberta e Raquel</p>
           <p>Tudo o que entrou nas duas rodadas ainda não passou pelas mãos de quem opera. O roteiro diz quem testa o quê e o que tem de acontecer; o que falhar volta como correção antes de qualquer módulo novo.</p>
         </div>
       </li>
@@ -1256,9 +1256,9 @@
   <div class="painel" id="painel-entregas" role="tabpanel" aria-labelledby="aba-entregas" hidden>
 
   <section class="entregas-placar" aria-label="Resumo das entregas desde a última versão do mapa">
-    <div class="metrica"><span class="n">32</span><span class="r">PRs mergeados de 23/08 a 09/09</span></div>
-    <div class="metrica"><span class="n">9</span><span class="r">migrações de banco (0011–0019)</span></div>
-    <div class="metrica"><span class="n">315</span><span class="r">testes automatizados (209 na API, 72 no shared, 34 no db)</span></div>
+    <div class="metrica"><span class="n">33</span><span class="r">PRs mergeados de 23/08 a 09/09</span></div>
+    <div class="metrica"><span class="n">10</span><span class="r">migrações de banco (0011–0020)</span></div>
+    <div class="metrica"><span class="n">316</span><span class="r">testes automatizados (210 na API, 72 no shared, 34 no db)</span></div>
     <div class="metrica"><span class="n">10</span><span class="r">achados do code review, todos corrigidos</span></div>
   </section>
 
@@ -1322,13 +1322,14 @@
 
     <div class="entrega"><span class="pr">#80 · #81</span><div><p class="titulo">Mapa com as entregas e a aba Homologação; Raquel assume os cenários administrativos <span class="mods">docs</span></p><p class="detalhe">Esta página ganhou as abas Entregas e Homologação, com o resultado de cada cenário guardado no navegador de quem testa.</p></div></div>
     <div class="entrega"><span class="pr">#82</span><div><p class="titulo">Logística: execução com evidências, rota do dia, produção do encarregado e a tela <span class="mods">M19 · M16 · M20</span></p><p class="detalhe">Marcos do §150 no celular, foto e posição obrigatórias na retirada e na entrega, divergência de volumes com justificativa, recebedor na entrega, ocorrência, não realização e reagendamento. Rota com Guardian no encerramento. Serviço concluído vira item de produção no Financeiro. Migração 0017.</p></div></div>
+    <div class="entrega"><span class="pr">#85</span><div><p class="titulo">Terceira revisão com o Hugo, parte 1: cadastro, fotos, macro e tabelas mestres <span class="mods">M05 · M08 · M01 · M16</span></p><p class="detalhe">Margem cirúrgica decidida no cadastro (no lugar de órgão e região) e a macroscopia só avalia margem quando há; Formol 10% já vem marcado; foto da requisição e dos potes no próprio cadastro; envio de imagem sem escolher "etapa" e erro de validação dizendo o campo; identificação do animal corrigível na macroscopia e no laudo; fragmentos por cassete e resumo de cassetes para quem lê a lâmina; terceiro eixo da lesão e medida "a x b x c cm"; termos das tabelas mestres e unidades editáveis; botão Necropsia só em caso de necropsia. Migração 0020.</p></div></div>
     <div class="entrega"><span class="pr">#84</span><div><p class="titulo">Necropsia: mapa corporal no exame externo <span class="mods">M14</span></p><p class="detalhe">Silhueta em quatro vistas; clique marca ferida, escoriação, hematoma, incisão, massa ou fratura suspeita, com posição guardada por mil da vista. O marcador aponta para uma lesão existente ou cria uma na mesma transação; desfazer a marcação não apaga a lesão. Migração 0019.</p></div></div>
     <div class="entrega"><span class="pr">#83</span><div><p class="titulo">Biblioteca: documentos com versão vigente, revisão, ciência de leitura, contexto nas bancadas e orientações no Portal <span class="mods">M21 · M04</span></p><p class="detalhe">Código próprio por tipo e categoria, uma versão vigente por documento, fluxo rascunho → revisão → aprovação → publicação, autor sem concluir a própria revisão. Ciência por versão, feedback, revisão periódica vigiada pelo Guardian. Botão "Consultar Biblioteca" nas bancadas e aba Orientações no Portal. Migração 0018.</p></div></div>
   </section>
 
   <section class="bloco">
     <h2>Pendências de deploy</h2>
-    <p class="intro">Uma vez, no container da API em produção (Coolify → API-Lapato → Terminal), porque o #72, o #82 e o #83 acrescentaram permissões aos perfis padrão (destino do caso, atribuição na Logística e as quatro da Biblioteca) e elas só chegam a instituições existentes por aqui. Depois todo mundo sai e entra de novo.</p>
+    <p class="intro">Uma vez, no container da API em produção (Coolify → API-Lapato → Terminal), porque o #72, o #82 e o #83 acrescentaram permissões aos perfis padrão (destino do caso, atribuição na Logística, as quatro da Biblioteca e a correção da identificação na bancada) e elas só chegam a instituições existentes por aqui. Depois todo mundo sai e entra de novo.</p>
     <div class="hom-aviso" style="margin-top: -8px;"><pre>node node_modules/@lapato/db/dist/cli/sincronizar-perfis.js</pre></div>
   </section>
 
@@ -1340,15 +1341,15 @@
   <div class="painel" id="painel-homologacao" role="tabpanel" aria-labelledby="aba-homologacao" hidden>
 
   <p class="resumo-texto">
-    O que entrou nos PRs #69 a #83 e ainda não passou pelas mãos de quem opera. Cada cenário diz
+    O que entrou nos PRs #69 a #85 e ainda não passou pelas mãos de quem opera. Cada cenário diz
     <strong>quem testa</strong>, onde, os passos e o que tem de acontecer. Marque o resultado
     embaixo de cada um: fica salvo neste navegador. Quando terminar, o que estiver
     <em>Falhou</em> ou <em>Bloqueado</em> vai para o Fernando com a observação.
   </p>
 
 <section class="hom-resumo" aria-label="Resumo do roteiro">
-  <div class="metrica"><span class="n">21</span><span class="r">cenários</span></div>
-  <div class="metrica"><span class="n">11</span><span class="r">blocos de funcionalidade</span></div>
+  <div class="metrica"><span class="n">22</span><span class="r">cenários</span></div>
+  <div class="metrica"><span class="n">12</span><span class="r">blocos de funcionalidade</span></div>
   <div class="metrica"><span class="n">3</span><span class="r">pessoas testando, e o Fernando nos pré-requisitos</span></div>
   <div class="metrica"><span class="n">~2 h 30</span><span class="r">de ponta a ponta, sem contar espera de laboratório</span></div>
 </section>
@@ -1356,7 +1357,7 @@
 <div class="hom-aviso">
   <p><strong>Antes de começar (Fernando).</strong> Dois pré-requisitos sem os quais parte dos cenários falha por permissão, não por defeito.</p>
   <p>1. 🌐 No navegador: abra <code>/api/v1/health</code> da produção e confirme <code>"schema":"ok"</code>.</p>
-  <p>2. 🖥️ Terminal do container da API (Coolify → API-Lapato → Terminal): rode a sincronização de perfis. Ela é aditiva e só acrescenta as permissões novas (<code>fluxo:atribuir_responsavel</code> no técnico e no patologista, <code>logistica:atribuir</code> na recepção e <code>biblioteca:*</code> nos perfis que leem, editam, revisam ou aprovam documentos). Vale na próxima sessão de cada usuário, então todo mundo sai e entra de novo depois.</p>
+  <p>2. 🖥️ Terminal do container da API (Coolify → API-Lapato → Terminal): rode a sincronização de perfis. Ela é aditiva e só acrescenta as permissões novas (<code>fluxo:atribuir_responsavel</code> no técnico e no patologista, <code>logistica:atribuir</code> na recepção, <code>biblioteca:*</code> nos perfis que leem, editam, revisam ou aprovam documentos, e <code>caso:corrigir_identificacao</code> na recepção, no técnico, no patologista e no residente). Vale na próxima sessão de cada usuário, então todo mundo sai e entra de novo depois.</p>
   <pre>node node_modules/@lapato/db/dist/cli/sincronizar-perfis.js</pre>
 </div>
 
@@ -1365,14 +1366,14 @@
   <thead><tr><th>Quem</th><th>Perfil na plataforma</th><th>Cenários</th></tr></thead>
   <tbody>
     <tr><td>Roberta</td><td>Recepção / Financeiro</td><td>H-01 a H-06, H-13 a H-16, H-19</td></tr>
-    <tr><td>Hugo</td><td>Patologista</td><td>H-07 a H-12, H-17, H-20, H-21</td></tr>
+    <tr><td>Hugo</td><td>Patologista</td><td>H-07 a H-12, H-17, H-20 a H-22</td></tr>
     <tr><td>Raquel</td><td>Administrativo</td><td>H-04, H-13, H-18, H-19</td></tr>
     <tr><td>Fernando</td><td>Infra (Coolify)</td><td>Pré-requisitos, antes de todo mundo</td></tr>
   </tbody>
 </table>
 </div>
 
-<div class="hom-placar" id="placar"><span>OK <b data-conta="ok">0</b></span><span>Falhou <b data-conta="falhou">0</b></span><span>Bloqueado <b data-conta="bloqueado">0</b></span><span>Sem marcar <b data-conta="pendente">21</b></span><button type="button" id="limpar">Limpar marcações</button></div>
+<div class="hom-placar" id="placar"><span>OK <b data-conta="ok">0</b></span><span>Falhou <b data-conta="falhou">0</b></span><span>Bloqueado <b data-conta="bloqueado">0</b></span><span>Sem marcar <b data-conta="pendente">22</b></span><button type="button" id="limpar">Limpar marcações</button></div>
 
 <!-- ============ BLOCO 1 ============ -->
 <section class="hom-bloco">
@@ -1800,6 +1801,29 @@
         <li>O autor <strong>não consegue</strong> concluir a própria revisão; o parecer da outra pessoa move para "aguardando aprovação".</li>
         <li>Publicado, o documento aparece na lista como vigente; a Biblioteca → Painel mostra a leitura pendente até você marcar ciência, e "Quem leu" lista você.</li>
         <li>O botão da bancada abre só esse POP; o Portal mostra o mesmo texto na aba Orientações.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+</section>
+
+<section class="hom-bloco">
+  <div class="hom-bloco-cab"><h2>12. Terceira revisão (9/9), parte 1</h2><span class="pr">PR #85</span><span class="menu">Novo caso · Recebimento · Macroscopia · Configurações</span></div>
+
+  <article class="cenario" data-id="H-22">
+    <div class="cab"><span class="id">H-22</span><h3>Margem no cadastro, foto na hora, fragmentos por cassete e correção na bancada</h3><div class="meta"><span>Hugo</span><span>Novo caso → Macroscopia</span><span>8 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Novo caso: confira que o fixador já vem Formol 10%; na amostra, marque <strong>Margem identificada</strong>; em "Fotos da requisição e dos potes", tire uma foto e cadastre.</li>
+        <li>Abra o dossiê: a foto está lá e o botão Necropsia <strong>não</strong> aparece (é histopatologia). Registre recebimento e triagem.</li>
+        <li>Macroscopia: no cabeçalho, clique "Corrigir identificação" e troque o sexo. Na lesão, preencha os três eixos. Gere um cassete e informe 3 fragmentos. Salve.</li>
+        <li>Configurações → Tabelas mestres → Fixadores → Editar um termo e salvar.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>A seção <strong>Margens</strong> da macroscopia só aparece porque a amostra foi cadastrada com margem; num caso "sem margem" ela diz isso e não oferece nada.</li>
+        <li>A correção do sexo vale na hora, sem sair da macroscopia, e fica na auditoria.</li>
+        <li>O cabeçalho da macroscopia e do laudo mostra "1 cassete · 3 fragmentos: A1 (3)"; o texto do laudo não muda.</li>
+        <li>O termo editado aparece com o nome novo nos próximos cadastros; os casos antigos guardam o nome da época.</li>
       </ul></div>
     </div>
     <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>

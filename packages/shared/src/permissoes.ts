@@ -36,6 +36,12 @@ export const PERMISSOES = {
   CASO_VISUALIZAR: 'caso:visualizar',
   CASO_CRIAR: 'caso:criar',
   CASO_EDITAR: 'caso:editar',
+  /**
+   * Terceira revisao com o Hugo: quem esta na bancada corrige raca, sexo e
+   * responsavel sem sair dela. E menos que editar o caso (entrada, servico):
+   * so a identificacao do animal, auditada campo a campo.
+   */
+  CASO_CORRIGIR_IDENTIFICACAO: 'caso:corrigir_identificacao',
   CASO_CANCELAR: 'caso:cancelar',
   /** M05: alteracoes criticas pos-recebimento (paciente, cliente, exame). */
   CASO_CORRIGIR_CRITICO: 'caso:corrigir_critico',

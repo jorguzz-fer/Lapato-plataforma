@@ -877,14 +877,15 @@
       com etiquetas e código de barras, fila da macroscopia, destino do caso a um patologista,
       preços por perfil de cliente e o fechamento mensal. O Financeiro (20) nasceu dessas rodadas
       e a Logística (19) foi construída até a execução no celular; a Biblioteca (21) entrou
-      logo depois, a partir do documento. <strong>O que vem agora é a homologação em
+      logo depois, a partir do documento, e o Financeiro (20) ganhou o documento que lhe
+      faltava. <strong>O que vem agora é a homologação em
       produção</strong> — a terceira aba desta página.
     </p>
   </header>
 
   <nav class="abas" role="tablist" aria-label="Seções do mapa">
     <button class="aba" role="tab" id="aba-modulos" aria-controls="painel-modulos" aria-selected="true" data-aba="modulos">Módulos <span class="badge">26</span></button>
-    <button class="aba" role="tab" id="aba-entregas" aria-controls="painel-entregas" aria-selected="false" data-aba="entregas">Entregas <span class="badge">35 PRs</span></button>
+    <button class="aba" role="tab" id="aba-entregas" aria-controls="painel-entregas" aria-selected="false" data-aba="entregas">Entregas <span class="badge">36 PRs</span></button>
     <button class="aba" role="tab" id="aba-homologacao" aria-controls="painel-homologacao" aria-selected="false" data-aba="homologacao">Homologação <span class="badge">24 cenários</span></button>
   </nav>
 
@@ -895,12 +896,8 @@
 
   <section class="placar" aria-label="Resumo do estado dos módulos">
     <div class="metrica is-pronto">
-      <span class="n">20</span>
+      <span class="n">21</span>
       <span class="r">Prontos de ponta a ponta</span>
-    </div>
-    <div class="metrica is-parcial">
-      <span class="n">1</span>
-      <span class="r">Em construção (20)</span>
     </div>
     <div class="metrica is-ausente">
       <span class="n">3</span>
@@ -1182,9 +1179,9 @@
     <div class="modulo destaque">
       <span class="num">20</span>
       <span class="nome">Financeiro</span>
-      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-parcial"><span class="glifo" aria-hidden="true">◐</span> Parcial</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronta</span></span>
-      <span class="nota">Construído a partir das revisões com quem opera, ainda sem documento próprio: serviço com preço padrão, acordo por cliente, <strong>tabelas por perfil</strong> (laboratório, clínica, hospital) e faixas por quantidade; <strong>Ordem de Serviço</strong> que nasce na entrada e fica faturável ao concluir a macroscopia; fatura, livro de lançamentos e fluxo de caixa; <strong>fechamento do período por cliente</strong> com PDF, cortado pela data de entrada; produtividade por patologista. Faltam boleto/Pix e o envio do fechamento por e-mail (depende do 26). A documentação do módulo consolida o que já existe.</span>
+      <span class="nota">Único módulo construído <strong>antes</strong> do documento — o documento veio depois, consolidando o que as revisões com a operação decidiram. Preço em três camadas (padrão do serviço, tabela por perfil de cliente, acordo individual) com faixa por quantidade; <strong>Ordem de Serviço</strong> que nasce na entrada e fica <strong>faturável ao concluir a macroscopia</strong> — ou na entrada, quando o serviço não tem macro; item entra até a fatura e o retrabalho consta com valor zero; fatura, livro de lançamentos travado no pagamento e fluxo de caixa; fechamento do período por cliente com PDF, cortado pela <strong>data de entrada</strong>; produtividade por patologista e produção do encarregado logístico. Declarados fora desta fase: boleto e Pix, envio do fechamento por e-mail (depende do 26), pagamento por produção e nota fiscal.</span>
     </div>
 
     <div class="modulo">
@@ -1233,9 +1230,9 @@
       </li>
       <li class="passo">
         <div>
-          <h3>Documentar o Financeiro e ligar os canais</h3>
-          <p class="marca">M20 · M26</p>
-          <p>O Financeiro existe no ar sem documento; a especificação consolida o que foi construído e decide boleto, Pix e o envio do fechamento por e-mail — que precisa dos canais reais do 26.</p>
+          <h3>Ligar os canais reais</h3>
+          <p class="marca">M26 · destrava o M20</p>
+          <p>Nenhum módulo manda e-mail por conta própria: o adaptador só registra em log. É o que segura o envio automático do fechamento mensal, que já existe em tela e em PDF.</p>
         </div>
       </li>
       <li class="passo">
@@ -1256,7 +1253,7 @@
   <div class="painel" id="painel-entregas" role="tabpanel" aria-labelledby="aba-entregas" hidden>
 
   <section class="entregas-placar" aria-label="Resumo das entregas desde a última versão do mapa">
-    <div class="metrica"><span class="n">35</span><span class="r">PRs mergeados de 23/08 a 09/09</span></div>
+    <div class="metrica"><span class="n">36</span><span class="r">PRs mergeados de 23/08 a 09/09</span></div>
     <div class="metrica"><span class="n">11</span><span class="r">migrações de banco (0011–0021)</span></div>
     <div class="metrica"><span class="n">320</span><span class="r">testes automatizados (214 na API, 72 no shared, 34 no db)</span></div>
     <div class="metrica"><span class="n">10</span><span class="r">achados do code review, todos corrigidos</span></div>
@@ -1322,6 +1319,7 @@
 
     <div class="entrega"><span class="pr">#80 · #81</span><div><p class="titulo">Mapa com as entregas e a aba Homologação; Raquel assume os cenários administrativos <span class="mods">docs</span></p><p class="detalhe">Esta página ganhou as abas Entregas e Homologação, com o resultado de cada cenário guardado no navegador de quem testa.</p></div></div>
     <div class="entrega"><span class="pr">#82</span><div><p class="titulo">Logística: execução com evidências, rota do dia, produção do encarregado e a tela <span class="mods">M19 · M16 · M20</span></p><p class="detalhe">Marcos do §150 no celular, foto e posição obrigatórias na retirada e na entrega, divergência de volumes com justificativa, recebedor na entrega, ocorrência, não realização e reagendamento. Rota com Guardian no encerramento. Serviço concluído vira item de produção no Financeiro. Migração 0017.</p></div></div>
+    <div class="entrega"><span class="pr">#88</span><div><p class="titulo">O documento do Financeiro, escrito depois do código <span class="mods">M20 · docs</span></p><p class="detalhe">O 20 era o único módulo sem documento próprio — foi construído a partir das revisões com a Roberta e o Hugo. O documento consolida a regra e o motivo de cada decisão (preço em três camadas, o portão da fatura, o corte do fechamento pela data de entrada) e declara o que fica fora desta fase: boleto e Pix, envio do fechamento por e-mail, pagamento por produção e nota fiscal. A lista de módulos sem documentação cai de três para dois.</p></div></div>
     <div class="entrega"><span class="pr">#87</span><div><p class="titulo">Terceira revisão, parte 3: uma macro por lesão, modelos prontos e resumo de cassetes <span class="mods">M08 · M01 · M16</span></p><p class="detalhe">"Vem uma cadeia mamária e nessa peça vem cinco nódulos — só conseguimos decidir isso na macroscopia." Cada lesão vira um painel com bloquinhos, texto composto (com as medidas dela), cassetes com fragmentos, margem própria e foto; "Adicionar macro" abre outro. Modelos prontos por órgão (Configurações), com as lacunas de medida preenchidas ao entrar no texto. Resumo de cassetes e fragmentos e a descrição da amostra montada a partir das macros. Migração 0021.</p></div></div>
     <div class="entrega"><span class="pr">#86</span><div><p class="titulo">Terceira revisão, parte 2: corrigir amostras e recipientes depois do cadastro <span class="mods">M05</span></p><p class="detalhe">"Inseri só um frasco, eram dois, e não achei onde editar depois." Incluir e corrigir amostras (descrição, margem, lateralidade, pote) e recipientes (tipo, fixador, identificação externa, quantidade declarada) até o laudo ser liberado. Cada mudança fica na auditoria campo a campo e na linha do tempo, com quem fez. Permissão caso:corrigir_material na recepção, no técnico e no patologista.</p></div></div>
     <div class="entrega"><span class="pr">#85</span><div><p class="titulo">Terceira revisão com o Hugo, parte 1: cadastro, fotos, macro e tabelas mestres <span class="mods">M05 · M08 · M01 · M16</span></p><p class="detalhe">Margem cirúrgica decidida no cadastro (no lugar de órgão e região) e a macroscopia só avalia margem quando há; Formol 10% já vem marcado; foto da requisição e dos potes no próprio cadastro; envio de imagem sem escolher "etapa" e erro de validação dizendo o campo; identificação do animal corrigível na macroscopia e no laudo; fragmentos por cassete e resumo de cassetes para quem lê a lâmina; terceiro eixo da lesão e medida "a x b x c cm"; termos das tabelas mestres e unidades editáveis; botão Necropsia só em caso de necropsia. Migração 0020.</p></div></div>

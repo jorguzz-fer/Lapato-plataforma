@@ -31,7 +31,7 @@ Todo código, nome de módulo, evento e ADR deste repositório usa a numeração
 | 17 | Inteligência Artificial | Conhecimento | Implementado (Copiloto real opcional, ADR-0007) |
 | 18 | Bioteca e Gestão de Acervo Biológico | Materiais e imagens | Implementado |
 | 19 | Logística | Relacionamento e entrada | Implementado (solicitação, oferta e aceite; execução com evidências; rotas; produção do encarregado no M20) |
-| 20 | Financeiro | Gestão institucional | Sem documentação — construído parcialmente a partir das revisões com a operação (preços, OS, fatura, fechamento) |
+| 20 | Financeiro | Gestão institucional | Implementado e documentado depois ([20-financeiro.md](20-financeiro.md)): preço em camadas, OS, fatura, caixa, fechamento, produtividade e produção logística |
 | 21 | Biblioteca | Gestão institucional | Implementado (documento com código e versões; revisão, aprovação e publicação; ciência de leitura; contexto nos módulos e orientações no Portal) |
 | 22 | Qualidade e Auditoria | Governança | Documentado — trilha de auditoria base implementada, módulo a construir |
 | 23 | Ensino e Pesquisa | Conhecimento | Documentado — a implementar |
@@ -111,24 +111,27 @@ modelo de dados.
 
 ## Módulos sem documentação
 
-Faltam três: **20 Financeiro**, **25 Relatórios e Indicadores** e **26 Integrações e
-Notificações**.
+Faltam dois: **25 Relatórios e Indicadores** e **26 Integrações e Notificações**.
 
-### O Financeiro é o que mais falta
+### O Financeiro, que era o terceiro
 
-Ele não é apenas mais um pendente: é o módulo que os cinco documentos recém-recebidos mais
-citam, e cada um deles tem uma ponta que fica sem dono enquanto ele não existir.
+O 20 foi construído a partir das revisões com quem opera, sem documento próprio, e por isso
+figurava aqui. O documento existe desde 09/09/2026 — [20-financeiro.md](20-financeiro.md) —
+e foi escrito **depois** do código, consolidando a regra e o motivo de cada decisão, mais o
+que ficou declarado fora desta fase (boleto e Pix, envio do fechamento por e-mail,
+pagamento por produção, nota fiscal).
 
-| Módulo | O que depende do Financeiro |
-|---|---|
-| 19 Logística | valor do serviço mostrado ao encarregado antes do aceite (§148), item de produção, fechamento e pagamento (§159–164) |
-| 24 Perícia | honorários, adiantamentos e despesas periciais (§158) |
-| 23 Ensino e Pesquisa | custos de projeto e centro de custo (§143) |
-| 22 Qualidade | indicadores financeiros e eventos auditáveis de estorno e desconto (§111, §178) |
+O que outros módulos esperavam dele:
 
-Enquanto ele não chega, a regra é a de sempre: o módulo dono **gera o evento** de produção
-ou custo e **não calcula regra financeira própria** (Logística §102 é explícito). O evento
-fica pronto para o 20 consumir.
+| Módulo | O que depende do Financeiro | Estado |
+|---|---|---|
+| 19 Logística | valor do serviço mostrado ao encarregado antes do aceite (§148), item de produção, fechamento e pagamento (§159–164) | atendido (M20 §61) |
+| 24 Perícia | honorários, adiantamentos e despesas periciais (§158) | quando o 24 for construído |
+| 23 Ensino e Pesquisa | custos de projeto e centro de custo (§143) | quando o 23 for construído |
+| 22 Qualidade | indicadores financeiros e eventos auditáveis de estorno e desconto (§111, §178) | eventos publicados (M20 §71) |
+
+A regra continua a de sempre: o módulo dono **gera o evento** de produção ou custo e **não
+calcula regra financeira própria** (Logística §102 é explícito; M20 §7).
 
 ### Pontos de extensão já implementados
 

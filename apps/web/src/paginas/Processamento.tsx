@@ -31,6 +31,7 @@ import {
   type LoteDetalhe,
   type LoteResumo,
 } from '../api';
+import { AjudaBiblioteca } from '../componentes/AjudaBiblioteca';
 
 /**
  * M09 - Processamento Histologico e Coloracoes.
@@ -98,18 +99,21 @@ interface PropsProcessamento {
    */
   parceiro: boolean;
   podeEnviarLote: boolean;
+  /** M21: o botao "Consultar Biblioteca" so aparece para quem le a Biblioteca. */
+  permissoes: string[];
 }
 
-export function Processamento({ parceiro, podeEnviarLote }: PropsProcessamento) {
+export function Processamento({ parceiro, podeEnviarLote, permissoes }: PropsProcessamento) {
   const montaLote = podeEnviarLote && !parceiro;
   const [aba, setAba] = useState<'montar' | 'lotes'>(montaLote ? 'montar' : 'lotes');
   const [loteAberto, setLoteAberto] = useState<string | null>(null);
 
   return (
     <Box sx={{ maxWidth: 980 }}>
-      <Typography variant="h2" sx={{ mb: 0.5 }}>
-        {parceiro ? 'Lotes recebidos' : 'Processamento'}
-      </Typography>
+      <Stack direction="row" sx={{ mb: 0.5, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+        <Typography variant="h2">{parceiro ? 'Lotes recebidos' : 'Processamento'}</Typography>
+        <AjudaBiblioteca contexto="processamento" permissoes={permissoes} />
+      </Stack>
       <Typography sx={{ fontSize: 13, color: 'text.secondary', mb: 3 }}>
         {parceiro
           ? 'Os lotes enviados a este laboratório. Confira o que chegou e registre as lâminas produzidas.'

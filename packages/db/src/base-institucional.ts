@@ -101,6 +101,7 @@ export const PERFIS: Array<{
       PERMISSOES.OS_VISUALIZAR,
       PERMISSOES.OS_EDITAR,
       PERMISSOES.IA_UTILIZAR,
+      PERMISSOES.BIBLIOTECA_VISUALIZAR,
     ],
   },
   {
@@ -118,6 +119,7 @@ export const PERFIS: Array<{
       PERMISSOES.PRECO_GERENCIAR,
       PERMISSOES.CLIENTE_VISUALIZAR,
       PERMISSOES.IA_UTILIZAR,
+      PERMISSOES.BIBLIOTECA_VISUALIZAR,
     ],
   },
   {
@@ -168,6 +170,9 @@ export const PERFIS: Array<{
       PERMISSOES.OS_VISUALIZAR,
       PERMISSOES.OS_CONFERIR,
       PERMISSOES.IA_UTILIZAR,
+      /** M21 secoes 13 e 48: o tecnico consulta na bancada e escreve instrucoes de trabalho. */
+      PERMISSOES.BIBLIOTECA_VISUALIZAR,
+      PERMISSOES.BIBLIOTECA_EDITAR,
     ],
   },
   {
@@ -241,6 +246,14 @@ export const PERFIS: Array<{
       PERMISSOES.CLIENTE_VISUALIZAR,
       PERMISSOES.VETERINARIO_VISUALIZAR,
       PERMISSOES.IA_UTILIZAR,
+      /**
+       * M21 secoes 25 a 28: num laboratorio pequeno o patologista e a autoridade
+       * tecnica - escreve, revisa e aprova o que vira vigente.
+       */
+      PERMISSOES.BIBLIOTECA_VISUALIZAR,
+      PERMISSOES.BIBLIOTECA_EDITAR,
+      PERMISSOES.BIBLIOTECA_REVISAR,
+      PERMISSOES.BIBLIOTECA_APROVAR,
     ],
   },
   {
@@ -274,6 +287,7 @@ export const PERFIS: Array<{
       PERMISSOES.IMAGEM_ENVIAR,
       PERMISSOES.IMAGEM_EDITAR,
       PERMISSOES.IA_UTILIZAR,
+      PERMISSOES.BIBLIOTECA_VISUALIZAR,
     ],
   },
   {
@@ -311,6 +325,7 @@ export const PERFIS: Array<{
       PERMISSOES.BIOTECA_ADMINISTRAR,
       PERMISSOES.SOLICITACAO_VISUALIZAR,
       PERMISSOES.FLUXO_VISUALIZAR,
+      PERMISSOES.BIBLIOTECA_VISUALIZAR,
     ],
   },
   /**
@@ -325,7 +340,12 @@ export const PERFIS: Array<{
   {
     chave: PERFIS_PADRAO.ENCARREGADO_LOGISTICO,
     nome: 'Encarregado de coleta e entrega',
-    permissoes: [PERMISSOES.LOGISTICA_VISUALIZAR, PERMISSOES.LOGISTICA_EXECUTAR],
+    /** M21 secao 57: o encarregado le as orientacoes de acondicionamento e transporte. */
+    permissoes: [
+      PERMISSOES.LOGISTICA_VISUALIZAR,
+      PERMISSOES.LOGISTICA_EXECUTAR,
+      PERMISSOES.BIBLIOTECA_VISUALIZAR,
+    ],
   },
   /**
    * M04 - usuarios EXTERNOS. Nao veem o sistema interno: as rotas do Portal

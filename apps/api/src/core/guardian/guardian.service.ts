@@ -13,6 +13,7 @@ import {
   localFisico,
   objetoBiologico,
   reservaObjeto,
+  documentoBiblioteca,
   rotaLogistica,
   solicitacaoLogistica,
   causaMortis,
@@ -1363,6 +1364,83 @@ export class GuardianService {
           modulo: MODULOS.M19_LOGISTICA,
           comoResolver: 'Encerre a rota.',
           evidencias: { rotaId: r.id },
+        });
+      }
+    }
+
+    return ordenarPorGravidade(achados);
+  }
+
+  /**
+   * Coerencia documental (M21 secao 100).
+   *
+   * Duas vigentes e publicado-sem-aprovacao sao impossiveis por construcao
+   * (publicar e transacional e obsoleta a anterior; documento controlado so
+   * publica aprovada). O que sobra para vigiar: revisao vencida ou proxima,
+   * conteudo critico sem responsavel, e documento obsoleto que alguma tela
+   * ainda chama por contexto.
+   */
+  async verificarBiblioteca(tx: Transacao): Promise<AchadoGuardian[]> {
+    const ctx = exigirContexto();
+    const achados: AchadoGuardian[] = [];
+    const hoje = new Date();
+    const em30 = new Date(hoje.getTime() + 30 * 86_400_000);
+
+    const docs = await tx
+      .select({
+        id: documentoBiblioteca.id,
+        codigo: documentoBiblioteca.codigo,
+        titulo: documentoBiblioteca.titulo,
+        status: documentoBiblioteca.status,
+        critico: documentoBiblioteca.critico,
+        responsavelId: documentoBiblioteca.responsavelId,
+        proximaRevisaoEm: documentoBiblioteca.proximaRevisaoEm,
+        contextos: documentoBiblioteca.contextos,
+      })
+      .from(documentoBiblioteca)
+      .where(and(eq(documentoBiblioteca.tenantId, ctx.tenantId), sql`${documentoBiblioteca.status} <> 'arquivado'`));
+
+    for (const d of docs) {
+      if (d.status === 'publicado' && d.proximaRevisaoEm) {
+        const prazo = new Date(`${d.proximaRevisaoEm}T00:00:00`);
+        if (prazo < hoje) {
+          achados.push({
+            codigo: 'BIBLIOTECA_REVISAO_VENCIDA',
+            nivel: 'atencao',
+            mensagem: `${d.codigo} — ${d.titulo}: revisão programada para ${prazo.toLocaleDateString('pt-BR')} não aconteceu.`,
+            modulo: MODULOS.M21_BIBLIOTECA,
+            comoResolver: 'Abra uma versão nova e publique, ou torne o documento obsoleto se ele não vale mais.',
+            evidencias: { documentoId: d.id },
+          });
+        } else if (prazo < em30) {
+          achados.push({
+            codigo: 'BIBLIOTECA_REVISAO_PROXIMA',
+            nivel: 'informacao',
+            mensagem: `${d.codigo} — ${d.titulo}: revisão prevista para ${prazo.toLocaleDateString('pt-BR')}.`,
+            modulo: MODULOS.M21_BIBLIOTECA,
+            comoResolver: 'Avise o responsável para revisar antes do prazo.',
+            evidencias: { documentoId: d.id },
+          });
+        }
+      }
+      if (d.critico && !d.responsavelId) {
+        achados.push({
+          codigo: 'BIBLIOTECA_CRITICO_SEM_RESPONSAVEL',
+          nivel: 'atencao',
+          mensagem: `${d.codigo} — ${d.titulo} é conteúdo crítico e não tem responsável.`,
+          modulo: MODULOS.M21_BIBLIOTECA,
+          comoResolver: 'Defina o responsável institucional na ficha do documento.',
+          evidencias: { documentoId: d.id },
+        });
+      }
+      if (d.status === 'obsoleto' && d.contextos.length > 0) {
+        achados.push({
+          codigo: 'BIBLIOTECA_OBSOLETO_REFERENCIADO',
+          nivel: 'atencao',
+          mensagem: `${d.codigo} — ${d.titulo} está obsoleto, mas ainda é chamado por ${d.contextos.join(', ')}.`,
+          modulo: MODULOS.M21_BIBLIOTECA,
+          comoResolver: 'Publique o substituto no mesmo contexto, ou tire os contextos do documento obsoleto.',
+          evidencias: { documentoId: d.id },
         });
       }
     }

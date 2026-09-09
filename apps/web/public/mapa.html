@@ -876,15 +876,16 @@
       o laboratório, e o que saiu delas está no ar: cadastro por convênio ou particular, entrada
       com etiquetas e código de barras, fila da macroscopia, destino do caso a um patologista,
       preços por perfil de cliente e o fechamento mensal. O Financeiro (20) nasceu dessas rodadas
-      e a Logística (19) ganhou documentação e a primeira fatia. <strong>O que vem agora é a
-      homologação em produção</strong> — a terceira aba desta página.
+      e a Logística (19) foi construída até a execução no celular; a Biblioteca (21) entrou
+      logo depois, a partir do documento. <strong>O que vem agora é a homologação em
+      produção</strong> — a terceira aba desta página.
     </p>
   </header>
 
   <nav class="abas" role="tablist" aria-label="Seções do mapa">
     <button class="aba" role="tab" id="aba-modulos" aria-controls="painel-modulos" aria-selected="true" data-aba="modulos">Módulos <span class="badge">26</span></button>
-    <button class="aba" role="tab" id="aba-entregas" aria-controls="painel-entregas" aria-selected="false" data-aba="entregas">Entregas <span class="badge">27 PRs</span></button>
-    <button class="aba" role="tab" id="aba-homologacao" aria-controls="painel-homologacao" aria-selected="false" data-aba="homologacao">Homologação <span class="badge">18 cenários</span></button>
+    <button class="aba" role="tab" id="aba-entregas" aria-controls="painel-entregas" aria-selected="false" data-aba="entregas">Entregas <span class="badge">31 PRs</span></button>
+    <button class="aba" role="tab" id="aba-homologacao" aria-controls="painel-homologacao" aria-selected="false" data-aba="homologacao">Homologação <span class="badge">21 cenários</span></button>
   </nav>
 
   <!-- ======================================================================
@@ -894,7 +895,7 @@
 
   <section class="placar" aria-label="Resumo do estado dos módulos">
     <div class="metrica is-pronto">
-      <span class="n">19</span>
+      <span class="n">20</span>
       <span class="r">Prontos de ponta a ponta</span>
     </div>
     <div class="metrica is-parcial">
@@ -1197,9 +1198,9 @@
     <div class="modulo">
       <span class="num">21</span>
       <span class="nome">Biblioteca</span>
-      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciado</span></span>
-      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-ausente"><span class="glifo" aria-hidden="true">○</span> Não iniciada</span></span>
-      <span class="nota">Documentado, a construir.</span>
+      <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
+      <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronta</span></span>
+      <span class="nota">Documento com código próprio (POP-REC-001), versões numeradas e <strong>uma só vigente</strong>: rascunho → revisão → aprovação → publicação, com a anterior virando obsoleta na mesma transação. Autor não conclui a própria revisão de documento controlado. Ciência de leitura por versão, com quem leu e quem falta; feedback de quem usa; revisão periódica vigiada pelo Guardian. O botão <strong>Consultar Biblioteca</strong> nas bancadas (recebimento, macroscopia, processamento, laudo, necropsia) abre só o vigente daquele contexto, e o Portal tem a aba Orientações com o que foi marcado para clientes. Ficam para depois: busca semântica pelo Copiloto e documento vinculado a caso.</span>
     </div>
 
     <div class="modulo">
@@ -1218,22 +1219,16 @@
       A fase de construir sobre a documentação original terminou, e a fase de revisar com quem
       opera também: duas rodadas com o patologista e a recepção viraram vinte e sete entregas em
       doze dias, todas revisadas, com dez achados corrigidos e a segurança conferida contra o
-      Blueprint §6. O que segue tem ordem:
+      Blueprint §6. Depois disso a Logística foi fechada e a Biblioteca construída. O que segue
+      tem ordem:
     </p>
 
     <ol class="passos">
       <li class="passo">
         <div>
           <h3>Homologar em produção</h3>
-          <p class="marca">aba Homologação · 18 cenários · Hugo, Roberta e Raquel</p>
+          <p class="marca">aba Homologação · 21 cenários · Hugo, Roberta e Raquel</p>
           <p>Tudo o que entrou nas duas rodadas ainda não passou pelas mãos de quem opera. O roteiro diz quem testa o quê e o que tem de acontecer; o que falhar volta como correção antes de qualquer módulo novo.</p>
-        </div>
-      </li>
-      <li class="passo">
-        <div>
-          <h3>Biblioteca</h3>
-          <p class="marca">M21 · documentado, a construir</p>
-          <p>A base de conhecimento com versão vigente, revisão, ciência de leitura e orientações que os outros módulos e o Portal chamam no contexto certo.</p>
         </div>
       </li>
       <li class="passo">
@@ -1261,9 +1256,9 @@
   <div class="painel" id="painel-entregas" role="tabpanel" aria-labelledby="aba-entregas" hidden>
 
   <section class="entregas-placar" aria-label="Resumo das entregas desde a última versão do mapa">
-    <div class="metrica"><span class="n">27</span><span class="r">PRs mergeados de 23/08 a 03/09</span></div>
-    <div class="metrica"><span class="n">6</span><span class="r">migrações de banco (0011–0016)</span></div>
-    <div class="metrica"><span class="n">266</span><span class="r">testes automatizados (194 na API, 72 no shared)</span></div>
+    <div class="metrica"><span class="n">31</span><span class="r">PRs mergeados de 23/08 a 09/09</span></div>
+    <div class="metrica"><span class="n">8</span><span class="r">migrações de banco (0011–0018)</span></div>
+    <div class="metrica"><span class="n">314</span><span class="r">testes automatizados (208 na API, 72 no shared, 34 no db)</span></div>
     <div class="metrica"><span class="n">10</span><span class="r">achados do code review, todos corrigidos</span></div>
   </section>
 
@@ -1321,9 +1316,18 @@
     <div class="entrega"><span class="pr">#79</span><div><p class="titulo">Dez achados corrigidos, dois pontos de segurança, rotas sem teste cobertas <span class="mods">M05 · M20 · M07 · M03</span></p><p class="detalhe">Pseudo-cliente Particular só o do sistema; acordo vence a faixa; particular com paciente reaproveitado exige responsável; Rastreio volta a ordenar por prazo; autocadastro valida CNPJ e duplicidade. Serviço de tabela validado dentro da instituição; novo link expira o anterior. Oito rotas sem teste ganharam teste.</p></div></div>
   </section>
 
+  <section class="rodada">
+    <div class="rodada-cabeca"><h2>Logística fechada e Biblioteca construída</h2><span class="quando">8 e 9 de setembro</span></div>
+    <p class="rodada-intro">Com a revisão encerrada, voltou-se à documentação: o que faltava do módulo 19 e o módulo 21 inteiro, mais este mapa e o roteiro de homologação.</p>
+
+    <div class="entrega"><span class="pr">#80 · #81</span><div><p class="titulo">Mapa com as entregas e a aba Homologação; Raquel assume os cenários administrativos <span class="mods">docs</span></p><p class="detalhe">Esta página ganhou as abas Entregas e Homologação, com o resultado de cada cenário guardado no navegador de quem testa.</p></div></div>
+    <div class="entrega"><span class="pr">#82</span><div><p class="titulo">Logística: execução com evidências, rota do dia, produção do encarregado e a tela <span class="mods">M19 · M16 · M20</span></p><p class="detalhe">Marcos do §150 no celular, foto e posição obrigatórias na retirada e na entrega, divergência de volumes com justificativa, recebedor na entrega, ocorrência, não realização e reagendamento. Rota com Guardian no encerramento. Serviço concluído vira item de produção no Financeiro. Migração 0017.</p></div></div>
+    <div class="entrega"><span class="pr">#83</span><div><p class="titulo">Biblioteca: documentos com versão vigente, revisão, ciência de leitura, contexto nas bancadas e orientações no Portal <span class="mods">M21 · M04</span></p><p class="detalhe">Código próprio por tipo e categoria, uma versão vigente por documento, fluxo rascunho → revisão → aprovação → publicação, autor sem concluir a própria revisão. Ciência por versão, feedback, revisão periódica vigiada pelo Guardian. Botão "Consultar Biblioteca" nas bancadas e aba Orientações no Portal. Migração 0018.</p></div></div>
+  </section>
+
   <section class="bloco">
     <h2>Pendências de deploy</h2>
-    <p class="intro">Uma vez, no container da API em produção (Coolify → API-Lapato → Terminal), porque o #72 acrescentou permissão aos perfis padrão e ela só chega a instituições existentes por aqui. Depois todo mundo sai e entra de novo.</p>
+    <p class="intro">Uma vez, no container da API em produção (Coolify → API-Lapato → Terminal), porque o #72, o #82 e o #83 acrescentaram permissões aos perfis padrão (destino do caso, atribuição na Logística e as quatro da Biblioteca) e elas só chegam a instituições existentes por aqui. Depois todo mundo sai e entra de novo.</p>
     <div class="hom-aviso" style="margin-top: -8px;"><pre>node node_modules/@lapato/db/dist/cli/sincronizar-perfis.js</pre></div>
   </section>
 
@@ -1335,23 +1339,23 @@
   <div class="painel" id="painel-homologacao" role="tabpanel" aria-labelledby="aba-homologacao" hidden>
 
   <p class="resumo-texto">
-    O que entrou nos PRs #69 a #79 e ainda não passou pelas mãos de quem opera. Cada cenário diz
+    O que entrou nos PRs #69 a #83 e ainda não passou pelas mãos de quem opera. Cada cenário diz
     <strong>quem testa</strong>, onde, os passos e o que tem de acontecer. Marque o resultado
     embaixo de cada um: fica salvo neste navegador. Quando terminar, o que estiver
     <em>Falhou</em> ou <em>Bloqueado</em> vai para o Fernando com a observação.
   </p>
 
 <section class="hom-resumo" aria-label="Resumo do roteiro">
-  <div class="metrica"><span class="n">18</span><span class="r">cenários</span></div>
-  <div class="metrica"><span class="n">9</span><span class="r">blocos de funcionalidade</span></div>
+  <div class="metrica"><span class="n">21</span><span class="r">cenários</span></div>
+  <div class="metrica"><span class="n">11</span><span class="r">blocos de funcionalidade</span></div>
   <div class="metrica"><span class="n">3</span><span class="r">pessoas testando, e o Fernando nos pré-requisitos</span></div>
-  <div class="metrica"><span class="n">~2 h</span><span class="r">de ponta a ponta, sem contar espera de laboratório</span></div>
+  <div class="metrica"><span class="n">~2 h 30</span><span class="r">de ponta a ponta, sem contar espera de laboratório</span></div>
 </section>
 
 <div class="hom-aviso">
   <p><strong>Antes de começar (Fernando).</strong> Dois pré-requisitos sem os quais parte dos cenários falha por permissão, não por defeito.</p>
   <p>1. 🌐 No navegador: abra <code>/api/v1/health</code> da produção e confirme <code>"schema":"ok"</code>.</p>
-  <p>2. 🖥️ Terminal do container da API (Coolify → API-Lapato → Terminal): rode a sincronização de perfis. Ela é aditiva e só acrescenta as permissões novas (<code>fluxo:atribuir_responsavel</code> no técnico e no patologista). Vale na próxima sessão de cada usuário, então todo mundo sai e entra de novo depois.</p>
+  <p>2. 🖥️ Terminal do container da API (Coolify → API-Lapato → Terminal): rode a sincronização de perfis. Ela é aditiva e só acrescenta as permissões novas (<code>fluxo:atribuir_responsavel</code> no técnico e no patologista, <code>logistica:atribuir</code> na recepção e <code>biblioteca:*</code> nos perfis que leem, editam, revisam ou aprovam documentos). Vale na próxima sessão de cada usuário, então todo mundo sai e entra de novo depois.</p>
   <pre>node node_modules/@lapato/db/dist/cli/sincronizar-perfis.js</pre>
 </div>
 
@@ -1359,15 +1363,15 @@
 <table class="quem">
   <thead><tr><th>Quem</th><th>Perfil na plataforma</th><th>Cenários</th></tr></thead>
   <tbody>
-    <tr><td>Roberta</td><td>Recepção / Financeiro</td><td>H-01 a H-06, H-13 a H-16</td></tr>
-    <tr><td>Hugo</td><td>Patologista</td><td>H-07 a H-12, H-17</td></tr>
-    <tr><td>Raquel</td><td>Administrativo</td><td>H-04, H-13, H-18</td></tr>
+    <tr><td>Roberta</td><td>Recepção / Financeiro</td><td>H-01 a H-06, H-13 a H-16, H-19</td></tr>
+    <tr><td>Hugo</td><td>Patologista</td><td>H-07 a H-12, H-17, H-20, H-21</td></tr>
+    <tr><td>Raquel</td><td>Administrativo</td><td>H-04, H-13, H-18, H-19</td></tr>
     <tr><td>Fernando</td><td>Infra (Coolify)</td><td>Pré-requisitos, antes de todo mundo</td></tr>
   </tbody>
 </table>
 </div>
 
-<div class="hom-placar" id="placar"><span>OK <b data-conta="ok">0</b></span><span>Falhou <b data-conta="falhou">0</b></span><span>Bloqueado <b data-conta="bloqueado">0</b></span><span>Sem marcar <b data-conta="pendente">18</b></span><button type="button" id="limpar">Limpar marcações</button></div>
+<div class="hom-placar" id="placar"><span>OK <b data-conta="ok">0</b></span><span>Falhou <b data-conta="falhou">0</b></span><span>Bloqueado <b data-conta="bloqueado">0</b></span><span>Sem marcar <b data-conta="pendente">21</b></span><button type="button" id="limpar">Limpar marcações</button></div>
 
 <!-- ============ BLOCO 1 ============ -->
 <section class="hom-bloco">
@@ -1738,6 +1742,69 @@
   </article>
 </section>
 
+<section class="hom-bloco">
+  <div class="hom-bloco-cab"><h2>10. Logística: da solicitação à produção do encarregado</h2><span class="pr">PR #62 · #82</span><span class="menu">Menu: Logística</span></div>
+
+  <article class="cenario" data-id="H-19">
+    <div class="cab"><span class="id">H-19</span><h3>Central: solicitação, oferta a um encarregado e rota do dia</h3><div class="meta"><span>Raquel ou Roberta</span><span>Logística</span><span>6 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Antes: em Configurações → Usuários, crie um usuário com o perfil <strong>Encarregado logístico</strong> (pode ser você mesma num segundo navegador).</li>
+        <li>Logística → Nova solicitação: retirada, cliente da clínica, endereço, janela de hoje, 2 volumes, conservação refrigerado.</li>
+        <li>Na ficha, "Oferecer" ao encarregado. Depois "Rotas" → nova rota de hoje com essa solicitação.</li>
+        <li>Volte à fila e confira a situação e a linha do tempo.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>A solicitação nasce com número <strong>LOG-</strong> próprio e aparece na fila com prioridade e janela.</li>
+        <li>Incluir na rota <strong>atribui</strong> ao encarregado e fecha a oferta; a linha do tempo mostra os dois fatos.</li>
+        <li>Encerrar a rota com a parada em aberto é <strong>barrado</strong>, com a lista do que falta.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+
+  <article class="cenario" data-id="H-20">
+    <div class="cab"><span class="id">H-20</span><h3>Encarregado no celular: aceite, retirada com foto e posição, entrega e conclusão</h3><div class="meta"><span>Hugo (como encarregado)</span><span>Logística, no celular</span><span>8 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Entre no celular com o usuário encarregado do H-19 e abra Logística.</li>
+        <li>Aceite a oferta (se ainda houver) e toque "Em deslocamento", depois "Cheguei".</li>
+        <li>"Material retirado": informe 1 volume (não 2), tire uma foto e deixe o celular enviar a posição. Depois "Em transporte" e "Material entregue".</li>
+        <li>"Concluir serviço".</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>Sem foto, ou sem posição e sem motivo, a retirada <strong>não grava</strong>; a mensagem diz o que falta.</li>
+        <li>1 volume contra 2 estimados marca <strong>divergência</strong>; concluir exige justificativa.</li>
+        <li>Depois de concluído, na central a solicitação está concluída e o Financeiro lista a <strong>produção</strong> do encarregado no período.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+</section>
+
+<section class="hom-bloco">
+  <div class="hom-bloco-cab"><h2>11. Biblioteca: do rascunho à leitura obrigatória</h2><span class="pr">PR #83</span><span class="menu">Menu: Biblioteca · bancadas · Portal → Orientações</span></div>
+
+  <article class="cenario" data-id="H-21">
+    <div class="cab"><span class="id">H-21</span><h3>POP publicado, ciência de leitura, botão na bancada e orientação no Portal</h3><div class="meta"><span>Hugo</span><span>Biblioteca</span><span>8 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Biblioteca → Novo documento: POP, categoria Recebimento e Triagem, marque "exige aprovação", "exige ciência", público "colaboradores e clientes", contexto Recebimento e Portal. Escreva três linhas de conteúdo e salve.</li>
+        <li>Na ficha, "Enviar para revisão". Peça a outra pessoa (Roberta ou Raquel, com o perfil dela) que abra "Revisão e aprovação" e dê o parecer "revisão concluída" — ou tente dar você mesmo.</li>
+        <li>Aprove e publique. Abra a ficha de novo e clique "Li e estou ciente".</li>
+        <li>Abra o recebimento de qualquer caso e clique "Consultar Biblioteca". Depois entre no Portal como a clínica e abra "Orientações".</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>O documento nasce com código <strong>POP-REC-nnn</strong> e versão 1.0 em rascunho.</li>
+        <li>O autor <strong>não consegue</strong> concluir a própria revisão; o parecer da outra pessoa move para "aguardando aprovação".</li>
+        <li>Publicado, o documento aparece na lista como vigente; a Biblioteca → Painel mostra a leitura pendente até você marcar ciência, e "Quem leu" lista você.</li>
+        <li>O botão da bancada abre só esse POP; o Portal mostra o mesmo texto na aba Orientações.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+</section>
+
 <section class="hom-fora bloco">
   <h2>Fora deste roteiro</h2>
   <p class="intro">Coisas citadas nas reuniões que ainda não existem na plataforma, para ninguém procurar e achar que quebrou:</p>
@@ -1746,6 +1813,8 @@
     <li>Boleto e Pix na fatura.</li>
     <li>Modelo do cabeçalho da macroscopia e lista de campos editáveis que o Hugo ia mandar.</li>
     <li>Lista de preços por serviço da Roberta para carregar nas tabelas.</li>
+    <li>Portal do cliente pedindo coleta, mapa e sugestão automática de rota (Logística).</li>
+    <li>Busca semântica da Biblioteca pelo Copiloto e documento vinculado a caso.</li>
   </ul>
   <p class="fecho">Quando terminar, mande para o Fernando os cenários marcados como <em>Falhou</em> ou <em>Bloqueado</em> com a observação. O que estiver <em>OK</em> não precisa de mensagem.</p>
 </section>

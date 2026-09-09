@@ -37,6 +37,7 @@ import {
   type GrauCertezaCausa,
 } from '@lapato/shared';
 import { api, ErroApi, type BancadaNecropsia, type Dossie } from '../api';
+import { AjudaBiblioteca } from '../componentes/AjudaBiblioteca';
 import { BloqueioGuardian } from './BloqueioGuardian';
 
 /**
@@ -156,6 +157,7 @@ export function Necropsia({ permissoes }: { permissoes: string[] }) {
       >
         <Typography variant="h2">Necropsia</Typography>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <AjudaBiblioteca contexto="necropsia" permissoes={permissoes} />
           <Chip
             size="small"
             variant="outlined"

@@ -15,6 +15,7 @@ import Typography from '@mui/material/Typography';
 import CheckCircleOutline from '@mui/icons-material/CheckCircleOutlineOutlined';
 import { RESSALVAS_RECEBIMENTO, RESSALVA_RECEBIMENTO_LABEL } from '@lapato/shared';
 import { api, ErroApi, type Dossie as DadosDossie } from '../api';
+import { AjudaBiblioteca } from '../componentes/AjudaBiblioteca';
 import { GaleriaDoCaso } from './imagens/GaleriaDoCaso';
 
 /**
@@ -138,9 +139,10 @@ export function Recebimento({ permissoes }: { permissoes: string[] }) {
 
   return (
     <Box component="form" onSubmit={submeter} noValidate sx={{ maxWidth: 760 }}>
-      <Typography variant="h2" sx={{ mb: 0.5 }}>
-        Recebimento
-      </Typography>
+      <Stack direction="row" sx={{ mb: 0.5, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+        <Typography variant="h2">Recebimento</Typography>
+        <AjudaBiblioteca contexto="recebimento" permissoes={permissoes} />
+      </Stack>
       <Typography sx={{ fontSize: 13, color: 'text.secondary', mb: 3 }}>
         Conte o que chegou e registre o número encontrado. Divergência não é erro: fica no caso.
       </Typography>

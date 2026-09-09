@@ -32,7 +32,7 @@ Todo código, nome de módulo, evento e ADR deste repositório usa a numeração
 | 18 | Bioteca e Gestão de Acervo Biológico | Materiais e imagens | Implementado |
 | 19 | Logística | Relacionamento e entrada | Implementado (solicitação, oferta e aceite; execução com evidências; rotas; produção do encarregado no M20) |
 | 20 | Financeiro | Gestão institucional | Sem documentação — construído parcialmente a partir das revisões com a operação (preços, OS, fatura, fechamento) |
-| 21 | Biblioteca | Gestão institucional | Documentado — a implementar |
+| 21 | Biblioteca | Gestão institucional | Implementado (documento com código e versões; revisão, aprovação e publicação; ciência de leitura; contexto nos módulos e orientações no Portal) |
 | 22 | Qualidade e Auditoria | Governança | Documentado — trilha de auditoria base implementada, módulo a construir |
 | 23 | Ensino e Pesquisa | Conhecimento | Documentado — a implementar |
 | 24 | Perícia e Patologia Forense | Conhecimento | Documentado — a implementar |

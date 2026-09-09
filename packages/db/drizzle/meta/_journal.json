@@ -127,6 +127,13 @@
       "when": 1788961961521,
       "tag": "0017_salty_garia",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788963978845,
+      "tag": "0018_silky_sauron",
+      "breakpoints": true
     }
   ]
 }

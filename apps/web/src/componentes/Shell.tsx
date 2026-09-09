@@ -36,6 +36,7 @@ import Contacts from '@mui/icons-material/ContactsOutlined';
 import MedicalServices from '@mui/icons-material/MedicalServicesOutlined';
 import Inventory2 from '@mui/icons-material/Inventory2Outlined';
 import LocalShippingOutlined from '@mui/icons-material/LocalShippingOutlined';
+import MenuBookOutlined from '@mui/icons-material/MenuBookOutlined';
 import Settings from '@mui/icons-material/SettingsOutlined';
 import Group from '@mui/icons-material/GroupOutlined';
 import Password from '@mui/icons-material/PasswordOutlined';
@@ -165,6 +166,14 @@ const MENU = [
     icone: <Science fontSize="small" />,
     rotulo: 'Bioteca',
     permissao: 'bioteca:visualizar',
+  },
+  {
+    /* M21: a memoria documental. Todo colaborador le; quem escreve e aprova
+       aparece nas abas de dentro. */
+    para: '/biblioteca',
+    icone: <MenuBookOutlined fontSize="small" />,
+    rotulo: 'Biblioteca',
+    permissao: 'biblioteca:visualizar',
   },
   {
     /* M03: fonte única dos dados cadastrais - o degrau zero de qualquer caso. */

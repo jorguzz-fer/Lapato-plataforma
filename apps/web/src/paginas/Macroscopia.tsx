@@ -34,6 +34,7 @@ import {
   type MetodoAmostragem,
 } from '@lapato/shared';
 import { api, ErroApi, type Dossie as DadosDossie, type FichaMacroscopia } from '../api';
+import { AjudaBiblioteca } from '../componentes/AjudaBiblioteca';
 import { BloqueioGuardian } from './BloqueioGuardian';
 import { AvisoBancadaBloqueada, impedimentoDeBancada } from './AvisoBancadaBloqueada';
 import { CabecalhoDoMaterial } from './CabecalhoDoMaterial';
@@ -103,6 +104,8 @@ const numero = (v: string) => (v.trim() === '' ? undefined : Number(v));
 interface Props {
   /** M08: residente e técnico em treinamento executam, mas não concluem. */
   exigeSupervisao: boolean;
+  /** M21: o botao "Consultar Biblioteca" so aparece para quem le a Biblioteca. */
+  permissoes: string[];
 }
 
 const LESAO_VAZIA = (rotulo: string) => ({
@@ -122,7 +125,7 @@ const lesaoIntocada = (l: ReturnType<typeof LESAO_VAZIA>) =>
   l.maiorEixoCm === '' &&
   l.menorEixoCm === '';
 
-export function Macroscopia({ exigeSupervisao }: Props) {
+export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
   const { id } = useParams<{ id: string }>();
   const navegar = useNavigate();
 
@@ -461,9 +464,10 @@ export function Macroscopia({ exigeSupervisao }: Props) {
 
   return (
     <Box sx={{ maxWidth: 900 }}>
-      <Typography variant="h2" sx={{ mb: 0.5 }}>
-        Macroscopia
-      </Typography>
+      <Stack direction="row" sx={{ mb: 0.5, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+        <Typography variant="h2">Macroscopia</Typography>
+        <AjudaBiblioteca contexto="macroscopia" permissoes={permissoes} />
+      </Stack>
       <Typography sx={{ fontSize: 13, color: 'text.secondary', mb: 3 }}>
         Uma ficha por amostra. Campos estruturados e texto livre convivem — um não substitui o
         outro.

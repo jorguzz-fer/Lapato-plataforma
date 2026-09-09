@@ -138,6 +138,15 @@ export class NumeracaoService {
     return identificadorLoteDescarte(ano, await this.proximo(tx, 'lote_descarte', ano));
   }
 
+  /**
+   * M21 secao 11: o codigo do documento nao leva ano - "devera permanecer
+   * estavel mesmo quando uma nova versao for publicada". A serie e por prefixo
+   * (tipo + categoria), com ano zero.
+   */
+  async proximoDocumentoBiblioteca(tx: Transacao, prefixo: string): Promise<number> {
+    return this.proximo(tx, 'biblioteca', 0, prefixo);
+  }
+
   async proximaColeta(tx: Transacao, ano: number): Promise<string> {
     return identificadorColeta(ano, await this.proximo(tx, 'coleta', ano));
   }

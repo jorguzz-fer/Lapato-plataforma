@@ -24,6 +24,7 @@ import { PainelService } from './modulos/m07-fluxo/painel.service.js';
 import { LogisticaService } from './modulos/m19-logistica/logistica.service.js';
 import { LogisticaExecucaoService } from './modulos/m19-logistica/logistica-execucao.service.js';
 import { LogisticaRotasService } from './modulos/m19-logistica/logistica-rotas.service.js';
+import { BibliotecaService } from './modulos/m21-biblioteca/biblioteca.service.js';
 import { OrdensService } from './modulos/m20-ordens/ordens.service.js';
 import { FinanceiroService } from './modulos/m20-ordens/financeiro.service.js';
 import { EtiquetasService } from './modulos/m09-processamento/etiquetas.service.js';
@@ -49,6 +50,7 @@ import {
   FluxoController,
   PainelController,
   LogisticaController,
+  BibliotecaController,
   OrdensController,
   PrecosController,
   FinanceiroController,
@@ -128,6 +130,7 @@ import {
     FluxoController,
     PainelController,
     LogisticaController,
+    BibliotecaController,
     OrdensController,
     PrecosController,
     FinanceiroController,
@@ -147,6 +150,7 @@ import {
     LogisticaService,
     LogisticaExecucaoService,
     LogisticaRotasService,
+    BibliotecaService,
     OrdensService,
     FinanceiroService,
     EtiquetasService,

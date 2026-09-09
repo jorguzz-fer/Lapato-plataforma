@@ -6375,3 +6375,83 @@ describe('terceira revisão (Hugo, 9/9): margem no cadastro', () => {
     expect(porDescricao.get('Linfonodo')).toBe('sem_margem');
   });
 });
+
+describe('terceira revisão (Hugo, 9/9): corrigir amostras e recipientes depois do cadastro', () => {
+  /**
+   * "Inseri só um frasco, eram dois, e não achei onde editar depois." O
+   * material muda até o laudo ser liberado; cada mudança fica na linha do
+   * tempo com quem fez.
+   */
+  let casoId: string;
+  let recipienteId: string;
+  let amostraId: string;
+
+  test('recepção inclui o frasco que faltou e corrige a amostra', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const fixadores = await req('GET', '/catalogo/tabelas/fixador');
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Frasco ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Nódulo' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status).toBe(201);
+    casoId = criado.body.id;
+    let dossie = await req('GET', `/casos/${casoId}`);
+    recipienteId = dossie.body.recipientes[0].id;
+    amostraId = dossie.body.amostras[0].id;
+
+    const frasco = await req('POST', `/casos/${casoId}/recipientes`, {
+      fixadorId: fixadores.body[0].id,
+      quantidadeDeclarada: 1,
+      identificacaoExterna: 'Pote 2',
+    });
+    expect(frasco.status, JSON.stringify(frasco.body)).toBe(201);
+    expect(frasco.body.identificador).toMatch(/-F02$/);
+
+    const segunda = await req('POST', `/casos/${casoId}/amostras`, {
+      descricao: 'Linfonodo',
+      margemCirurgica: 'margem_simples',
+      recipienteId: frasco.body.id,
+    });
+    expect(segunda.status, JSON.stringify(segunda.body)).toBe(201);
+    expect(segunda.body.identificador).toMatch(/-A02$/);
+
+    const corrigida = await req('POST', `/casos/amostras/${amostraId}`, {
+      descricao: 'Nódulo mamário',
+      lateralidade: 'esquerdo',
+    });
+    expect(corrigida.status).toBe(201);
+    const qtd = await req('POST', `/casos/recipientes/${recipienteId}`, { quantidadeDeclarada: 2 });
+    expect(qtd.status).toBe(201);
+
+    const deOutroCaso = await req('POST', `/casos/amostras/${amostraId}`, {
+      recipienteId: '00000000-0000-4000-8000-000000000000',
+    });
+    expect(deOutroCaso.status, 'recipiente de fora não se liga').toBe(400);
+
+    dossie = await req('GET', `/casos/${casoId}`);
+    expect(dossie.body.recipientes).toHaveLength(2);
+    expect(dossie.body.recipientes[0].quantidadeDeclarada).toBe(2);
+    expect(dossie.body.amostras).toHaveLength(2);
+    const nodulo = dossie.body.amostras.find((a: { id: string }) => a.id === amostraId);
+    expect(nodulo.descricao).toBe('Nódulo mamário');
+    expect(nodulo.lateralidade).toBe('esquerdo');
+    const linfonodo = dossie.body.amostras.find((a: { id: string }) => a.id === segunda.body.id);
+    expect(linfonodo.letra).toBe('B');
+    expect(linfonodo.recipienteId).toBe(frasco.body.id);
+    // A linha do tempo diz que o material mudou, e quem mudou.
+    const eventos = dossie.body.linhaDoTempo.filter((e: { tipo: string }) => e.tipo === 'caso.material_alterado');
+    expect(eventos.length).toBeGreaterThanOrEqual(4);
+  });
+
+  test('o técnico corrige; o portal não', async () => {
+    await entrar('tecnico@lapato.local');
+    expect((await req('POST', `/casos/amostras/${amostraId}`, { descricao: 'Nódulo mamário esquerdo' })).status).toBe(201);
+    await entrar('portal@clinicacentral.local');
+    expect((await req('POST', `/casos/amostras/${amostraId}`, { descricao: 'X' })).status).toBe(403);
+  });
+});

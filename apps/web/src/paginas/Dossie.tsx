@@ -25,6 +25,7 @@ import { EVENTO_LABEL, type TipoEvento } from '@lapato/shared';
 import { api, ErroApi, urlArquivo, type Dossie as DadosDossie } from '../api';
 import { GaleriaDoCaso } from './imagens/GaleriaDoCaso';
 import { IdentificacaoDoAnimal } from './IdentificacaoDoAnimal';
+import { DialogoAmostra, DialogoRecipiente } from './MaterialDoCaso';
 import { OrdemDoCaso } from './ordens/OrdemDoCaso';
 
 /**
@@ -67,6 +68,9 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
   const { id } = useParams<{ id: string }>();
   const [parametros] = useSearchParams();
   const [dados, setDados] = useState<DadosDossie | null>(null);
+  /** Terceira revisão: corrigir amostras e recipientes depois do cadastro. `'nova'` inclui. */
+  const [amostraEm, setAmostraEm] = useState<DadosDossie['amostras'][number] | 'nova' | null>(null);
+  const [recipienteEm, setRecipienteEm] = useState<DadosDossie['recipientes'][number] | 'novo' | null>(null);
   const abaInicial = parametros.get('aba');
   const [aba, setAba] = useState<Aba>(
     ABAS.some((a) => a.id === abaInicial) ? (abaInicial as Aba) : 'visao',
@@ -325,9 +329,14 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
             <Divider />
 
             <Box>
-              <Typography sx={{ fontSize: 11, color: 'text.secondary', mb: 1 }}>
-                Recipientes
-              </Typography>
+              <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>Recipientes</Typography>
+                {permissoes.includes('caso:corrigir_material') && (
+                  <Button size="small" onClick={() => setRecipienteEm('novo')}>
+                    Incluir recipiente
+                  </Button>
+                )}
+              </Stack>
               <Stack spacing={0.75}>
                 {dados.recipientes.map((r) => {
                   /**
@@ -354,6 +363,11 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
                       {divergente && (
                         <Chip size="small" color="warning" label="divergência" />
                       )}
+                      {permissoes.includes('caso:corrigir_material') && (
+                        <Button size="small" onClick={() => setRecipienteEm(r)} sx={{ ml: 'auto' }}>
+                          Corrigir
+                        </Button>
+                      )}
                     </Stack>
                   );
                 })}
@@ -365,6 +379,13 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
 
       {aba === 'amostras' && (
         <Card sx={{ p: 2.5 }}>
+          {permissoes.includes('caso:corrigir_material') && (
+            <Stack direction="row" sx={{ justifyContent: 'flex-end', mb: 1 }}>
+              <Button size="small" onClick={() => setAmostraEm('nova')}>
+                Incluir amostra
+              </Button>
+            </Stack>
+          )}
           <Stack spacing={1.5} divider={<Divider flexItem />}>
             {dados.amostras.map((a) => (
               <Stack
@@ -388,6 +409,11 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
                 {a.macroscopiaConcluidaEm && (
                   <Chip size="small" variant="outlined" color="success" label="macroscopia concluída" />
                 )}
+                {permissoes.includes('caso:corrigir_material') && (
+                  <Button size="small" onClick={() => setAmostraEm(a)}>
+                    Corrigir
+                  </Button>
+                )}
                 {/* Review: "em cada uma das amostras tem recorte" - so depois da macro concluida. */}
                 {a.macroscopiaConcluidaEm && permissoes.includes('solicitacao:criar') && id && (
                   <BotaoRecorte
@@ -400,6 +426,23 @@ export function Dossie({ permissoes }: { permissoes: string[] }) {
             ))}
           </Stack>
         </Card>
+      )}
+
+      {amostraEm && (
+        <DialogoAmostra
+          dossie={dados}
+          amostra={amostraEm === 'nova' ? undefined : amostraEm}
+          aoFechar={() => setAmostraEm(null)}
+          aoMudar={() => api.get<DadosDossie>(`/casos/${dados.caso.id}`).then(setDados)}
+        />
+      )}
+      {recipienteEm && (
+        <DialogoRecipiente
+          dossie={dados}
+          recipiente={recipienteEm === 'novo' ? undefined : recipienteEm}
+          aoFechar={() => setRecipienteEm(null)}
+          aoMudar={() => api.get<DadosDossie>(`/casos/${dados.caso.id}`).then(setDados)}
+        />
       )}
 
       {aba === 'imagens' && id && (

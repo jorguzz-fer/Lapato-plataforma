@@ -2225,6 +2225,72 @@ describe('necropsia (M14)', () => {
     expect(banca.body.lesoesCausais, 'o incidental não conta na cadeia causal').toBe(2);
   });
 
+  test('mapa corporal: marcador aponta para a lesão ou cria uma (§62)', async () => {
+    const foraDaVista = await req('POST', `/necropsia/${necropsiaId}/marcadores`, {
+      tipo: 'hematoma',
+      vista: 'lateral_esquerda',
+      x: 1200,
+      y: 300,
+    });
+    expect(foraDaVista.status, 'posição é por mil da vista').toBe(400);
+
+    const ligado = await req('POST', `/necropsia/${necropsiaId}/marcadores`, {
+      tipo: 'hematoma',
+      vista: 'lateral_esquerda',
+      x: 420,
+      y: 480,
+      descricao: 'Hematoma subcutâneo no flanco esquerdo.',
+      lesaoId: l01,
+    });
+    expect(ligado.status, JSON.stringify(ligado.body)).toBe(201);
+    expect(ligado.body.codigoLesao).toBe('L01');
+
+    const deOutroLugar = await req('POST', `/necropsia/${necropsiaId}/marcadores`, {
+      tipo: 'ferida',
+      vista: 'ventral',
+      x: 10,
+      y: 10,
+      lesaoId: '00000000-0000-4000-8000-000000000000',
+    });
+    expect(deOutroLugar.status, 'lesão de fora da necropsia não se liga').toBe(400);
+
+    // "Marquei e descrevi" num gesto só: a lesão nasce na mesma transação.
+    const comLesaoNova = await req('POST', `/necropsia/${necropsiaId}/marcadores`, {
+      tipo: 'fratura_suspeita',
+      vista: 'dorsal',
+      x: 700,
+      y: 300,
+      lesao: {
+        orgao: 'Fêmur direito',
+        descricao: 'Crepitação e angulação anormal no terço médio.',
+        diagnosticoMorfologico: 'Fratura femoral',
+        classificacao: 'incidental',
+      },
+    });
+    expect(comLesaoNova.status, JSON.stringify(comLesaoNova.body)).toBe(201);
+    expect(comLesaoNova.body.codigoLesao).toBe('L04');
+
+    const movido = await req('POST', `/necropsia/marcadores/${ligado.body.id}`, {
+      x: 430,
+      lesaoId: null,
+    });
+    expect(movido.status).toBe(201);
+
+    let banca = await req('GET', `/necropsia/casos/${casoId}`);
+    expect(banca.body.marcadores).toHaveLength(2);
+    const marcador = banca.body.marcadores.find((m: { id: string }) => m.id === ligado.body.id);
+    expect(marcador.x).toBe(430);
+    expect(marcador.lesaoId).toBeNull();
+    expect(banca.body.lesoes.map((l: { codigo: string }) => l.codigo)).toContain('L04');
+
+    // Desfazer a marcação não apaga a lesão: o marcador é rascunho, a lesão é registro.
+    const desfeito = await req('POST', `/necropsia/marcadores/${comLesaoNova.body.id}/remocao`);
+    expect(desfeito.status).toBe(201);
+    banca = await req('GET', `/necropsia/casos/${casoId}`);
+    expect(banca.body.marcadores).toHaveLength(1);
+    expect(banca.body.lesoes.map((l: { codigo: string }) => l.codigo)).toContain('L04');
+  });
+
   test('o Guardian separa mecanismo de causa e vê atribuição exclusiva (§§108 e 116)', async () => {
     const salvou = await req('POST', `/necropsia/${necropsiaId}/causa-mortis`, {
       mecanismoTerminal: 'choque_hipovolemico',

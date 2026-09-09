@@ -25,7 +25,7 @@ Todo código, nome de módulo, evento e ADR deste repositório usa a numeração
 | 11 | Laudos e Microscopia | Diagnóstico | Implementado |
 | 12 | Citopatologia | Diagnóstico | Implementado |
 | 13 | Histopatologia | Diagnóstico | Implementado |
-| 14 | Necropsia | Diagnóstico | Implementado |
+| 14 | Necropsia | Diagnóstico | Implementado (exame externo com mapa corporal, órgãos, lesões, cadeia causal e causa mortis; captura por voz e requisitos forenses ficam para depois) |
 | 15 | Controle de Cadáveres | Materiais e imagens | Implementado |
 | 16 | Imagens e Scanner de Lâminas | Materiais e imagens | Implementado (WSI fora do v1, ADR-0004) |
 | 17 | Inteligência Artificial | Conhecimento | Implementado (Copiloto real opcional, ADR-0007) |

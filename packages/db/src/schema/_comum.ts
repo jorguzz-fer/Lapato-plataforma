@@ -34,6 +34,8 @@ import {
   TIPO_MOVIMENTACAO_OBJETO,
   TIPO_OBJETO_BIOLOGICO,
   CAVIDADE_NECROPSIA,
+  TIPO_MARCADOR_CORPORAL,
+  VISTA_MAPA_CORPORAL,
   CLASSIFICACAO_LESAO,
   CONSERVACAO_CADAVER,
   CONSERVACAO_NECROPSIA,
@@ -166,6 +168,8 @@ export const destinacaoCadaverEnum = pgEnum('destinacao_cadaver', DESTINACAO_CAD
 export const modalidadeNecropsiaEnum = pgEnum('modalidade_necropsia', MODALIDADE_NECROPSIA);
 export const conservacaoNecropsiaEnum = pgEnum('conservacao_necropsia', CONSERVACAO_NECROPSIA);
 export const cavidadeNecropsiaEnum = pgEnum('cavidade_necropsia', CAVIDADE_NECROPSIA);
+export const tipoMarcadorCorporalEnum = pgEnum('tipo_marcador_corporal', TIPO_MARCADOR_CORPORAL);
+export const vistaMapaCorporalEnum = pgEnum('vista_mapa_corporal', VISTA_MAPA_CORPORAL);
 export const estadoExameOrgaoEnum = pgEnum('estado_exame_orgao', ESTADO_EXAME_ORGAO);
 export const classificacaoLesaoEnum = pgEnum('classificacao_lesao', CLASSIFICACAO_LESAO);
 export const mecanismoTerminalEnum = pgEnum('mecanismo_terminal', MECANISMO_TERMINAL);

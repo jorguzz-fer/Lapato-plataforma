@@ -233,3 +233,58 @@ export const RELACAO_LESAO_LABEL: Record<RelacaoLesao, string> = {
   contribuiu_para: 'contribuiu para',
   associada_a: 'associada a',
 };
+
+/**
+ * Mapa corporal (secao 62): "o sistema podera oferecer representacao anatomica
+ * para marcar feridas, escoriacoes, hematomas, incisoes, massas, fraturas
+ * suspeitas e outras alteracoes. Cada marcador podera se relacionar a um
+ * Objeto Lesao."
+ *
+ * O marcador e uma posicao numa silhueta, nao uma lesao: a lesao continua
+ * sendo o registro clinico (secao 73), e o marcador aponta para ela quando o
+ * patologista quer. Um hematoma marcado sem lesao e um lembrete visual; uma
+ * lesao sem marcador e o caso comum do exame interno.
+ */
+export const TIPO_MARCADOR_CORPORAL = [
+  'ferida',
+  'escoriacao',
+  'hematoma',
+  'incisao',
+  'massa',
+  'fratura_suspeita',
+  'outra',
+] as const;
+export type TipoMarcadorCorporal = (typeof TIPO_MARCADOR_CORPORAL)[number];
+
+export const TIPO_MARCADOR_CORPORAL_LABEL: Record<TipoMarcadorCorporal, string> = {
+  ferida: 'Ferida',
+  escoriacao: 'Escoriação',
+  hematoma: 'Hematoma',
+  incisao: 'Incisão',
+  massa: 'Massa',
+  fratura_suspeita: 'Fratura suspeita',
+  outra: 'Outra alteração',
+};
+
+/** Quatro vistas da silhueta; a posicao e relativa a cada uma. */
+export const VISTA_MAPA_CORPORAL = [
+  'lateral_esquerda',
+  'lateral_direita',
+  'dorsal',
+  'ventral',
+] as const;
+export type VistaMapaCorporal = (typeof VISTA_MAPA_CORPORAL)[number];
+
+export const VISTA_MAPA_CORPORAL_LABEL: Record<VistaMapaCorporal, string> = {
+  lateral_esquerda: 'Lateral esquerda',
+  lateral_direita: 'Lateral direita',
+  dorsal: 'Dorsal',
+  ventral: 'Ventral',
+};
+
+/**
+ * A posicao e guardada "por mil" da largura e da altura da vista (0 a 1000),
+ * independente do tamanho da tela e da silhueta escolhida. Uma silhueta de
+ * cao, de gato ou de cavalo desenhada depois nao invalida o que foi marcado.
+ */
+export const ESCALA_MAPA_CORPORAL = 1000;

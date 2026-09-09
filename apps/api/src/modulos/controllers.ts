@@ -52,6 +52,9 @@ import {
   type StatusObjetoBiologico,
   type TipoObjetoBiologico,
   CAVIDADE_NECROPSIA,
+  ESCALA_MAPA_CORPORAL,
+  TIPO_MARCADOR_CORPORAL,
+  VISTA_MAPA_CORPORAL,
   CELULARIDADE,
   CLASSIFICACAO_LESAO,
   CONSERVACAO_CADAVER,
@@ -3053,6 +3056,16 @@ const lesaoSchema = z.object({
   observacoes: z.string().nullish(),
 });
 
+const marcadorSchema = z.object({
+  tipo: z.enum(TIPO_MARCADOR_CORPORAL),
+  vista: z.enum(VISTA_MAPA_CORPORAL),
+  x: z.number().min(0).max(ESCALA_MAPA_CORPORAL),
+  y: z.number().min(0).max(ESCALA_MAPA_CORPORAL),
+  descricao: z.string().nullish(),
+  lesaoId: z.string().uuid().nullish(),
+  lesao: lesaoSchema.nullish(),
+});
+
 const relacaoSchema = z.object({
   origemId: z.string().uuid(),
   destinoId: z.string().uuid(),
@@ -3132,6 +3145,39 @@ export class NecropsiaController {
   })
   async criarLesao(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
     return this.necropsia.criarLesao(id, validarCorpo(lesaoSchema, corpo));
+  }
+
+  @Post(':id/marcadores')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Marca um ponto no mapa corporal (§62)',
+    description:
+      'Posição por mil da vista (0–1000). Pode apontar para uma lesão existente ou criar ' +
+      'uma na mesma transação — "marquei e descrevi" num gesto só.',
+  })
+  async criarMarcador(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    return this.necropsia.criarMarcador(id, validarCorpo(marcadorSchema, corpo));
+  }
+
+  @Post('marcadores/:marcadorId')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({ summary: 'Move, retipa, descreve ou liga o marcador a uma lesão (§62)' })
+  async editarMarcador(
+    @Param('marcadorId', ParseUUIDPipe) marcadorId: string,
+    @Body() corpo: unknown,
+  ) {
+    const { lesao: _lesao, ...dados } = validarCorpo(marcadorSchema.partial(), corpo);
+    void _lesao;
+    await this.necropsia.editarMarcador(marcadorId, dados);
+    return { ok: true };
+  }
+
+  @Post('marcadores/:marcadorId/remocao')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({ summary: 'Desfaz a marcação; a lesão apontada fica (§62)' })
+  async removerMarcador(@Param('marcadorId', ParseUUIDPipe) marcadorId: string) {
+    await this.necropsia.removerMarcador(marcadorId);
+    return { ok: true };
   }
 
   @Post('lesoes/:lesaoId')

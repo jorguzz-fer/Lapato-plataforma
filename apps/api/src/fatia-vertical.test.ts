@@ -5533,3 +5533,482 @@ describe('rotas sem cobertura: conversa, exame externo e bioteca', () => {
     expect(curto.status).toBe(400);
   });
 });
+
+/**
+ * M19 - Logistica, fatia 2: o servico que tem dono e executado, com evidencia
+ * em cada marco fisico, e ao concluir vira producao do encarregado no M20.
+ */
+describe('M19 fatia 2: execução com evidências, rota e produção', () => {
+  const marca = Date.now().toString(36);
+  const encarregados: Array<{ id: string; cookie: string }> = [];
+  let clienteId = '';
+  let retiradaId = '';
+  let entregaId = '';
+  let ocorrenciaId = '';
+  let rotaId = '';
+
+  const hoje = new Date();
+  const dia = hoje.toISOString().slice(0, 10);
+  const ontem = new Date(hoje.getTime() - 86_400_000).toISOString().slice(0, 10);
+  const depois = new Date(hoje.getTime() + 2 * 86_400_000).toISOString().slice(0, 10);
+
+  async function reqCom(
+    cookieProprio: string,
+    metodo: string,
+    caminho: string,
+    corpo?: unknown,
+  ): Promise<{ status: number; body: any }> {
+    const resposta = await fetch(`${servidor}${BASE}${caminho}`, {
+      method: metodo,
+      headers: { 'content-type': 'application/json', cookie: cookieProprio },
+      body: corpo === undefined ? undefined : JSON.stringify(corpo),
+    });
+    const texto = await resposta.text();
+    return { status: resposta.status, body: texto ? JSON.parse(texto) : null };
+  }
+
+  async function fotoCom(cookieProprio: string, solicitacaoId: string, marco: string) {
+    const form = new FormData();
+    form.append('marco', marco);
+    form.append('arquivo', new Blob([new Uint8Array(PNG_MINIMO)], { type: 'image/png' }), 'foto.png');
+    const resposta = await fetch(
+      `${servidor}${BASE}/logistica/solicitacoes/${solicitacaoId}/evidencias`,
+      { method: 'POST', headers: { cookie: cookieProprio }, body: form },
+    );
+    const texto = await resposta.text();
+    return { status: resposta.status, body: texto ? JSON.parse(texto) : null };
+  }
+
+  test('preparo: dois encarregados e uma retirada com posição prevista', async () => {
+    await entrar('admin@lapato.local');
+    const perfis = await req('GET', '/usuarios/perfis');
+    const perfil = perfis.body.find((p: any) => p.chave === 'encarregado_logistico');
+    expect(perfil).toBeTruthy();
+
+    for (let i = 0; i < 2; i += 1) {
+      const email = `campo${i}.${marca}@lapato.local`;
+      const criado = await req('POST', '/usuarios', {
+        nomeCompleto: `Encarregado ${i} ${marca}`,
+        email,
+        perfilIds: [perfil.id],
+      });
+      expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+      const guardado = cookie;
+      cookie = '';
+      await req('POST', '/auth/login', { instituicao: 'demo', email, senha: criado.body.senhaProvisoria });
+      const troca = await req('POST', '/auth/senha', {
+        senhaAtual: criado.body.senhaProvisoria,
+        senhaNova: `Campo!${marca}`,
+      });
+      expect(troca.body.estagio).toBe('ativa');
+      encarregados.push({ id: criado.body.id, cookie });
+      cookie = guardado;
+    }
+
+    const lista = await req('GET', '/logistica/encarregados');
+    expect(lista.status).toBe(200);
+    expect(lista.body.map((e: any) => e.id)).toEqual(
+      expect.arrayContaining(encarregados.map((e) => e.id)),
+    );
+
+    await entrar('recepcao@lapato.local');
+    const clientes = await req('GET', '/catalogo/clientes');
+    clienteId = clientes.body[0].id;
+
+    const criada = await req('POST', '/logistica/solicitacoes', {
+      tipoServico: 'retirada',
+      tipoOperacao: 'coleta_amostras',
+      canalOrigem: 'telefone',
+      clienteId,
+      endereco: `Rua da Execução, ${marca}`,
+      latitude: '-23.5505',
+      longitude: '-46.6333',
+      volumesEstimados: 3,
+      conservacao: 'ambiente',
+      valorCentavos: 4500,
+      dataDesejada: new Date().toISOString(),
+    });
+    expect(criada.status, JSON.stringify(criada.body)).toBe(201);
+    retiradaId = criada.body.id;
+  });
+
+  test('atribuição direta dá dono; reatribuir exige motivo e preserva o anterior (§§32-33)', async () => {
+    await entrar('recepcao@lapato.local');
+    const direta = await req('POST', `/logistica/solicitacoes/${retiradaId}/atribuicao`, {
+      encarregadoId: encarregados[0]!.id,
+    });
+    expect(direta.status, JSON.stringify(direta.body)).toBe(201);
+
+    const semMotivo = await req('POST', `/logistica/solicitacoes/${retiradaId}/atribuicao`, {
+      encarregadoId: encarregados[1]!.id,
+    });
+    expect(semMotivo.status).toBe(400);
+
+    const troca = await req('POST', `/logistica/solicitacoes/${retiradaId}/atribuicao`, {
+      encarregadoId: encarregados[1]!.id,
+      motivo: 'O primeiro ficou preso na zona norte.',
+    });
+    expect(troca.status, JSON.stringify(troca.body)).toBe(201);
+
+    const ficha = await req('GET', `/logistica/solicitacoes/${retiradaId}`);
+    expect(ficha.body.status).toBe('aceita');
+    expect(ficha.body.encarregadoId).toBe(encarregados[1]!.id);
+    const tipos = ficha.body.timeline.map((m: any) => m.tipo);
+    expect(tipos).toContain('atribuida');
+    expect(tipos).toContain('reatribuida');
+    const reatrib = ficha.body.timeline.find((m: any) => m.tipo === 'reatribuida');
+    expect(reatrib.detalhe.anteriorId).toBe(encarregados[0]!.id);
+  });
+
+  test('só o encarregado do serviço executa; outro recebe 403 (§115)', async () => {
+    const alheio = await reqCom(
+      encarregados[0]!.cookie,
+      'POST',
+      `/logistica/solicitacoes/${retiradaId}/deslocamento`,
+    );
+    expect(alheio.status).toBe(403);
+    const fotosAlheias = await reqCom(
+      encarregados[0]!.cookie,
+      'GET',
+      `/logistica/solicitacoes/${retiradaId}/evidencias`,
+    );
+    expect(fotosAlheias.status).toBe(403);
+  });
+
+  test('retirada exige foto e posição (ou o motivo de não haver); divergência de volume é dado (§§59, 151, 153)', async () => {
+    const dono = encarregados[1]!.cookie;
+
+    const desloc = await reqCom(dono, 'POST', `/logistica/solicitacoes/${retiradaId}/deslocamento`);
+    expect(desloc.status, JSON.stringify(desloc.body)).toBe(201);
+
+    // Sem foto, não há marco.
+    const semFoto = await reqCom(dono, 'POST', `/logistica/solicitacoes/${retiradaId}/retirada`, {
+      volumesRecebidos: 2,
+      geoAusente: 'sem_permissao',
+    });
+    expect(semFoto.status).toBe(400);
+    expect(semFoto.body.detail).toContain('fotografia');
+
+    const foto = await fotoCom(dono, retiradaId, 'retirada');
+    expect(foto.status, JSON.stringify(foto.body)).toBe(201);
+    expect(foto.body.fotosNoMarco).toBe(1);
+
+    // Sem posição E sem motivo: recusado - a ausência precisa ser dita.
+    const semGeo = await reqCom(dono, 'POST', `/logistica/solicitacoes/${retiradaId}/retirada`, {
+      volumesRecebidos: 2,
+    });
+    expect(semGeo.status).toBe(400);
+    expect(semGeo.body.detail).toContain('posição');
+
+    const retirada = await reqCom(dono, 'POST', `/logistica/solicitacoes/${retiradaId}/retirada`, {
+      volumesRecebidos: 2,
+      justificativaVolumes: 'Um frasco ficou na geladeira da clínica.',
+      condicaoMaterial: ['sem_identificacao'],
+      quemEntregou: { nome: 'Recepção da clínica', funcao: 'atendente' },
+      geoAusente: 'sem_permissao',
+    });
+    expect(retirada.status, JSON.stringify(retirada.body)).toBe(201);
+    expect(retirada.body.divergente).toBe(true);
+    // Pulou a chegada: não bloqueia, mas o Guardian aponta (§111).
+    expect(retirada.body.alertas.some((a: string) => a.includes('chegada'))).toBe(true);
+
+    await entrar('recepcao@lapato.local');
+    const ficha = await req('GET', `/logistica/solicitacoes/${retiradaId}`);
+    expect(ficha.body.status).toBe('coletada');
+    expect(ficha.body.statusExterno).toBe('coletada');
+    expect(ficha.body.volumesRecebidos).toBe(2);
+    expect(ficha.body.volumesEstimados).toBe(3);
+    expect(ficha.body.geoRetirada.ausente).toBe('sem_permissao');
+    expect(ficha.body.geoRetirada.latitude).toBeNull();
+    expect(ficha.body.quemEntregou.nome).toBe('Recepção da clínica');
+    expect(ficha.body.timeline.map((m: any) => m.tipo)).toContain('alerta_guardian');
+
+    // A central vê as fotos; o limite é 4 por marco.
+    const fotos = await req('GET', `/logistica/solicitacoes/${retiradaId}/evidencias`);
+    expect(fotos.status).toBe(200);
+    expect(fotos.body).toHaveLength(1);
+    expect(fotos.body[0].metadados.marco).toBe('retirada');
+    const bytes = await fetch(
+      `${servidor}${BASE}/logistica/solicitacoes/${retiradaId}/evidencias/${fotos.body[0].id}/arquivo`,
+      { headers: { cookie } },
+    );
+    expect(bytes.status).toBe(200);
+    expect(bytes.headers.get('content-type')).toContain('image/png');
+
+    for (let i = 0; i < 3; i += 1) expect((await fotoCom(dono, retiradaId, 'retirada')).status).toBe(201);
+    const quinta = await fotoCom(dono, retiradaId, 'retirada');
+    expect(quinta.status).toBe(400);
+    expect(quinta.body.detail).toContain('máximo');
+  });
+
+  test('entrega ao laboratório com menos volumes sinaliza divergência; concluir exige explicação e gera produção (§§78, 82, 159)', async () => {
+    const dono = encarregados[1]!.cookie;
+
+    const transporte = await reqCom(dono, 'POST', `/logistica/solicitacoes/${retiradaId}/transporte`);
+    expect(transporte.status, JSON.stringify(transporte.body)).toBe(201);
+
+    // Fora de ordem: concluir antes de entregar.
+    const cedo = await reqCom(dono, 'POST', `/logistica/solicitacoes/${retiradaId}/conclusao`, {});
+    expect(cedo.status).toBe(400);
+
+    expect((await fotoCom(dono, retiradaId, 'entrega')).status).toBe(201);
+
+    const entrega = await reqCom(dono, 'POST', `/logistica/solicitacoes/${retiradaId}/entrega`, {
+      volumesEntregues: 1,
+      latitude: -23.5506,
+      longitude: -46.6334,
+      recebedor: { nome: 'Técnico do recebimento' },
+    });
+    expect(entrega.status, JSON.stringify(entrega.body)).toBe(201);
+    expect(entrega.body.divergente).toBe(true);
+
+    const semJustificativa = await reqCom(dono, 'POST', `/logistica/solicitacoes/${retiradaId}/conclusao`, {});
+    expect(semJustificativa.status).toBe(400);
+    expect(semJustificativa.body.detail).toContain('não entregues');
+
+    const concluida = await reqCom(dono, 'POST', `/logistica/solicitacoes/${retiradaId}/conclusao`, {
+      justificativaDivergencia: 'O frasco que faltava ficou na clínica e será buscado amanhã.',
+    });
+    expect(concluida.status, JSON.stringify(concluida.body)).toBe(201);
+    expect(concluida.body.producaoId).toBeTruthy();
+
+    // §152: depois da conclusão nada mais entra.
+    const tarde = await fotoCom(dono, retiradaId, 'entrega');
+    expect(tarde.status).toBe(400);
+
+    await entrar('admin@lapato.local');
+    const ficha = await req('GET', `/logistica/solicitacoes/${retiradaId}`);
+    expect(ficha.body.status).toBe('concluida');
+    expect(ficha.body.statusExterno).toBe('entregue_ao_laboratorio');
+    expect(ficha.body.comDivergencia).toBe(true);
+    expect(ficha.body.timeline.map((m: any) => m.tipo)).toContain('divergencia_entrega');
+
+    // §161: o relatório de produção do M20 vê o serviço com o valor aplicado.
+    const producao = await req('GET', `/financeiro/producao-logistica?de=${ontem}&ate=${depois}`);
+    expect(producao.status, JSON.stringify(producao.body)).toBe(200);
+    const doEncarregado = producao.body.encarregados.find(
+      (e: any) => e.encarregadoId === encarregados[1]!.id,
+    );
+    expect(doEncarregado.retiradas).toBe(1);
+    expect(doEncarregado.valorCentavos).toBe(4500);
+    expect(doEncarregado.pendenteCentavos).toBe(4500);
+
+    // §163: o encarregado consulta a própria situação; o M20 é quem a move.
+    const minha = await reqCom(dono, 'GET', `/logistica/producao?de=${ontem}&ate=${depois}`);
+    expect(minha.status).toBe(200);
+    expect(minha.body.itens).toHaveLength(1);
+    expect(minha.body.itens[0].situacao).toBe('nao_lancado');
+
+    const pago = await req('POST', `/financeiro/producao-logistica/${concluida.body.producaoId}/situacao`, {
+      situacao: 'pago',
+      referencia: 'PIX 0001',
+    });
+    expect(pago.status, JSON.stringify(pago.body)).toBe(201);
+    const depoisDePagar = await req('GET', `/financeiro/producao-logistica?de=${ontem}&ate=${depois}&encarregadoId=${encarregados[1]!.id}`);
+    expect(depoisDePagar.body.encarregados[0].pagoCentavos).toBe(4500);
+  });
+
+  test('ENTREGA: sem chegada, retirada no laboratório, e quem recebeu é obrigatório (§§150, 155)', async () => {
+    await entrar('recepcao@lapato.local');
+    const criada = await req('POST', '/logistica/solicitacoes', {
+      tipoServico: 'entrega',
+      tipoOperacao: 'devolucao_material',
+      canalOrigem: 'whatsapp',
+      clienteId,
+      endereco: `Avenida da Devolução, ${marca}`,
+      valorCentavos: 3000,
+    });
+    entregaId = criada.body.id;
+    await req('POST', `/logistica/solicitacoes/${entregaId}/atribuicao`, {
+      encarregadoId: encarregados[0]!.id,
+    });
+
+    const dono = encarregados[0]!.cookie;
+    const chegada = await reqCom(dono, 'POST', `/logistica/solicitacoes/${entregaId}/chegada`, {
+      geoAusente: 'indisponivel',
+    });
+    expect(chegada.status).toBe(400);
+
+    expect((await fotoCom(dono, entregaId, 'retirada')).status).toBe(201);
+    const saiu = await reqCom(dono, 'POST', `/logistica/solicitacoes/${entregaId}/retirada`, {
+      volumesRecebidos: 1,
+      latitude: -23.55,
+      longitude: -46.63,
+    });
+    expect(saiu.status, JSON.stringify(saiu.body)).toBe(201);
+    expect(saiu.body.alertas).toEqual([]);
+
+    expect((await fotoCom(dono, entregaId, 'entrega')).status).toBe(201);
+    const semRecebedor = await reqCom(dono, 'POST', `/logistica/solicitacoes/${entregaId}/entrega`, {
+      geoAusente: 'sem_sinal',
+    });
+    expect(semRecebedor.status).toBe(400);
+    expect(semRecebedor.body.detail).toContain('recebeu');
+
+    const entregue = await reqCom(dono, 'POST', `/logistica/solicitacoes/${entregaId}/entrega`, {
+      geoAusente: 'sem_sinal',
+      recebedor: { nome: 'Dra. Cliente', documento: '123' },
+    });
+    expect(entregue.status, JSON.stringify(entregue.body)).toBe(201);
+    expect(entregue.body.divergente).toBe(false);
+
+    const concluida = await reqCom(dono, 'POST', `/logistica/solicitacoes/${entregaId}/conclusao`, {});
+    expect(concluida.status, JSON.stringify(concluida.body)).toBe(201);
+
+    await entrar('recepcao@lapato.local');
+    const ficha = await req('GET', `/logistica/solicitacoes/${entregaId}`);
+    expect(ficha.body.recebedor.nome).toBe('Dra. Cliente');
+    expect(ficha.body.status).toBe('concluida');
+  });
+
+  test('não realizada exige motivo; reagendar cria outra apontando para esta (§§83, 85)', async () => {
+    await entrar('recepcao@lapato.local');
+    const criada = await req('POST', '/logistica/solicitacoes', {
+      tipoServico: 'retirada',
+      tipoOperacao: 'coleta_amostras',
+      canalOrigem: 'portal',
+      clienteId,
+      endereco: `Rua Fechada, ${marca}`,
+      janelaInicio: '13:00',
+      janelaFim: '16:00',
+    });
+    const id = criada.body.id as string;
+    await req('POST', `/logistica/solicitacoes/${id}/atribuicao`, { encarregadoId: encarregados[0]!.id });
+
+    const dono = encarregados[0]!.cookie;
+    await reqCom(dono, 'POST', `/logistica/solicitacoes/${id}/deslocamento`);
+    const tentativa = await reqCom(dono, 'POST', `/logistica/solicitacoes/${id}/tentativa-contato`, {
+      motivo: 'cliente_fechado',
+      detalhe: 'Portão fechado às 14h.',
+    });
+    expect(tentativa.status, JSON.stringify(tentativa.body)).toBe(201);
+
+    const semMotivo = await reqCom(dono, 'POST', `/logistica/solicitacoes/${id}/nao-realizacao`, {});
+    expect(semMotivo.status).toBe(400);
+
+    const nao = await reqCom(dono, 'POST', `/logistica/solicitacoes/${id}/nao-realizacao`, {
+      motivo: 'cliente_fechado',
+    });
+    expect(nao.status, JSON.stringify(nao.body)).toBe(201);
+
+    await entrar('recepcao@lapato.local');
+    const ficha = await req('GET', `/logistica/solicitacoes/${id}`);
+    expect(ficha.body.status).toBe('nao_realizada');
+    expect(ficha.body.statusExterno).toBe('cancelada');
+    expect(ficha.body.timeline.map((m: any) => m.tipo)).toContain('tentativa_contato');
+
+    const reagendada = await req('POST', `/logistica/solicitacoes/${id}/reagendamento`, {
+      dataDesejada: new Date(Date.now() + 86_400_000).toISOString(),
+    });
+    expect(reagendada.status, JSON.stringify(reagendada.body)).toBe(201);
+    expect(reagendada.body.id).not.toBe(id);
+
+    const nova = await req('GET', `/logistica/solicitacoes/${reagendada.body.id}`);
+    expect(nova.body.status).toBe('recebida');
+    expect(nova.body.janelaInicio).toBe('13:00');
+    expect(nova.body.timeline.map((m: any) => m.tipo)).toContain('reagendamento');
+    const antiga = await req('GET', `/logistica/solicitacoes/${id}`);
+    expect(antiga.body.timeline.map((m: any) => m.tipo)).toContain('reagendada');
+  });
+
+  test('ocorrência crítica marca a operação e sai como evento restrito (§§73-74)', async () => {
+    await entrar('recepcao@lapato.local');
+    const criada = await req('POST', '/logistica/solicitacoes', {
+      tipoServico: 'retirada',
+      tipoOperacao: 'coleta_amostras',
+      canalOrigem: 'telefone',
+      clienteId,
+      endereco: `Rua do Vazamento, ${marca}`,
+    });
+    ocorrenciaId = criada.body.id;
+    await req('POST', `/logistica/solicitacoes/${ocorrenciaId}/atribuicao`, { encarregadoId: encarregados[0]!.id });
+
+    const oc = await reqCom(encarregados[0]!.cookie, 'POST', `/logistica/solicitacoes/${ocorrenciaId}/ocorrencia`, {
+      tipo: 'vazamento',
+      descricao: 'Frasco vazou na caixa.',
+      medidas: 'Isolado em saco duplo.',
+    });
+    expect(oc.status, JSON.stringify(oc.body)).toBe(201);
+    expect(oc.body.critica).toBe(true);
+
+    const ficha = await req('GET', `/logistica/solicitacoes/${ocorrenciaId}`);
+    expect(ficha.body.comOcorrencia).toBe(true);
+
+    const painel = await req('GET', '/logistica/painel');
+    expect(painel.status).toBe(200);
+    expect(painel.body.comOcorrencia).toBeGreaterThanOrEqual(1);
+  });
+
+  test('rota do dia: incluir é atribuir, iniciar agenda, encerrar com pendência é barrado pelo Guardian (§§38-47, 111)', async () => {
+    await entrar('recepcao@lapato.local');
+    const ids: string[] = [];
+    for (const n of [1, 2]) {
+      const c = await req('POST', '/logistica/solicitacoes', {
+        tipoServico: 'retirada',
+        tipoOperacao: 'coleta_amostras',
+        canalOrigem: 'rotina_programada',
+        clienteId,
+        endereco: `Parada ${n}, ${marca}`,
+      });
+      ids.push(c.body.id);
+    }
+
+    const rota = await req('POST', '/logistica/rotas', {
+      encarregadoId: encarregados[0]!.id,
+      data: dia,
+      veiculo: 'Fiorino ABC-1234',
+      solicitacaoIds: [...ids, ocorrenciaId],
+    });
+    expect(rota.status, JSON.stringify(rota.body)).toBe(201);
+    expect(rota.body.paradas).toBe(3);
+    rotaId = rota.body.id;
+
+    const parada = await req('GET', `/logistica/solicitacoes/${ids[0]}`);
+    expect(parada.body.status).toBe('aceita');
+    expect(parada.body.encarregadoId).toBe(encarregados[0]!.id);
+    expect(parada.body.timeline.map((m: any) => m.tipo)).toContain('incluida_em_rota');
+
+    const dono = encarregados[0]!.cookie;
+    const minhas = await reqCom(dono, 'GET', `/logistica/rotas?minhas=true&data=${dia}`);
+    expect(minhas.status).toBe(200);
+    expect(minhas.body.map((r: any) => r.id)).toContain(rotaId);
+    expect(minhas.body.find((r: any) => r.id === rotaId).paradas).toBe(3);
+
+    const inicio = await reqCom(dono, 'POST', `/logistica/rotas/${rotaId}/inicio`);
+    expect(inicio.status, JSON.stringify(inicio.body)).toBe(201);
+    const ficha = await reqCom(dono, 'GET', `/logistica/rotas/${rotaId}`);
+    expect(ficha.body.status).toBe('em_andamento');
+    expect(ficha.body.paradas.map((p: any) => p.ordem)).toEqual([1, 2, 3]);
+    expect(ficha.body.paradas.every((p: any) => p.status === 'agendada')).toBe(true);
+
+    // Guardian: parada aberta bloqueia o encerramento, com a lista do que falta.
+    const cedo = await reqCom(dono, 'POST', `/logistica/rotas/${rotaId}/encerramento`);
+    expect(cedo.status).toBe(409);
+    expect(cedo.body.achados).toHaveLength(3);
+    expect(cedo.body.achados[0].codigo).toBe('LOGISTICA_ROTA_COM_PENDENCIA');
+
+    // A central tira as duas paradas que ainda não começaram (§43) e deixa a da ocorrência.
+    await entrar('recepcao@lapato.local');
+    const reordem = await req('POST', `/logistica/rotas/${rotaId}/paradas`, {
+      solicitacaoIds: [ocorrenciaId],
+    });
+    expect(reordem.status, JSON.stringify(reordem.body)).toBe(201);
+    const fora = await req('GET', `/logistica/solicitacoes/${ids[0]}`);
+    expect(fora.body.status).toBe('agendada');
+    expect(fora.body.timeline.map((m: any) => m.tipo)).toContain('removida_da_rota');
+
+    const nao = await reqCom(dono, 'POST', `/logistica/solicitacoes/${ocorrenciaId}/nao-realizacao`, {
+      motivo: 'material_indisponivel',
+    });
+    expect(nao.status, JSON.stringify(nao.body)).toBe(201);
+
+    const fim = await reqCom(dono, 'POST', `/logistica/rotas/${rotaId}/encerramento`);
+    expect(fim.status, JSON.stringify(fim.body)).toBe(201);
+    const encerrada = await req('GET', `/logistica/rotas/${rotaId}`);
+    expect(encerrada.body.status).toBe('encerrada');
+
+    const varredura = await req('GET', '/logistica/guardian');
+    expect(varredura.status).toBe(200);
+    expect(Array.isArray(varredura.body)).toBe(true);
+  });
+});

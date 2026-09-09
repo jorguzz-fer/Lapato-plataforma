@@ -88,6 +88,12 @@ export const PERFIS: Array<{
       PERMISSOES.LOGISTICA_SOLICITAR,
       PERMISSOES.LOGISTICA_OFERTAR,
       /**
+       * Fatia 2 (secoes 32, 37 e 140): "a recepcionista ou responsavel pela
+       * logistica" e quem atribui direto, monta a rota do dia e a reordena.
+       * Cancelar continua fora, pela mesma razao de antes.
+       */
+      PERMISSOES.LOGISTICA_ATRIBUIR,
+      /**
        * M20 (review): a OS nasce na conferencia do recebimento - quem conta
        * os frascos e a recepcao, e ajustar itens e desconto e a mesma mesa.
        * Conferir a saida e outra funcao: fica com o tecnico.

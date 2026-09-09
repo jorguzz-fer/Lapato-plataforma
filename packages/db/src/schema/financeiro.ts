@@ -1,13 +1,26 @@
 import { relations } from 'drizzle-orm';
-import { date, index, numeric, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import {
+  date,
+  index,
+  integer,
+  numeric,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import {
   colunasTempo,
   colunasTenant,
+  situacaoProducaoLogisticaEnum,
   statusFaturaEnum,
   tipoLancamentoEnum,
+  tipoServicoLogisticoEnum,
 } from './_comum.js';
 import { cliente } from './clientes.js';
 import { usuario } from './identidade.js';
+import { solicitacaoLogistica } from './logistica.js';
 
 /**
  * M20 (parcial) - Financeiro padrao: fatura e livro de lancamentos.
@@ -91,5 +104,55 @@ export const lancamentoRelations = relations(lancamentoFinanceiro, ({ one }) => 
   fatura: one(fatura, {
     fields: [lancamentoFinanceiro.faturaId],
     references: [fatura.id],
+  }),
+}));
+
+/**
+ * Producao do encarregado (M19 secoes 159 a 164).
+ *
+ * A tabela mora no M20 porque a secao 148 e explicita: "a regra de calculo e o
+ * pagamento definitivo pertencem ao Modulo 20". A Logistica gera o item ao
+ * concluir o servico e depois so CONSULTA a situacao (secao 163).
+ *
+ * Um item por servico concluido - `solicitacao_id` unico. Servico cancelado
+ * ou nao realizado nao gera item (secao 164); se o cancelamento vier depois da
+ * conclusao, o item e marcado `cancelado`, nunca apagado.
+ */
+export const producaoLogistica = pgTable(
+  'producao_logistica',
+  {
+    ...colunasTenant,
+    solicitacaoId: uuid('solicitacao_id')
+      .notNull()
+      .references(() => solicitacaoLogistica.id, { onDelete: 'restrict' }),
+    encarregadoId: uuid('encarregado_id')
+      .notNull()
+      .references(() => usuario.id),
+    tipoServico: tipoServicoLogisticoEnum('tipo_servico').notNull(),
+    concluidaEm: timestamp('concluida_em', { withTimezone: true }).notNull(),
+    /** Valor APLICADO ao servico, copiado da solicitacao no momento da conclusao. */
+    valorCentavos: integer('valor_centavos').notNull().default(0),
+    situacao: situacaoProducaoLogisticaEnum('situacao').notNull().default('nao_lancado'),
+    /** Referencia livre do fechamento ou do pagamento que o M20 registrar. */
+    referenciaFinanceira: text('referencia_financeira'),
+    pagaEm: timestamp('paga_em', { withTimezone: true }),
+    observacoes: text('observacoes'),
+    ...colunasTempo,
+  },
+  (t) => [
+    unique('uq_producao_logistica_solicitacao').on(t.solicitacaoId),
+    index('idx_producao_logistica_encarregado').on(t.tenantId, t.encarregadoId, t.concluidaEm),
+    index('idx_producao_logistica_situacao').on(t.tenantId, t.situacao),
+  ],
+);
+
+export const producaoLogisticaRelations = relations(producaoLogistica, ({ one }) => ({
+  solicitacao: one(solicitacaoLogistica, {
+    fields: [producaoLogistica.solicitacaoId],
+    references: [solicitacaoLogistica.id],
+  }),
+  encarregado: one(usuario, {
+    fields: [producaoLogistica.encarregadoId],
+    references: [usuario.id],
   }),
 }));

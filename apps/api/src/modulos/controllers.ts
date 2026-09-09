@@ -18,6 +18,13 @@ import { z } from 'zod';
 import {
   ADEQUACAO_CITOLOGICA,
   CANAL_ORIGEM_LOGISTICO,
+  CONDICAO_MATERIAL_LOGISTICA,
+  MARCO_EVIDENCIA_LOGISTICA,
+  MOTIVO_CONTATO_SEM_SUCESSO,
+  MOTIVO_GEO_AUSENTE,
+  MOTIVO_NAO_REALIZACAO,
+  SITUACAO_PRODUCAO_LOGISTICA,
+  TIPO_OCORRENCIA_LOGISTICA,
   CONSERVACAO_LOGISTICA,
   PRIORIDADE_LOGISTICA,
   REQUISITO_ESPECIAL_LOGISTICO,
@@ -102,6 +109,8 @@ import {
 import { FluxoConsultaService } from './m07-fluxo/fluxo-consulta.service.js';
 import { PainelService } from './m07-fluxo/painel.service.js';
 import { LogisticaService } from './m19-logistica/logistica.service.js';
+import { LogisticaExecucaoService } from './m19-logistica/logistica-execucao.service.js';
+import { LogisticaRotasService } from './m19-logistica/logistica-rotas.service.js';
 import { OrdensService } from './m20-ordens/ordens.service.js';
 import { EtiquetasService } from './m09-processamento/etiquetas.service.js';
 import { FinanceiroService } from './m20-ordens/financeiro.service.js';
@@ -1692,10 +1701,67 @@ const ofertaSchema = z.object({
   minutosValidade: z.number().int().positive().max(1440).optional(),
 });
 
+/** Secao 153: coordenada OU motivo da ausencia. Nunca os dois vazios. */
+const geoSchema = {
+  latitude: z.number().min(-90).max(90).nullish(),
+  longitude: z.number().min(-180).max(180).nullish(),
+  precisaoMetros: z.number().nonnegative().nullish(),
+  geoAusente: z.enum(MOTIVO_GEO_AUSENTE).nullish(),
+};
+
+const retiradaLogisticaSchema = z.object({
+  ...geoSchema,
+  volumesRecebidos: z.number().int().nonnegative(),
+  justificativaVolumes: z.string().nullish(),
+  condicaoMaterial: z.array(z.enum(CONDICAO_MATERIAL_LOGISTICA)).optional(),
+  observacao: z.string().nullish(),
+  quemEntregou: z.object({ nome: z.string().min(1), funcao: z.string().nullish() }).nullish(),
+});
+
+const entregaLogisticaSchema = z.object({
+  ...geoSchema,
+  volumesEntregues: z.number().int().nonnegative().nullish(),
+  recebedor: z
+    .object({
+      nome: z.string().min(1),
+      documento: z.string().nullish(),
+      observacao: z.string().nullish(),
+    })
+    .nullish(),
+  observacao: z.string().nullish(),
+});
+
+const rotaSchema = z.object({
+  encarregadoId: z.string().uuid(),
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data no formato AAAA-MM-DD.'),
+  veiculo: z.string().nullish(),
+  observacoes: z.string().nullish(),
+  solicitacaoIds: z.array(z.string().uuid()).min(1, 'Uma rota tem ao menos uma parada.'),
+});
+
 @ApiTags('M19 - Logística')
 @Controller('logistica')
 export class LogisticaController {
-  constructor(private readonly logistica: LogisticaService) {}
+  constructor(
+    private readonly logistica: LogisticaService,
+    private readonly execucao: LogisticaExecucaoService,
+    private readonly rotas: LogisticaRotasService,
+    private readonly financeiroConsulta: FinanceiroService,
+  ) {}
+
+  @Get('encarregados')
+  @ExigePermissao(PERMISSOES.LOGISTICA_VISUALIZAR)
+  @ApiOperation({ summary: 'Encarregados ativos (perfil de campo do M02)' })
+  async encarregados() {
+    return this.execucao.listarEncarregados();
+  }
+
+  @Get('painel')
+  @ExigePermissao(PERMISSOES.LOGISTICA_VISUALIZAR)
+  @ApiOperation({ summary: 'Painel da Logística (M19 §94)' })
+  async painel() {
+    return this.execucao.painel();
+  }
 
   @Get('solicitacoes')
   @ExigePermissao(PERMISSOES.LOGISTICA_VISUALIZAR)
@@ -1790,6 +1856,279 @@ export class LogisticaController {
     );
     await this.logistica.cancelar(id, dados.motivo);
     return { ok: true };
+  }
+
+  // --- fatia 2: execucao ------------------------------------------------------
+
+  @Post('solicitacoes/:id/atribuicao')
+  @ExigePermissao(PERMISSOES.LOGISTICA_ATRIBUIR)
+  @ApiOperation({
+    summary: 'Atribui direto ou reatribui, preservando o histórico',
+    description: 'Reatribuir exige motivo (M19 §33). Ofertas abertas são encerradas.',
+  })
+  async atribuir(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({ encarregadoId: z.string().uuid(), motivo: z.string().optional() }),
+      corpo,
+    );
+    return this.execucao.atribuir(id, dados.encarregadoId, dados.motivo);
+  }
+
+  @Post('solicitacoes/:id/evidencias')
+  @ExigePermissao(PERMISSOES.LOGISTICA_EXECUTAR)
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'arquivo', maxCount: 1 },
+        { name: 'miniatura', maxCount: 1 },
+      ],
+      { limits: { fileSize: TAMANHO_MAXIMO, files: 2, fields: 10 } },
+    ),
+  )
+  @ApiOperation({
+    summary: 'Fotografia de um marco (retirada, entrega ou ocorrência)',
+    description:
+      'O arquivo é do M16; aqui só se decide se pode entrar: serviço aberto e no máximo ' +
+      '4 por marco (M19 §151). Depois da conclusão nada mais entra (§152).',
+  })
+  async evidencia(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFiles() arquivos: { arquivo?: ArquivoRecebido[]; miniatura?: ArquivoRecebido[] },
+    @Body() corpo: unknown,
+  ) {
+    const arquivo = arquivos?.arquivo?.[0];
+    if (!arquivo) throw new BadRequestException('Envie a fotografia.');
+    const dados = validarCorpo(z.object({ marco: z.enum(MARCO_EVIDENCIA_LOGISTICA) }), corpo);
+    return this.execucao.anexarEvidencia(id, dados.marco, arquivo, arquivos.miniatura?.[0]);
+  }
+
+  @Get('solicitacoes/:id/evidencias')
+  @ExigePermissao(PERMISSOES.LOGISTICA_VISUALIZAR)
+  @ApiOperation({ summary: 'Fotografias da operação, por marco' })
+  async evidencias(@Param('id', ParseUUIDPipe) id: string) {
+    return this.execucao.listarEvidencias(id);
+  }
+
+  @Get('solicitacoes/:id/evidencias/:imagemId/arquivo')
+  @ExigePermissao(PERMISSOES.LOGISTICA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Bytes de uma evidência',
+    description:
+      'Servida sob a permissão da Logística, e só se a imagem pertence à operação: o ' +
+      'encarregado vê a foto que tirou, e nada além dela (M19 §115).',
+  })
+  async evidenciaArquivo(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('imagemId', ParseUUIDPipe) imagemId: string,
+    @Query('tamanho') tamanho?: string,
+  ) {
+    const { bytes, mimeType, nomeArquivo } = await this.execucao.baixarEvidencia(
+      id,
+      imagemId,
+      tamanho === 'miniatura' ? 'miniatura' : 'original',
+    );
+    return new StreamableFile(bytes, {
+      type: mimeType,
+      disposition: `inline; filename="${nomeArquivo}"`,
+    });
+  }
+
+  @Post('solicitacoes/:id/deslocamento')
+  @ExigePermissao(PERMISSOES.LOGISTICA_EXECUTAR)
+  @ApiOperation({ summary: 'EM DESLOCAMENTO (M19 §48)' })
+  async deslocamento(@Param('id', ParseUUIDPipe) id: string) {
+    await this.execucao.iniciarDeslocamento(id);
+    return { ok: true };
+  }
+
+  @Post('solicitacoes/:id/chegada')
+  @ExigePermissao(PERMISSOES.LOGISTICA_EXECUTAR)
+  @ApiOperation({ summary: 'Chegada ao local (M19 §50), com posição quando houver' })
+  async chegada(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.execucao.registrarChegada(id, validarCorpo(z.object(geoSchema), corpo ?? {}));
+    return { ok: true };
+  }
+
+  @Post('solicitacoes/:id/tentativa-contato')
+  @ExigePermissao(PERMISSOES.LOGISTICA_EXECUTAR)
+  @ApiOperation({ summary: 'Contato sem sucesso no local (M19 §52)' })
+  async tentativaContato(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({ motivo: z.enum(MOTIVO_CONTATO_SEM_SUCESSO), detalhe: z.string().nullish() }),
+      corpo,
+    );
+    await this.execucao.registrarTentativaContato(id, dados.motivo, dados.detalhe ?? undefined);
+    return { ok: true };
+  }
+
+  @Post('solicitacoes/:id/retirada')
+  @ExigePermissao(PERMISSOES.LOGISTICA_EXECUTAR)
+  @ApiOperation({
+    summary: 'MATERIAL RETIRADO (M19 §§54-67, 151-154)',
+    description:
+      'Exige ao menos uma foto do marco "retirada" e a posição do dispositivo ou o motivo ' +
+      'de não haver. Volumes conferidos ficam separados do estimado; a diferença é registrada.',
+  })
+  async retirada(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    return this.execucao.registrarRetirada(id, validarCorpo(retiradaLogisticaSchema, corpo));
+  }
+
+  @Post('solicitacoes/:id/transporte')
+  @ExigePermissao(PERMISSOES.LOGISTICA_EXECUTAR)
+  @ApiOperation({ summary: 'EM TRANSPORTE (M19 §68)' })
+  async transporte(@Param('id', ParseUUIDPipe) id: string) {
+    await this.execucao.iniciarTransporte(id);
+    return { ok: true };
+  }
+
+  @Post('solicitacoes/:id/entrega')
+  @ExigePermissao(PERMISSOES.LOGISTICA_EXECUTAR)
+  @ApiOperation({
+    summary: 'MATERIAL ENTREGUE (M19 §§75-80, 155)',
+    description:
+      'Foto do marco "entrega" e posição. Numa ENTREGA, quem recebeu é obrigatório. ' +
+      'Entregar menos do que coletou sinaliza divergência antes do encerramento (§78).',
+  })
+  async entrega(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    return this.execucao.registrarEntrega(id, validarCorpo(entregaLogisticaSchema, corpo));
+  }
+
+  @Post('solicitacoes/:id/conclusao')
+  @ExigePermissao(PERMISSOES.LOGISTICA_EXECUTAR)
+  @ApiOperation({
+    summary: 'SERVIÇO CONCLUÍDO (M19 §§82, 159)',
+    description: 'Gera o item de produção do encarregado no M20. Divergência exige justificativa.',
+  })
+  async conclusao(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(z.object({ justificativaDivergencia: z.string().nullish() }), corpo ?? {});
+    return this.execucao.concluir(id, dados.justificativaDivergencia);
+  }
+
+  @Post('solicitacoes/:id/nao-realizacao')
+  @ExigePermissao(PERMISSOES.LOGISTICA_EXECUTAR)
+  @ApiOperation({ summary: 'NÃO REALIZADA, com motivo obrigatório (M19 §83)' })
+  async naoRealizacao(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({ motivo: z.enum(MOTIVO_NAO_REALIZACAO), detalhe: z.string().nullish() }),
+      corpo,
+    );
+    await this.execucao.naoRealizar(id, dados.motivo, dados.detalhe);
+    return { ok: true };
+  }
+
+  @Post('solicitacoes/:id/reagendamento')
+  @ExigePermissao(PERMISSOES.LOGISTICA_SOLICITAR)
+  @ApiOperation({
+    summary: 'Reagenda uma operação não realizada (M19 §85)',
+    description: 'Nova solicitação apontando para a anterior; as duas ficam no histórico.',
+  })
+  async reagendamento(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        dataDesejada: z.string().datetime().nullish(),
+        janelaInicio: z.string().nullish(),
+        janelaFim: z.string().nullish(),
+        observacoes: z.string().nullish(),
+      }),
+      corpo ?? {},
+    );
+    return this.execucao.reagendar(id, dados);
+  }
+
+  @Post('solicitacoes/:id/ocorrencia')
+  @ExigePermissao(PERMISSOES.LOGISTICA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Ocorrência durante a operação (M19 §§73-74)',
+    description: 'As críticas saem como evento restrito para a central e a Qualidade (M22).',
+  })
+  async ocorrencia(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        tipo: z.enum(TIPO_OCORRENCIA_LOGISTICA),
+        descricao: z.string().min(1, 'Descreva o que aconteceu.'),
+        medidas: z.string().nullish(),
+      }),
+      corpo,
+    );
+    return this.execucao.registrarOcorrencia(id, dados);
+  }
+
+  // --- rotas (secoes 37 a 47) --------------------------------------------------
+
+  @Get('rotas')
+  @ExigePermissao(PERMISSOES.LOGISTICA_VISUALIZAR)
+  @ApiOperation({ summary: 'Rotas por dia e encarregado; `minhas=true` para a do próprio' })
+  async listarRotas(
+    @Query('data') data?: string,
+    @Query('encarregadoId') encarregadoId?: string,
+    @Query('minhas') minhas?: string,
+  ) {
+    return this.rotas.listar({ data, encarregadoId, minhas: minhas === 'true' });
+  }
+
+  @Get('rotas/:id')
+  @ExigePermissao(PERMISSOES.LOGISTICA_VISUALIZAR)
+  @ApiOperation({ summary: 'A rota com as paradas em ordem (M19 §41)' })
+  async rota(@Param('id', ParseUUIDPipe) id: string) {
+    return this.rotas.ficha(id);
+  }
+
+  @Post('rotas')
+  @ExigePermissao(PERMISSOES.LOGISTICA_ATRIBUIR)
+  @ApiOperation({
+    summary: 'Monta a rota do dia de um encarregado (M19 §38)',
+    description: 'Incluir é atribuir: parada sem dono passa a ter, e ofertas abertas morrem (§44).',
+  })
+  async criarRota(@Body() corpo: unknown) {
+    return this.rotas.criar(validarCorpo(rotaSchema, corpo));
+  }
+
+  @Post('rotas/:id/paradas')
+  @ExigePermissao(PERMISSOES.LOGISTICA_ATRIBUIR)
+  @ApiOperation({ summary: 'Inclui, remove e reordena paradas (M19 §43)' })
+  async paradas(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(z.object({ solicitacaoIds: z.array(z.string().uuid()) }), corpo);
+    await this.rotas.reordenar(id, dados.solicitacaoIds);
+    return { ok: true };
+  }
+
+  @Post('rotas/:id/inicio')
+  @ExigePermissao(PERMISSOES.LOGISTICA_EXECUTAR)
+  @ApiOperation({ summary: 'Iniciar rota (M19 §47)' })
+  async iniciarRota(@Param('id', ParseUUIDPipe) id: string) {
+    await this.rotas.iniciar(id);
+    return { ok: true };
+  }
+
+  @Post('rotas/:id/encerramento')
+  @ExigePermissao(PERMISSOES.LOGISTICA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Encerrar rota',
+    description: 'Parada em aberto bloqueia com 409 e a lista do que falta (Guardian, M19 §111).',
+  })
+  async encerrarRota(@Param('id', ParseUUIDPipe) id: string) {
+    await this.rotas.encerrar(id);
+    return { ok: true };
+  }
+
+  @Get('producao')
+  @ExigePermissao(PERMISSOES.LOGISTICA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Produção do próprio encarregado no período (M19 §163)',
+    description: 'Consulta apenas; a situação financeira vem do M20.',
+  })
+  async minhaProducao(@Query('de') de?: string, @Query('ate') ate?: string) {
+    const p = validarCorpo(periodoSchema, { de, ate });
+    return this.financeiroConsulta.producaoLogistica(new Date(p.de), new Date(p.ate), {
+      apenasMeus: true,
+    });
+  }
+
+  @Get('guardian')
+  @ExigePermissao(PERMISSOES.LOGISTICA_VISUALIZAR)
+  @ApiOperation({ summary: 'Varredura do Guardian sobre a operação (M19 §111)' })
+  async guardian() {
+    return this.execucao.varreduraGuardian();
   }
 }
 
@@ -3329,6 +3668,50 @@ export class FinanceiroController {
   ) {
     const p = validarCorpo(periodoSchema, { de, ate, clienteId });
     return this.financeiro.fechamento(new Date(p.de), new Date(p.ate), p.clienteId);
+  }
+
+  @Get('producao-logistica')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Produção dos encarregados por período (M19 §161)',
+    description: 'Serviços concluídos entre `de` (inclusive) e `ate` (exclusivo), por encarregado.',
+  })
+  async producaoLogistica(
+    @Query('de') de?: string,
+    @Query('ate') ate?: string,
+    @Query('encarregadoId') encarregadoId?: string,
+  ) {
+    const p = validarCorpo(
+      z.object({
+        de: z.string().min(10),
+        ate: z.string().min(10),
+        encarregadoId: z.string().uuid().optional(),
+      }),
+      { de, ate, encarregadoId },
+    );
+    return this.financeiro.producaoLogistica(new Date(p.de), new Date(p.ate), {
+      encarregadoId: p.encarregadoId,
+    });
+  }
+
+  @Post('producao-logistica/:id/situacao')
+  @ExigePermissao(PERMISSOES.FINANCEIRO_LANCAR)
+  @ApiOperation({
+    summary: 'Situação financeira do serviço do encarregado (M19 §§160-163)',
+    description: 'Lançado, incluído em fechamento, pago ou cancelado. A Logística só lê.',
+  })
+  async situacaoProducao(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        situacao: z.enum(SITUACAO_PRODUCAO_LOGISTICA),
+        referencia: z.string().nullish(),
+        pagaEm: z.string().datetime().nullish(),
+        observacoes: z.string().nullish(),
+      }),
+      corpo,
+    );
+    await this.financeiro.atualizarSituacaoProducao(id, dados.situacao, dados);
+    return { ok: true };
   }
 
   @Get('fechamento/pdf')

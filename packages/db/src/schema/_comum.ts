@@ -2,6 +2,10 @@ import { pgEnum, timestamp, uuid } from 'drizzle-orm/pg-core';
 import {
   ADEQUACAO_CITOLOGICA,
   CANAL_ORIGEM_LOGISTICO,
+  CONDICAO_MATERIAL_LOGISTICA,
+  SITUACAO_PRODUCAO_LOGISTICA,
+  STATUS_ROTA_LOGISTICA,
+  TIPO_OCORRENCIA_LOGISTICA,
   CONSERVACAO_LOGISTICA,
   MOTIVO_NAO_REALIZACAO,
   PRIORIDADE_LOGISTICA,
@@ -231,6 +235,20 @@ export const statusOfertaEnum = pgEnum('status_oferta', STATUS_OFERTA);
 export const statusOrdemServicoEnum = pgEnum('status_ordem_servico', STATUS_ORDEM_SERVICO);
 export const statusFaturaEnum = pgEnum('status_fatura', STATUS_FATURA);
 export const tipoLancamentoEnum = pgEnum('tipo_lancamento', TIPO_LANCAMENTO);
+export const condicaoMaterialLogisticaEnum = pgEnum(
+  'condicao_material_logistica',
+  CONDICAO_MATERIAL_LOGISTICA,
+);
+export const tipoOcorrenciaLogisticaEnum = pgEnum(
+  'tipo_ocorrencia_logistica',
+  TIPO_OCORRENCIA_LOGISTICA,
+);
+export const statusRotaLogisticaEnum = pgEnum('status_rota_logistica', STATUS_ROTA_LOGISTICA);
+/** M19 secao 160 / M20: situacao financeira do servico do encarregado. */
+export const situacaoProducaoLogisticaEnum = pgEnum(
+  'situacao_producao_logistica',
+  SITUACAO_PRODUCAO_LOGISTICA,
+);
 export const motivoNaoRealizacaoEnum = pgEnum(
   'motivo_nao_realizacao',
   MOTIVO_NAO_REALIZACAO,

@@ -10,6 +10,8 @@ import {
   laudo,
   ordemServico,
   paciente,
+  producaoLogistica,
+  solicitacaoLogistica,
   tutor,
   servico,
   tenant,
@@ -20,8 +22,10 @@ import {
   MODULOS,
   formatarReais,
   totalDaOrdem,
+  type SituacaoProducaoLogistica,
   type StatusFatura,
   type TipoLancamento,
+  type TipoServicoLogistico,
 } from '@lapato/shared';
 import { DbService } from '../../core/db/db.service.js';
 import { EventosService } from '../../core/eventos/eventos.service.js';
@@ -818,4 +822,188 @@ export class FinanceiroService {
     }
     return alvo;
   }
+
+  // --- Producao do encarregado logistico (M19 secoes 159 a 164) -------------
+
+  /**
+   * Um item por servico concluido. Chamado pela Logistica dentro da MESMA
+   * transacao da conclusao: ou o servico conclui e a producao existe, ou nada
+   * acontece. A regra de calculo nao mora aqui ainda - o valor vem aplicado da
+   * solicitacao (secao 148) - mas a situacao financeira ja e deste modulo.
+   */
+  async registrarProducaoLogistica(
+    tx: Transacao,
+    dados: {
+      solicitacaoId: string;
+      encarregadoId: string;
+      tipoServico: TipoServicoLogistico;
+      concluidaEm: Date;
+      valorCentavos: number;
+    },
+  ): Promise<string> {
+    const ctx = exigirContexto();
+    const [item] = await tx
+      .insert(producaoLogistica)
+      .values({
+        tenantId: ctx.tenantId,
+        solicitacaoId: dados.solicitacaoId,
+        encarregadoId: dados.encarregadoId,
+        tipoServico: dados.tipoServico,
+        concluidaEm: dados.concluidaEm,
+        valorCentavos: dados.valorCentavos,
+      })
+      .onConflictDoNothing()
+      .returning({ id: producaoLogistica.id });
+
+    if (!item) {
+      const [existente] = await tx
+        .select({ id: producaoLogistica.id })
+        .from(producaoLogistica)
+        .where(eq(producaoLogistica.solicitacaoId, dados.solicitacaoId))
+        .limit(1);
+      return existente!.id;
+    }
+
+    await this.eventos.publicar(tx, {
+      tipo: 'producao.registrada',
+      moduloOrigem: MODULOS.M20_FINANCEIRO,
+      objetoTipo: 'producao_logistica',
+      objetoId: item.id,
+      visibilidade: 'administrativo',
+      payload: {
+        encarregadoId: dados.encarregadoId,
+        tipoServico: dados.tipoServico,
+        valorCentavos: dados.valorCentavos,
+      },
+    });
+    return item.id;
+  }
+
+  /**
+   * Relatorio de producao por encarregado e periodo (secao 161), com os itens.
+   *
+   * `de` inclusive, `ate` exclusivo, pela data de CONCLUSAO - e a data em que o
+   * servico virou producao. Com `encarregadoId`, so o dele; com `apenasMeus`,
+   * so o de quem esta logado (o encarregado consulta a propria situacao,
+   * secao 163).
+   */
+  async producaoLogistica(
+    de: Date,
+    ate: Date,
+    filtros: { encarregadoId?: string; apenasMeus?: boolean } = {},
+  ) {
+    const ctx = exigirContexto();
+    const encarregadoId = filtros.apenasMeus ? ctx.usuarioId : filtros.encarregadoId;
+
+    return this.db.executar(async (tx) => {
+      const itens = await tx
+        .select({
+          id: producaoLogistica.id,
+          solicitacaoId: producaoLogistica.solicitacaoId,
+          identificador: solicitacaoLogistica.identificador,
+          cliente: cliente.nomeFantasia,
+          encarregadoId: producaoLogistica.encarregadoId,
+          encarregado: usuario.nomeCompleto,
+          tipoServico: producaoLogistica.tipoServico,
+          concluidaEm: producaoLogistica.concluidaEm,
+          valorCentavos: producaoLogistica.valorCentavos,
+          situacao: producaoLogistica.situacao,
+          referenciaFinanceira: producaoLogistica.referenciaFinanceira,
+          pagaEm: producaoLogistica.pagaEm,
+        })
+        .from(producaoLogistica)
+        .innerJoin(solicitacaoLogistica, eq(solicitacaoLogistica.id, producaoLogistica.solicitacaoId))
+        .innerJoin(cliente, eq(cliente.id, solicitacaoLogistica.clienteId))
+        .innerJoin(usuario, eq(usuario.id, producaoLogistica.encarregadoId))
+        .where(
+          and(
+            eq(producaoLogistica.tenantId, ctx.tenantId),
+            gte(producaoLogistica.concluidaEm, de),
+            lt(producaoLogistica.concluidaEm, ate),
+            encarregadoId ? eq(producaoLogistica.encarregadoId, encarregadoId) : undefined,
+          ),
+        )
+        .orderBy(asc(usuario.nomeCompleto), asc(producaoLogistica.concluidaEm));
+
+      const porEncarregado = new Map<
+        string,
+        {
+          encarregadoId: string;
+          encarregado: string;
+          retiradas: number;
+          entregas: number;
+          valorCentavos: number;
+          pendenteCentavos: number;
+          pagoCentavos: number;
+        }
+      >();
+      for (const item of itens) {
+        const grupo = porEncarregado.get(item.encarregadoId) ?? {
+          encarregadoId: item.encarregadoId,
+          encarregado: item.encarregado,
+          retiradas: 0,
+          entregas: 0,
+          valorCentavos: 0,
+          pendenteCentavos: 0,
+          pagoCentavos: 0,
+        };
+        if (item.situacao !== 'cancelado') {
+          if (item.tipoServico === 'retirada') grupo.retiradas += 1;
+          else grupo.entregas += 1;
+          grupo.valorCentavos += item.valorCentavos;
+          if (item.situacao === 'pago') grupo.pagoCentavos += item.valorCentavos;
+          else grupo.pendenteCentavos += item.valorCentavos;
+        }
+        porEncarregado.set(item.encarregadoId, grupo);
+      }
+
+      return {
+        de: de.toISOString(),
+        ate: ate.toISOString(),
+        encarregados: Array.from(porEncarregado.values()),
+        itens,
+        totalCentavos: Array.from(porEncarregado.values()).reduce((s, g) => s + g.valorCentavos, 0),
+      };
+    });
+  }
+
+  /**
+   * Secoes 160, 162 e 163: o Financeiro move a situacao - lancou, incluiu no
+   * fechamento, pagou, cancelou. A Logistica so le.
+   */
+  async atualizarSituacaoProducao(
+    id: string,
+    situacao: SituacaoProducaoLogistica,
+    dados: { referencia?: string | null; pagaEm?: string | null; observacoes?: string | null } = {},
+  ): Promise<void> {
+    const ctx = exigirContexto();
+    await this.db.executar(async (tx) => {
+      const [atual] = await tx
+        .select({ id: producaoLogistica.id, situacao: producaoLogistica.situacao })
+        .from(producaoLogistica)
+        .where(and(eq(producaoLogistica.tenantId, ctx.tenantId), eq(producaoLogistica.id, id)))
+        .limit(1);
+      if (!atual) throw new NotFoundException('Item de produção não encontrado.');
+
+      await tx
+        .update(producaoLogistica)
+        .set({
+          situacao,
+          referenciaFinanceira: dados.referencia ?? null,
+          pagaEm: situacao === 'pago' ? (dados.pagaEm ? new Date(dados.pagaEm) : new Date()) : null,
+          observacoes: dados.observacoes ?? null,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(producaoLogistica.id, id));
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'producao_logistica',
+        entidadeId: id,
+        acao: 'situacao',
+        valorAnterior: { situacao: atual.situacao },
+        valorNovo: { situacao, referencia: dados.referencia ?? null },
+      });
+    });
+  }
+
 }

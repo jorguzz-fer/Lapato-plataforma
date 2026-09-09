@@ -115,6 +115,120 @@ export class ImagensService {
         .limit(1);
       if (!registro) throw new NotFoundException('Caso não encontrado.');
 
+      return this.persistir(tx, provedor, casoId, arquivo, dados, miniatura);
+    });
+  }
+
+  /**
+   * Imagem ligada a um OBJETO que nao e caso - hoje, a solicitacao logistica
+   * (M19 secoes 151-152: foto obrigatoria na retirada e na entrega).
+   *
+   * O arquivo continua sendo do M16, com o mesmo original preservado, o mesmo
+   * hash e a mesma auditoria: a secao 131 do M19 proibe "sistema proprio" de
+   * qualquer coisa que outro modulo ja faca. O que muda e que `caso_id` fica
+   * nulo, porque a coleta acontece antes de o caso existir - e o vinculo e o
+   * par (objetoTipo, objetoId). Quem chama e responsavel por ter verificado
+   * que o objeto existe e que o usuario pode anexar nele.
+   */
+  async enviarParaObjeto(
+    objeto: { objetoTipo: string; objetoId: string },
+    arquivo: ArquivoRecebido,
+    dados: Omit<DadosNovaImagem, 'objetoTipo' | 'objetoId'>,
+    miniatura?: ArquivoRecebido,
+  ): Promise<{ id: string; identificador: string }> {
+    this.validarArquivo(arquivo);
+    const provedor = this.storage.criar();
+    return this.db.executar((tx) =>
+      this.persistir(tx, provedor, null, arquivo, { ...dados, ...objeto }, miniatura),
+    );
+  }
+
+  /** Imagens de um objeto que nao e caso, na ordem em que chegaram. */
+  async listarPorObjeto(objetoTipo: string, objetoId: string) {
+    const ctx = exigirContexto();
+
+    return this.db.executar((tx) =>
+      tx
+        .select({
+          id: imagem.id,
+          identificador: imagem.identificador,
+          tipo: imagem.tipo,
+          legenda: imagem.legenda,
+          metadados: imagem.metadados,
+          capturadaEm: imagem.capturadaEm,
+          enviadaEm: imagem.enviadaEm,
+          autor: usuario.nomeCompleto,
+          temMiniatura: sql<boolean>`${imagem.miniaturaChave} is not null`,
+        })
+        .from(imagem)
+        .leftJoin(usuario, eq(usuario.id, imagem.autorId))
+        .where(
+          and(
+            eq(imagem.tenantId, ctx.tenantId),
+            eq(imagem.objetoTipo, objetoTipo),
+            eq(imagem.objetoId, objetoId),
+            isNull(imagem.inativadaEm),
+          ),
+        )
+        .orderBy(asc(imagem.enviadaEm)),
+    );
+  }
+
+  /**
+   * Bytes de uma imagem, garantindo que ela pertence ao objeto informado.
+   *
+   * E o que permite servir a evidencia logistica sob a permissao da LOGISTICA,
+   * e nao sob `imagem:visualizar`: o encarregado ve a foto que ele mesmo tirou
+   * naquela operacao, e nada alem dela (M19 secao 115).
+   */
+  async baixarDoObjeto(
+    objetoTipo: string,
+    objetoId: string,
+    imagemId: string,
+    qual: 'original' | 'miniatura',
+  ) {
+    const ctx = exigirContexto();
+    const pertence = await this.db.executar(async (tx) => {
+      const [linha] = await tx
+        .select({ id: imagem.id })
+        .from(imagem)
+        .where(
+          and(
+            eq(imagem.tenantId, ctx.tenantId),
+            eq(imagem.id, imagemId),
+            eq(imagem.objetoTipo, objetoTipo),
+            eq(imagem.objetoId, objetoId),
+          ),
+        )
+        .limit(1);
+      return Boolean(linha);
+    });
+    if (!pertence) throw new NotFoundException('Imagem não encontrada.');
+    return this.baixar(imagemId, qual);
+  }
+
+  private validarArquivo(arquivo: ArquivoRecebido): void {
+    if (!MIMES_ACEITOS.has(arquivo.mimetype)) {
+      throw new BadRequestException(
+        `Formato não aceito (${arquivo.mimetype}). Envie JPEG, PNG, WebP ou HEIC.`,
+      );
+    }
+    if (arquivo.buffer.length > TAMANHO_MAXIMO) {
+      throw new BadRequestException('Arquivo acima de 25 MB.');
+    }
+  }
+
+  /** O que `enviar` e `enviarParaObjeto` tem em comum: registro, storage, versao, evento, auditoria. */
+  private async persistir(
+    tx: Transacao,
+    provedor: ReturnType<StorageFactory['criar']>,
+    casoId: string | null,
+    arquivo: ArquivoRecebido,
+    dados: DadosNovaImagem,
+    miniatura?: ArquivoRecebido,
+  ): Promise<{ id: string; identificador: string }> {
+    const ctx = exigirContexto();
+    {
       const identificador = await this.numeracao.proximaImagem(tx, new Date().getFullYear());
 
       const [nova] = await tx
@@ -184,12 +298,12 @@ export class ImagensService {
         entidade: 'imagem',
         entidadeId: nova!.id,
         acao: 'enviar',
-        casoId,
+        casoId: casoId ?? undefined,
         valorNovo: { identificador, tipo: dados.tipo, origem: dados.origem ?? 'produzida_lapato' },
       });
 
       return { id: nova!.id, identificador };
-    });
+    }
   }
 
   /**

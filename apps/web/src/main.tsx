@@ -27,6 +27,7 @@ import { OrdensDeServico } from './paginas/ordens/OrdensDeServico';
 import { Financeiro } from './paginas/ordens/Financeiro';
 import { Cadaveres } from './paginas/Cadaveres';
 import { Bioteca } from './paginas/Bioteca';
+import { Logistica } from './paginas/logistica/Logistica';
 import { Necropsia } from './paginas/Necropsia';
 import { Clientes } from './paginas/Clientes';
 import { Veterinarios } from './paginas/Veterinarios';
@@ -290,6 +291,15 @@ function App() {
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Controle de Cadáveres">
             <Cadaveres permissoes={sessao.permissoes} />
+          </Shell>
+        }
+      />
+      {/* M19: retiradas e entregas atravessam casos - a coleta acontece antes de o caso existir. */}
+      <Route
+        path="/logistica"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Logística">
+            <Logistica sessao={sessao} />
           </Shell>
         }
       />

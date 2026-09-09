@@ -13,6 +13,8 @@ import {
   localFisico,
   objetoBiologico,
   reservaObjeto,
+  rotaLogistica,
+  solicitacaoLogistica,
   causaMortis,
   exameOrgao,
   lesaoNecroscopica,
@@ -28,6 +30,7 @@ import {
   BloqueioGuardianError,
   MODULOS,
   STATUS_EMPRESTIMO_ABERTOS,
+  STATUS_LOGISTICO_ABERTO,
   TIPOS_QUE_EXIGEM_FRIO,
   motivoDescarteBloqueado,
   ordenarPorGravidade,
@@ -1214,6 +1217,152 @@ export class GuardianService {
           comoResolver:
             'Use outro material do caso, ou encerre a reserva com justificativa e autorização institucional.',
           evidencias: { identificador: r.identificador, reservadoPara: r.finalidade },
+        });
+      }
+    }
+
+    return ordenarPorGravidade(achados);
+  }
+
+  /**
+   * Varredura da Logistica (M19 secao 111).
+   *
+   * O que o Guardian procura aqui e o material que o sistema perdeu de vista:
+   * coletado e nao entregue, entregue e nao concluido, rota que ficou aberta
+   * depois de todas as paradas fecharem, divergencia sem desfecho, e o pedido
+   * cuja data passou sem ninguem sair para a rua. Nenhum bloqueia - sao
+   * alertas para a central - salvo os que a propria acao ja barra (encerrar
+   * rota com pendencia, concluir com divergencia sem justificativa).
+   */
+  async verificarLogistica(tx: Transacao): Promise<AchadoGuardian[]> {
+    const ctx = exigirContexto();
+    const achados: AchadoGuardian[] = [];
+    const agora = Date.now();
+    const HORAS = 3_600_000;
+
+    const abertas = await tx
+      .select({
+        id: solicitacaoLogistica.id,
+        identificador: solicitacaoLogistica.identificador,
+        status: solicitacaoLogistica.status,
+        tipoServico: solicitacaoLogistica.tipoServico,
+        dataDesejada: solicitacaoLogistica.dataDesejada,
+        retiradaEm: solicitacaoLogistica.retiradaEm,
+        entregueEm: solicitacaoLogistica.entregueEm,
+        chegadaEm: solicitacaoLogistica.chegadaEm,
+        comDivergencia: solicitacaoLogistica.comDivergencia,
+        requisitosEspeciais: solicitacaoLogistica.requisitosEspeciais,
+        conservacao: solicitacaoLogistica.conservacao,
+      })
+      .from(solicitacaoLogistica)
+      .where(
+        and(
+          eq(solicitacaoLogistica.tenantId, ctx.tenantId),
+          sql`${solicitacaoLogistica.status} = any(${sql.raw(
+            `ARRAY[${STATUS_LOGISTICO_ABERTO.map((s) => `'${s}'`).join(',')}]::status_solicitacao_logistica[]`,
+          )})`,
+        ),
+      );
+
+    for (const s of abertas) {
+      // Regra 10 da secao 132: volume coletado e nao entregue gera alerta.
+      if ((s.status === 'coletada' || s.status === 'em_transporte') && s.retiradaEm) {
+        const horas = (agora - s.retiradaEm.getTime()) / HORAS;
+        if (horas >= 6) {
+          achados.push({
+            codigo: 'LOGISTICA_COLETADO_NAO_ENTREGUE',
+            nivel: horas >= 24 ? 'critico' : 'atencao',
+            mensagem: `${s.identificador} foi retirada há ${Math.floor(horas)} h e ainda não chegou ao destino.`,
+            modulo: MODULOS.M19_LOGISTICA,
+            comoResolver: 'Confirme com o encarregado onde está o material e registre a entrega ou a ocorrência.',
+            evidencias: { solicitacaoId: s.id, status: s.status, retiradaEm: s.retiradaEm.toISOString() },
+          });
+        }
+      }
+
+      if (s.status === 'entregue' && s.entregueEm && agora - s.entregueEm.getTime() >= 24 * HORAS) {
+        achados.push({
+          codigo: 'LOGISTICA_ENTREGUE_SEM_CONCLUSAO',
+          nivel: 'informacao',
+          mensagem: `${s.identificador} está entregue há mais de um dia e não foi concluída.`,
+          modulo: MODULOS.M19_LOGISTICA,
+          comoResolver: 'Conclua o serviço para a produção do encarregado ser gerada.',
+          evidencias: { solicitacaoId: s.id },
+        });
+      }
+
+      if (s.comDivergencia) {
+        achados.push({
+          codigo: 'LOGISTICA_DIVERGENCIA_DE_VOLUMES',
+          nivel: 'atencao',
+          mensagem: `${s.identificador} entregou menos volumes do que coletou.`,
+          modulo: MODULOS.M19_LOGISTICA,
+          comoResolver: 'Localize o material ou justifique a diferença ao concluir.',
+          evidencias: { solicitacaoId: s.id },
+        });
+      }
+
+      const antesDaColeta = [
+        'recebida',
+        'aguardando_informacao',
+        'aguardando_triagem',
+        'aguardando_aceite',
+        'aceita',
+        'agendada',
+        'em_deslocamento',
+        'no_local',
+      ].includes(s.status);
+      if (antesDaColeta && s.dataDesejada && s.dataDesejada.getTime() < agora - 24 * HORAS) {
+        achados.push({
+          codigo: 'LOGISTICA_ATRASADA',
+          nivel: 'atencao',
+          mensagem: `${s.identificador} era para ${s.dataDesejada.toLocaleDateString('pt-BR')} e ainda está "${s.status}".`,
+          modulo: MODULOS.M19_LOGISTICA,
+          comoResolver: 'Oferte de novo, atribua direto, ou registre a não realização e reagende.',
+          evidencias: { solicitacaoId: s.id, dataDesejada: s.dataDesejada.toISOString() },
+        });
+      }
+
+      /** Secao 111: "material especial sem requisito de conservacao informado". */
+      const exigeFrio =
+        s.requisitosEspeciais.includes('refrigeracao') || s.requisitosEspeciais.includes('congelamento');
+      if (exigeFrio && (!s.conservacao || s.conservacao === 'sem_requisito' || s.conservacao === 'ambiente')) {
+        achados.push({
+          codigo: 'LOGISTICA_CONSERVACAO_INCOERENTE',
+          nivel: 'atencao',
+          mensagem: `${s.identificador} pede refrigeração ou congelamento, mas a conservação informada é "${s.conservacao ?? 'nenhuma'}".`,
+          modulo: MODULOS.M19_LOGISTICA,
+          comoResolver: 'Corrija a condição de conservação antes de o encarregado sair.',
+          evidencias: { solicitacaoId: s.id },
+        });
+      }
+    }
+
+    // Rota em andamento com todas as paradas fechadas: alguem esqueceu de encerrar.
+    const rotas = await tx
+      .select({
+        id: rotaLogistica.id,
+        data: rotaLogistica.data,
+        pendentes: sql<number>`(
+          select count(*)::int from ${solicitacaoLogistica} s
+          where s.rota_id = rota_logistica.id and s.tenant_id = rota_logistica.tenant_id
+            and s.status = any(${sql.raw(
+              `ARRAY[${STATUS_LOGISTICO_ABERTO.map((x) => `'${x}'`).join(',')}]::status_solicitacao_logistica[]`,
+            )})
+        )`,
+      })
+      .from(rotaLogistica)
+      .where(and(eq(rotaLogistica.tenantId, ctx.tenantId), eq(rotaLogistica.status, 'em_andamento')));
+
+    for (const r of rotas) {
+      if (r.pendentes === 0) {
+        achados.push({
+          codigo: 'LOGISTICA_ROTA_ABERTA_SEM_PENDENCIA',
+          nivel: 'informacao',
+          mensagem: `A rota de ${r.data} não tem parada em aberto e continua em andamento.`,
+          modulo: MODULOS.M19_LOGISTICA,
+          comoResolver: 'Encerre a rota.',
+          evidencias: { rotaId: r.id },
         });
       }
     }

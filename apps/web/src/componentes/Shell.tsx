@@ -35,6 +35,7 @@ import Science from '@mui/icons-material/ScienceOutlined';
 import Contacts from '@mui/icons-material/ContactsOutlined';
 import MedicalServices from '@mui/icons-material/MedicalServicesOutlined';
 import Inventory2 from '@mui/icons-material/Inventory2Outlined';
+import LocalShippingOutlined from '@mui/icons-material/LocalShippingOutlined';
 import Settings from '@mui/icons-material/SettingsOutlined';
 import Group from '@mui/icons-material/GroupOutlined';
 import Password from '@mui/icons-material/PasswordOutlined';
@@ -141,6 +142,14 @@ const MENU = [
     icone: <PaidOutlined fontSize="small" />,
     rotulo: 'Financeiro',
     permissao: 'financeiro:visualizar',
+  },
+  {
+    /* M19: retiradas e entregas. Para o perfil de campo, e a unica tela do
+       sistema alem do proprio painel - e ela vive no celular. */
+    para: '/logistica',
+    icone: <LocalShippingOutlined fontSize="small" />,
+    rotulo: 'Logística',
+    permissao: 'logistica:visualizar',
   },
   {
     /* M15: a fila é física e atravessa casos - quem está na câmara agora. */

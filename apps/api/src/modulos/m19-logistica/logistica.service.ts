@@ -577,6 +577,12 @@ export class LogisticaService {
           encarregado: encarregado.nomeCompleto,
           encarregadoId: solicitacaoLogistica.encarregadoId,
           criadaEm: solicitacaoLogistica.criadoEm,
+          rotaId: solicitacaoLogistica.rotaId,
+          ordemNaRota: solicitacaoLogistica.ordemNaRota,
+          retiradaEm: solicitacaoLogistica.retiradaEm,
+          entregueEm: solicitacaoLogistica.entregueEm,
+          comOcorrencia: solicitacaoLogistica.comOcorrencia,
+          comDivergencia: solicitacaoLogistica.comDivergencia,
           /**
            * A correlacao escreve `solicitacao_logistica.id` por extenso de
            * proposito. Numa subconsulta de tabela unica o Drizzle emite a coluna
@@ -660,6 +666,29 @@ export class LogisticaService {
           aceitaEm: solicitacaoLogistica.aceitaEm,
           motivoCancelamento: solicitacaoLogistica.motivoCancelamento,
           criadaEm: solicitacaoLogistica.criadoEm,
+          // Fatia 2: a execucao, marco a marco (secoes 48 a 82).
+          rotaId: solicitacaoLogistica.rotaId,
+          ordemNaRota: solicitacaoLogistica.ordemNaRota,
+          deslocamentoEm: solicitacaoLogistica.deslocamentoEm,
+          chegadaEm: solicitacaoLogistica.chegadaEm,
+          retiradaEm: solicitacaoLogistica.retiradaEm,
+          transporteEm: solicitacaoLogistica.transporteEm,
+          entregueEm: solicitacaoLogistica.entregueEm,
+          concluidaEm: solicitacaoLogistica.concluidaEm,
+          volumesRecebidos: solicitacaoLogistica.volumesRecebidos,
+          justificativaVolumes: solicitacaoLogistica.justificativaVolumes,
+          volumesEntregues: solicitacaoLogistica.volumesEntregues,
+          condicaoMaterial: solicitacaoLogistica.condicaoMaterial,
+          observacaoRetirada: solicitacaoLogistica.observacaoRetirada,
+          quemEntregou: solicitacaoLogistica.quemEntregou,
+          recebedor: solicitacaoLogistica.recebedor,
+          geoRetirada: solicitacaoLogistica.geoRetirada,
+          geoEntrega: solicitacaoLogistica.geoEntrega,
+          comOcorrencia: solicitacaoLogistica.comOcorrencia,
+          comDivergencia: solicitacaoLogistica.comDivergencia,
+          motivoNaoRealizacao: solicitacaoLogistica.motivoNaoRealizacao,
+          detalheNaoRealizacao: solicitacaoLogistica.detalheNaoRealizacao,
+          reagendamentoDeId: solicitacaoLogistica.reagendamentoDeId,
         })
         .from(solicitacaoLogistica)
         .innerJoin(cliente, eq(cliente.id, solicitacaoLogistica.clienteId))

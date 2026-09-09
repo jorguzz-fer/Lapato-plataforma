@@ -1,6 +1,7 @@
 import { relations } from 'drizzle-orm';
 import {
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -10,15 +11,18 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
+import type { GeoMarco, PessoaNoLocal, Recebedor } from '@lapato/shared';
 import {
   canalOrigemLogisticoEnum,
   colunasTempo,
   colunasTenant,
+  condicaoMaterialLogisticaEnum,
   conservacaoLogisticaEnum,
   motivoNaoRealizacaoEnum,
   prioridadeLogisticaEnum,
   requisitoEspecialLogisticoEnum,
   statusOfertaEnum,
+  statusRotaLogisticaEnum,
   statusSolicitacaoLogisticaEnum,
   tipoOperacaoLogisticaEnum,
   tipoServicoLogisticoEnum,
@@ -141,8 +145,58 @@ export const solicitacaoLogistica = pgTable(
      */
     valorCentavos: integer('valor_centavos'),
 
+    // --- Rota (secoes 37 a 47) -----------------------------------------------
+    /** Parada de uma rota do dia. Fora de rota, o servico continua valido. */
+    rotaId: uuid('rota_id'),
+    ordemNaRota: integer('ordem_na_rota'),
+
+    // --- Marcos da execucao (secoes 48 a 82) ---------------------------------
+    /**
+     * Cada marco grava a hora em coluna propria, alem da linha do tempo, porque
+     * os indicadores da secao 98 sao diferencas entre esses instantes (aceite
+     * -> coleta, coleta -> entrega, espera no cliente). Calcular isso a partir
+     * da timeline exigiria varrer texto; aqui e uma subtracao.
+     */
+    deslocamentoEm: timestamp('deslocamento_em', { withTimezone: true }),
+    chegadaEm: timestamp('chegada_em', { withTimezone: true }),
+    retiradaEm: timestamp('retirada_em', { withTimezone: true }),
+    transporteEm: timestamp('transporte_em', { withTimezone: true }),
+    entregueEm: timestamp('entregue_em', { withTimezone: true }),
+
+    /**
+     * Secoes 54 e 59: o que o encarregado CONFERIU, separado do estimado. A
+     * divergencia e um dado com justificativa, nunca uma correcao silenciosa
+     * do que o cliente informou.
+     */
+    volumesRecebidos: integer('volumes_recebidos'),
+    justificativaVolumes: text('justificativa_volumes'),
+    /** Secao 77-78: o que chegou ao destino. Diferente do recebido e alerta. */
+    volumesEntregues: integer('volumes_entregues'),
+    /** Secao 60: observacao visual da embalagem - nunca avaliacao tecnica. */
+    condicaoMaterial: condicaoMaterialLogisticaEnum('condicao_material').array(),
+    observacaoRetirada: text('observacao_retirada'),
+
+    /** Secao 66: quem entregou o material ao encarregado. */
+    quemEntregou: jsonb('quem_entregou').$type<PessoaNoLocal>(),
+    /** Secao 155: quem recebeu, numa ENTREGA. */
+    recebedor: jsonb('recebedor').$type<Recebedor>(),
+
+    /**
+     * Secao 153: posicao do dispositivo nos marcos criticos, ou o motivo de
+     * nao existir. Um objeto por marco, porque os dois momentos importam
+     * separadamente para a validacao da secao 154.
+     */
+    geoRetirada: jsonb('geo_retirada').$type<GeoMarco>(),
+    geoEntrega: jsonb('geo_entrega').$type<GeoMarco>(),
+
+    /** Secoes 73-74: houve ocorrencia em algum momento. O detalhe esta na timeline. */
+    comOcorrencia: boolean('com_ocorrencia').notNull().default(false),
+    /** Secao 78: entregou menos do que coletou. Sinalizado antes do encerramento. */
+    comDivergencia: boolean('com_divergencia').notNull().default(false),
+
     // --- Desfecho (secoes 82 a 86) -------------------------------------------
     concluidaEm: timestamp('concluida_em', { withTimezone: true }),
+    concluidaPorId: uuid('concluida_por_id').references(() => usuario.id),
     /** Secao 83: em NAO REALIZADA o motivo e obrigatorio - regra da aplicacao. */
     motivoNaoRealizacao: motivoNaoRealizacaoEnum('motivo_nao_realizacao'),
     detalheNaoRealizacao: text('detalhe_nao_realizacao'),
@@ -166,8 +220,49 @@ export const solicitacaoLogistica = pgTable(
     index('idx_logistica_cliente').on(t.tenantId, t.clienteId),
     index('idx_logistica_encarregado').on(t.tenantId, t.encarregadoId),
     index('idx_logistica_data').on(t.tenantId, t.dataDesejada),
+    index('idx_logistica_rota').on(t.tenantId, t.rotaId),
   ],
 );
+
+/**
+ * A rota do dia (secoes 37 a 47).
+ *
+ * Agrupa paradas de UM encarregado numa data. A parada e a propria
+ * solicitacao (`rota_id` + `ordem_na_rota`), e nao uma tabela de juncao: uma
+ * solicitacao esta em no maximo uma rota, e a ordem e atributo dela naquela
+ * rota. Incluir numa rota e atribuir - secao 44: a inclusao registra o momento.
+ *
+ * O veiculo e texto livre (secao 36): a secao 35 diz que o cadastro de
+ * veiculos "podera" existir, e um laboratorio com um carro nao precisa de
+ * tabela para dizer qual carro.
+ */
+export const rotaLogistica = pgTable(
+  'rota_logistica',
+  {
+    ...colunasTenant,
+    encarregadoId: uuid('encarregado_id')
+      .notNull()
+      .references(() => usuario.id),
+    data: date('data').notNull(),
+    veiculo: text('veiculo'),
+    status: statusRotaLogisticaEnum('status').notNull().default('planejada'),
+    /** Secao 47: iniciar registra data e horario. */
+    iniciadaEm: timestamp('iniciada_em', { withTimezone: true }),
+    encerradaEm: timestamp('encerrada_em', { withTimezone: true }),
+    observacoes: text('observacoes'),
+    criadaPorId: uuid('criada_por_id').references(() => usuario.id),
+    ...colunasTempo,
+  },
+  (t) => [
+    index('idx_rota_logistica_dia').on(t.tenantId, t.data, t.encarregadoId),
+    index('idx_rota_logistica_status').on(t.tenantId, t.status),
+  ],
+);
+
+export const rotaLogisticaRelations = relations(rotaLogistica, ({ one, many }) => ({
+  encarregado: one(usuario, { fields: [rotaLogistica.encarregadoId], references: [usuario.id] }),
+  paradas: many(solicitacaoLogistica),
+}));
 
 /**
  * A oferta enviada a UM encarregado (secoes 140 a 147).
@@ -264,6 +359,10 @@ export const solicitacaoLogisticaRelations = relations(
     encarregado: one(usuario, {
       fields: [solicitacaoLogistica.encarregadoId],
       references: [usuario.id],
+    }),
+    rota: one(rotaLogistica, {
+      fields: [solicitacaoLogistica.rotaId],
+      references: [rotaLogistica.id],
     }),
     ofertas: many(ofertaServico),
     movimentacoes: many(movimentacaoLogistica),

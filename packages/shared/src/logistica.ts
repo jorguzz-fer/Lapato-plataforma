@@ -320,3 +320,263 @@ export const MOTIVO_NAO_REALIZACAO_LABEL: Record<MotivoNaoRealizacao, string> = 
 
 /** Secao 146: prazo padrao da oferta, quando a instituicao nao configurar outro. */
 export const MINUTOS_VALIDADE_OFERTA = 30;
+
+// --- Fatia 2: execucao, evidencias, rota e producao ------------------------
+
+/**
+ * Secao 52: por que o encarregado nao conseguiu entregar ou receber no local.
+ *
+ * Registrar a tentativa e o que separa "o cliente nao estava" de "o
+ * encarregado nao foi" - sem isso, os dois viram a mesma coleta nao realizada.
+ */
+export const MOTIVO_CONTATO_SEM_SUCESSO = [
+  'ninguem_no_local',
+  'cliente_fechado',
+  'contato_nao_atende',
+  'material_nao_preparado',
+  'endereco_nao_localizado',
+  'outro',
+] as const;
+export type MotivoContatoSemSucesso = (typeof MOTIVO_CONTATO_SEM_SUCESSO)[number];
+
+export const MOTIVO_CONTATO_SEM_SUCESSO_LABEL: Record<MotivoContatoSemSucesso, string> = {
+  ninguem_no_local: 'Ninguém no local',
+  cliente_fechado: 'Cliente fechado',
+  contato_nao_atende: 'Contato não atende',
+  material_nao_preparado: 'Material não preparado',
+  endereco_nao_localizado: 'Endereço não localizado',
+  outro: 'Outro',
+};
+
+/**
+ * Secao 60: o que o encarregado VE na embalagem, sem avaliar o material.
+ *
+ * A secao 62 e categorica: adequacao diagnostica, qualidade histologica e
+ * aceite tecnico sao do M05. Aqui cabe "frasco quebrado", nao "amostra
+ * inadequada".
+ */
+export const CONDICAO_MATERIAL_LOGISTICA = [
+  'frasco_quebrado',
+  'vazamento',
+  'embalagem_inadequada',
+  'sem_identificacao',
+  'sem_refrigeracao',
+  'outra',
+] as const;
+export type CondicaoMaterialLogistica = (typeof CONDICAO_MATERIAL_LOGISTICA)[number];
+
+export const CONDICAO_MATERIAL_LOGISTICA_LABEL: Record<CondicaoMaterialLogistica, string> = {
+  frasco_quebrado: 'Frasco quebrado',
+  vazamento: 'Vazamento aparente',
+  embalagem_inadequada: 'Embalagem inadequada',
+  sem_identificacao: 'Identificação ausente',
+  sem_refrigeracao: 'Sem refrigeração quando esperada',
+  outra: 'Outra observação',
+};
+
+/** Secao 73: o que pode acontecer no caminho. */
+export const TIPO_OCORRENCIA_LOGISTICA = [
+  'acidente',
+  'atraso',
+  'falha_veiculo',
+  'vazamento',
+  'quebra_recipiente',
+  'perda_refrigeracao',
+  'extravio',
+  'interdicao_via',
+  'outra',
+] as const;
+export type TipoOcorrenciaLogistica = (typeof TIPO_OCORRENCIA_LOGISTICA)[number];
+
+export const TIPO_OCORRENCIA_LOGISTICA_LABEL: Record<TipoOcorrenciaLogistica, string> = {
+  acidente: 'Acidente',
+  atraso: 'Atraso significativo',
+  falha_veiculo: 'Falha do veículo',
+  vazamento: 'Vazamento',
+  quebra_recipiente: 'Quebra de recipiente',
+  perda_refrigeracao: 'Perda de refrigeração',
+  extravio: 'Extravio',
+  interdicao_via: 'Interdição de via',
+  outra: 'Outra ocorrência',
+};
+
+/**
+ * Secao 74: as criticas notificam a central na hora e vao para a Qualidade
+ * (M22). O que decide se e critica e o risco para o material ou para a
+ * pessoa, nao o transtorno para a rota.
+ */
+export const OCORRENCIA_LOGISTICA_CRITICA: TipoOcorrenciaLogistica[] = [
+  'acidente',
+  'vazamento',
+  'quebra_recipiente',
+  'perda_refrigeracao',
+  'extravio',
+];
+
+/**
+ * Secao 151: marcos que exigem fotografia.
+ *
+ * `ocorrencia` entra porque a secao 61 pede foto documental da embalagem ou
+ * do evento; nao e obrigatoria, mas precisa ficar ligada ao momento certo.
+ */
+export const MARCO_EVIDENCIA_LOGISTICA = ['retirada', 'entrega', 'ocorrencia'] as const;
+export type MarcoEvidenciaLogistica = (typeof MARCO_EVIDENCIA_LOGISTICA)[number];
+
+export const MARCO_EVIDENCIA_LOGISTICA_LABEL: Record<MarcoEvidenciaLogistica, string> = {
+  retirada: 'Material retirado',
+  entrega: 'Material entregue',
+  ocorrencia: 'Ocorrência',
+};
+
+/** Secao 151: "no minimo 1 fotografia e permitidas ate 4 por marco". */
+export const FOTOS_MINIMAS_POR_MARCO = 1;
+export const FOTOS_MAXIMAS_POR_MARCO = 4;
+
+/**
+ * Secao 153: quando nao ha coordenada, o motivo fica registrado "sem inventar
+ * coordenadas". A ausencia e um dado, nao um campo vazio.
+ */
+export const MOTIVO_GEO_AUSENTE = ['sem_permissao', 'indisponivel', 'sem_sinal'] as const;
+export type MotivoGeoAusente = (typeof MOTIVO_GEO_AUSENTE)[number];
+
+export const MOTIVO_GEO_AUSENTE_LABEL: Record<MotivoGeoAusente, string> = {
+  sem_permissao: 'Permissão de localização negada',
+  indisponivel: 'Dispositivo sem localização',
+  sem_sinal: 'Sem sinal no momento',
+};
+
+/** O que fica gravado num marco critico (secao 153). */
+export interface GeoMarco {
+  latitude: number | null;
+  longitude: number | null;
+  precisaoMetros?: number | null;
+  ausente?: MotivoGeoAusente | null;
+  registradoEm: string;
+}
+
+/** Secao 66: quem entregou o material ao encarregado, no cliente. */
+export interface PessoaNoLocal {
+  nome: string;
+  funcao?: string | null;
+}
+
+/** Secao 155: quem recebeu o material numa ENTREGA. */
+export interface Recebedor {
+  nome: string;
+  documento?: string | null;
+  observacao?: string | null;
+}
+
+/** Secoes 37 a 47: a rota do dia de um encarregado. */
+export const STATUS_ROTA_LOGISTICA = ['planejada', 'em_andamento', 'encerrada'] as const;
+export type StatusRotaLogistica = (typeof STATUS_ROTA_LOGISTICA)[number];
+
+export const STATUS_ROTA_LOGISTICA_LABEL: Record<StatusRotaLogistica, string> = {
+  planejada: 'Planejada',
+  em_andamento: 'Em andamento',
+  encerrada: 'Encerrada',
+};
+
+/**
+ * Secao 160: situacao financeira do servico, fornecida pelo M20 e apenas
+ * EXIBIDA pela logistica.
+ */
+export const SITUACAO_PRODUCAO_LOGISTICA = [
+  'nao_lancado',
+  'lancado',
+  'incluido_em_fechamento',
+  'pago',
+  'cancelado',
+] as const;
+export type SituacaoProducaoLogistica = (typeof SITUACAO_PRODUCAO_LOGISTICA)[number];
+
+export const SITUACAO_PRODUCAO_LOGISTICA_LABEL: Record<SituacaoProducaoLogistica, string> = {
+  nao_lancado: 'Não lançado',
+  lancado: 'Lançado',
+  incluido_em_fechamento: 'Incluído em fechamento',
+  pago: 'Pago',
+  cancelado: 'Cancelado',
+};
+
+/**
+ * Secao 150: os botoes do encarregado, na ordem, por tipo de servico.
+ *
+ * O status interno e o mesmo nos dois sentidos (`coletada` e "o material esta
+ * com o encarregado"); o que muda e o ROTULO, porque "material retirado no
+ * laboratorio" e "material retirado no cliente" sao gestos diferentes para
+ * quem esta com o celular na mao.
+ */
+export interface MarcoOperacional {
+  /** Status que o marco produz. */
+  status: Extract<
+    StatusSolicitacaoLogistica,
+    'em_deslocamento' | 'no_local' | 'coletada' | 'em_transporte' | 'entregue' | 'concluida'
+  >;
+  rotulo: string;
+  /** Marco que abre a camera e pede geolocalizacao (secoes 151 e 153). */
+  exigeEvidencia: boolean;
+}
+
+export function marcosDoServico(tipo: TipoServicoLogistico): MarcoOperacional[] {
+  if (tipo === 'entrega') {
+    return [
+      { status: 'em_deslocamento', rotulo: 'Em deslocamento', exigeEvidencia: false },
+      { status: 'coletada', rotulo: 'Material retirado no laboratório', exigeEvidencia: true },
+      { status: 'em_transporte', rotulo: 'Em transporte', exigeEvidencia: false },
+      { status: 'entregue', rotulo: 'Material entregue', exigeEvidencia: true },
+      { status: 'concluida', rotulo: 'Serviço concluído', exigeEvidencia: false },
+    ];
+  }
+  return [
+    { status: 'em_deslocamento', rotulo: 'Em deslocamento', exigeEvidencia: false },
+    { status: 'no_local', rotulo: 'Cheguei ao local', exigeEvidencia: false },
+    { status: 'coletada', rotulo: 'Material retirado', exigeEvidencia: true },
+    { status: 'em_transporte', rotulo: 'Em transporte', exigeEvidencia: false },
+    { status: 'entregue', rotulo: 'Entregue ao laboratório', exigeEvidencia: true },
+    { status: 'concluida', rotulo: 'Serviço concluído', exigeEvidencia: false },
+  ];
+}
+
+/**
+ * De onde cada marco pode ser acionado.
+ *
+ * A chegada (`no_local`) e opcional na retirada - a secao 50 diz "podera" - e
+ * nao existe na entrega, cuja origem e o proprio laboratorio. Pular a chegada
+ * nao bloqueia, mas vira achado do Guardian (secao 111: "coleta marcada como
+ * concluida sem chegada registrada").
+ */
+export const ORIGENS_DO_MARCO: Record<MarcoOperacional['status'], StatusSolicitacaoLogistica[]> = {
+  em_deslocamento: ['aceita', 'agendada'],
+  no_local: ['em_deslocamento', 'aceita', 'agendada'],
+  coletada: ['no_local', 'em_deslocamento', 'aceita', 'agendada'],
+  em_transporte: ['coletada'],
+  entregue: ['em_transporte', 'coletada'],
+  concluida: ['entregue'],
+};
+
+/**
+ * Secao 154: distancia entre a posicao registrada e o endereco previsto que
+ * vira alerta. Nao bloqueia - "situacoes legitimas" existem, e quem decide e
+ * a central.
+ */
+export const DISTANCIA_ALERTA_GEO_METROS = 500;
+
+/**
+ * Distancia aproximada entre duas coordenadas, em metros (haversine).
+ *
+ * Fica no shared porque a tela do encarregado mostra o mesmo aviso que o
+ * servidor grava, e dois calculos diferentes dariam dois avisos diferentes.
+ */
+export function distanciaMetros(
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number },
+): number {
+  const R = 6_371_000;
+  const rad = (g: number) => (g * Math.PI) / 180;
+  const dLat = rad(b.latitude - a.latitude);
+  const dLon = rad(b.longitude - a.longitude);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}

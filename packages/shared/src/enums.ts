@@ -271,6 +271,12 @@ export const TIPO_IMAGEM = [
   'documento',
   'whole_slide',
   'requisicao',
+  /**
+   * M19 secoes 151-152: foto do marco de retirada ou entrega. Tipo proprio
+   * porque ela prova um ato logistico, nao documenta um caso - muitas vezes
+   * o caso nem existe ainda quando ela e tirada.
+   */
+  'evidencia_logistica',
 ] as const;
 export type TipoImagem = (typeof TIPO_IMAGEM)[number];
 

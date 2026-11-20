@@ -164,6 +164,13 @@ async function semear(tx: Transacao, tenantId: string): Promise<void> {
       tipo: 'clinica',
       codigo: 'CV',
       status: 'ativo',
+      /**
+       * E-mail e telefone passaram a ser exigidos no cadastro de cliente
+       * (documento do Hugo), e o envio do laudo (quarta revisao) tira os
+       * destinatarios dai: sem eles, a demonstracao nao tem para quem mandar.
+       */
+      email: 'contato@clinicacentral.local',
+      telefone: '(85) 3333-4444',
     })
     .returning();
 

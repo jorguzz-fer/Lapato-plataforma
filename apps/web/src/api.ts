@@ -598,6 +598,15 @@ export interface ExameDetalhePortal extends Omit<ExamePortal, 'laudoDisponivel'>
   } | null;
 }
 
+export interface DestinatarioLaudo {
+  /** cliente | veterinario | contato */
+  tipo: string;
+  nome: string;
+  email: string;
+  /** Já vem marcado: o principal do cliente e o do veterinário solicitante. */
+  padrao: boolean;
+}
+
 export interface SolicitacaoPortal {
   id: string;
   identificador: string;

@@ -6917,3 +6917,132 @@ describe('quarta revisão (Hugo): a cor do mapa de exames vem do serviço', () =
     expect(agora.alertaPrazo).toBe('normal');
   });
 });
+
+describe('quarta revisão (Hugo): assinar, enviar escolhendo os e-mails, reenviar', () => {
+  /**
+   * "Pra enviar precisa tá assinado — eu não consigo enviar sem que esteja
+   * assinado." E, do arquivo: "eu posso reenviar esse laudo se eu quiser, só
+   * clicar aqui e enviar por e-mail". No LAPATO vale a regra dele mais uma: a
+   * liberação é o ato que entrega o documento, então enviar por fora dela
+   * seria entregar sem registrar a entrega.
+   */
+  let casoId: string;
+  let versaoId: string;
+  let amostraId: string;
+
+  test('o laudo não assinado não vai para lugar nenhum', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const central = clientes.body.find((c: { codigo: string }) => c.codigo === 'CV');
+    const vets = await req('GET', `/catalogo/veterinarios?clienteId=${central.id}`);
+    const caso = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'CITO').id,
+      clienteId: central.id,
+      // O solicitante entra no caso: é um dos e-mails que o envio oferece.
+      ...(vets.body[0] ? { veterinarioId: vets.body[0].id } : {}),
+      paciente: { nome: `Envio ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Esfregaço' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(caso.status, JSON.stringify(caso.body)).toBe(201);
+    casoId = caso.body.id;
+
+    // Citologia: a lâmina chega pronta, mas o material tem de ser recebido
+    // antes da microscopia (M05 seção 12).
+    const dossie = await req('GET', `/casos/${casoId}`);
+    amostraId = dossie.body.amostras[0].id;
+    const recebimento = await req('POST', `/casos/${casoId}/recebimento`, {
+      conferencia: [{ recipienteId: dossie.body.recipientes[0].id, quantidadeRecebida: 1 }],
+    });
+    expect(recebimento.status, JSON.stringify(recebimento.body)).toBe(201);
+
+    await entrar('patologista@lapato.local');
+    const aberto = await req('POST', `/laudos/casos/${casoId}`);
+    expect(aberto.status, JSON.stringify(aberto.body)).toBe(201);
+    versaoId = aberto.body.versaoId;
+
+    const semAssinatura = await req('POST', `/laudos/versoes/${versaoId}/envio`, {
+      destinatarios: ['contato@clinicacentral.local'],
+    });
+    expect(semAssinatura.status).toBe(400);
+  });
+
+  test('assinado e liberado, o envio registra quem mandou e para quem', async () => {
+    await entrar('patologista@lapato.local');
+    const salvo = await req('POST', `/laudos/versoes/${versaoId}`, {
+      descricaoMicroscopica: 'Celularidade preservada.',
+      conclusao: 'Sem evidência de malignidade.',
+      // O Guardian exige diagnóstico antes da assinatura (M11).
+      diagnosticos: [
+        {
+          amostraId,
+          textoExibido: 'Processo inflamatório crônico',
+          entidade: 'Inflamação crônica',
+          comportamento: 'benigno',
+        },
+      ],
+    });
+    expect(salvo.status, JSON.stringify(salvo.body)).toBe(201);
+    const assinada = await req('POST', `/laudos/versoes/${versaoId}/assinatura`);
+    expect(assinada.status, JSON.stringify(assinada.body)).toBe(201);
+
+    // Assinado mas não liberado: ainda é documento interno.
+    const antesDaLiberacao = await req('POST', `/laudos/versoes/${versaoId}/envio`, {
+      destinatarios: ['contato@clinicacentral.local'],
+    });
+    expect(antesDaLiberacao.status).toBe(400);
+
+    expect((await req('POST', `/laudos/versoes/${versaoId}/liberacao`)).status).toBe(201);
+
+    const opcoes = await req('GET', `/laudos/versoes/${versaoId}/destinatarios`);
+    expect(opcoes.status, JSON.stringify(opcoes.body)).toBe(200);
+    expect(opcoes.body.length).toBeGreaterThan(0);
+    // O principal do cliente já vem marcado.
+    expect(opcoes.body.some((d: { padrao: boolean }) => d.padrao)).toBe(true);
+
+    // Endereço fora do cadastro não é aceito: laudo é dado sensível.
+    const forasteiro = await req('POST', `/laudos/versoes/${versaoId}/envio`, {
+      destinatarios: ['qualquer@exemplo.com'],
+    });
+    expect(forasteiro.status).toBe(400);
+
+    const primeiro = await req('POST', `/laudos/versoes/${versaoId}/envio`, {
+      destinatarios: [opcoes.body[0].email],
+    });
+    expect(primeiro.status, JSON.stringify(primeiro.body)).toBe(201);
+    expect(primeiro.body).toMatchObject({ reenvio: false, total: 1 });
+
+    const segundo = await req('POST', `/laudos/versoes/${versaoId}/envio`, {
+      destinatarios: [opcoes.body[0].email],
+      observacao: 'Cliente perdeu o e-mail.',
+    });
+    expect(segundo.body.reenvio).toBe(true);
+
+    // O arquivo mostra as duas datas e aceita o recorte por situação.
+    const arquivo = await req('GET', '/laudos/busca?situacao=enviados');
+    const meu = arquivo.body.find((l: { casoId: string }) => l.casoId === casoId);
+    expect(meu, 'o laudo enviado precisa aparecer no recorte').toBeTruthy();
+    expect(meu.assinadaEm).toBeTruthy();
+    expect(meu.assinadaPor).toBeTruthy();
+    expect(meu.enviadoEm).toBeTruthy();
+    expect(meu.envios).toBe(2);
+
+    const naoEnviados = await req('GET', '/laudos/busca?situacao=nao_enviados');
+    expect(naoEnviados.body.map((l: { casoId: string }) => l.casoId)).not.toContain(casoId);
+
+    // E a linha do tempo do caso registra o envio.
+    const dossie = await req('GET', `/casos/${casoId}`);
+    expect(
+      dossie.body.linhaDoTempo.filter((e: { tipo: string }) => e.tipo === 'laudo.enviado').length,
+    ).toBe(2);
+  });
+
+  test('quem não libera laudo não envia', async () => {
+    await entrar('residente@lapato.local');
+    const recusado = await req('POST', `/laudos/versoes/${versaoId}/envio`, {
+      destinatarios: ['contato@clinicacentral.local'],
+    });
+    expect([403, 404]).toContain(recusado.status);
+  });
+});

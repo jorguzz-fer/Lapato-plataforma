@@ -52,6 +52,7 @@ import {
   type AvaliacaoEditavel,
 } from './laudo/PainelCitologia';
 import { GaleriaDoCaso } from './imagens/GaleriaDoCaso';
+import { DialogoEnvio } from './laudo/DialogoEnvio';
 
 /**
  * M11 + M13 - Microscopia e laudo. Parte 1: elaboracao.
@@ -188,6 +189,8 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
   const podeRevisar = permissoes.includes('laudo:revisar');
   const podeAssinar = permissoes.includes('laudo:assinar') && !exigeSupervisao;
   const podeLiberar = permissoes.includes('laudo:liberar');
+  /** Quarta revisão: assinar e liberar não entregam — enviar é um terceiro ato. */
+  const [dialogoEnvio, setDialogoEnvio] = useState(false);
   const podeVerPdf = permissoes.includes('laudo:visualizar');
 
   const carregar = useCallback((dados: LaudoDoCaso | null) => {
@@ -1274,8 +1277,24 @@ export function Laudo({ permissoes, exigeSupervisao }: Props) {
                 {ocupado ? 'Processando…' : 'Liberar laudo'}
               </Button>
             )}
+
+            {/*
+              Quarta revisão com o Hugo: depois de assinar e liberar, ele
+              escolhe os e-mails e manda — "aparece uma caixinha com os e-mails
+              do cliente... eu coloco nos e-mails que eu quiser". O reenvio
+              mora no arquivo de laudos.
+            */}
+            {laudo.status === 'liberado' && podeLiberar && versao && (
+              <Button variant="outlined" onClick={() => setDialogoEnvio(true)} disabled={ocupado}>
+                Enviar laudo
+              </Button>
+            )}
           </Stack>
         </>
+      )}
+
+      {dialogoEnvio && versao && (
+        <DialogoEnvio versaoId={versao.id} aoFechar={() => setDialogoEnvio(false)} />
       )}
 
       <Dialog

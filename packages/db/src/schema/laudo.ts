@@ -300,3 +300,53 @@ export const diagnosticoRelations = relations(diagnostico, ({ one }) => ({
   }),
   amostra: one(amostra, { fields: [diagnostico.amostraId], references: [amostra.id] }),
 }));
+
+/**
+ * Envio do laudo ao solicitante (quarta revisao com o Hugo).
+ *
+ * No software que ele ja opera, assinar e enviar sao dois atos: "pra enviar
+ * precisa tá assinado - eu nao consigo enviar sem que esteja assinado"; e
+ * depois, do arquivo, ele reenvia quando o cliente perde o e-mail. Sem este
+ * registro, "foi enviado?" so se responde olhando a caixa de saida de alguem.
+ *
+ * O que fica gravado e a DECISAO de enviar e para quem: a entrega em si e do
+ * M26, que le a fila `notificacao_pendente` e sabe falhar e repetir. Por isso
+ * aqui nao existe status de entrega - existe "quem mandou, quando e para
+ * quais enderecos", congelados.
+ */
+export const envioLaudo = pgTable(
+  'envio_laudo',
+  {
+    ...colunasTenant,
+    laudoId: uuid('laudo_id')
+      .notNull()
+      .references(() => laudo.id, { onDelete: 'cascade' }),
+    versaoId: uuid('versao_id')
+      .notNull()
+      .references(() => laudoVersao.id, { onDelete: 'cascade' }),
+    casoId: uuid('caso_id')
+      .notNull()
+      .references(() => caso.id, { onDelete: 'cascade' }),
+    /** email | whatsapp - hoje so email; o canal real e configurado no M26. */
+    canal: text('canal').notNull().default('email'),
+    /**
+     * Enderecos escolhidos na hora, congelados. O e-mail do cliente pode mudar
+     * amanha; o que importa e para onde ESTE laudo foi.
+     */
+    destinatarios: jsonb('destinatarios').$type<string[]>().notNull().default([]),
+    /** Segundo envio em diante: o cliente perdeu o e-mail, nao e erro. */
+    reenvio: boolean('reenvio').notNull().default(false),
+    observacao: text('observacao'),
+    enviadoPorId: uuid('enviado_por_id').references(() => usuario.id),
+    enviadoEm: timestamp('enviado_em', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('idx_envio_laudo_laudo').on(t.tenantId, t.laudoId),
+    index('idx_envio_laudo_caso').on(t.tenantId, t.casoId),
+  ],
+);
+
+export const envioLaudoRelations = relations(envioLaudo, ({ one }) => ({
+  laudo: one(laudo, { fields: [envioLaudo.laudoId], references: [laudo.id] }),
+  versao: one(laudoVersao, { fields: [envioLaudo.versaoId], references: [laudoVersao.id] }),
+}));

@@ -354,7 +354,7 @@ function App() {
         path="/laudos"
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Laudos">
-            <ArquivoDeLaudos />
+            <ArquivoDeLaudos permissoes={sessao.permissoes} />
           </Shell>
         }
       />

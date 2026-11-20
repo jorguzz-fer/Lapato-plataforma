@@ -819,10 +819,60 @@ export class LaudosController {
   @ExigePermissao(PERMISSOES.LAUDO_VISUALIZAR)
   @ApiOperation({
     summary: 'Arquivo de laudos: busca por paciente, cliente, responsável, palavra-chave, lâmina ou OS',
-    description: 'Um termo, procurado na versão corrente de cada laudo e nas referências do caso.',
+    description:
+      'Um termo, procurado na versão corrente de cada laudo e nas referências do caso. ' +
+      'Quarta revisão: recorte por data de liberação e por situação — assinado ou não, ' +
+      'enviado ou não. Com recorte, o termo deixa de ser obrigatório.',
   })
-  async buscar(@Query('q') q?: string) {
-    return this.laudos.buscar(q ?? '');
+  async buscar(
+    @Query('q') q?: string,
+    @Query('situacao') situacao?: string,
+    @Query('de') de?: string,
+    @Query('ate') ate?: string,
+  ) {
+    const valida = ['enviados', 'nao_enviados', 'assinados', 'nao_assinados'].includes(
+      situacao ?? '',
+    );
+    return this.laudos.buscar({
+      q,
+      situacao: valida
+        ? (situacao as 'enviados' | 'nao_enviados' | 'assinados' | 'nao_assinados')
+        : 'todos',
+      de: de ? new Date(de) : undefined,
+      ate: ate ? new Date(ate) : undefined,
+    });
+  }
+
+  @Get('versoes/:versaoId/destinatarios')
+  @ExigePermissao(PERMISSOES.LAUDO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Para quem este laudo pode ir',
+    description:
+      'E-mails do cadastro (M03): o do cliente e o do veterinário solicitante já vêm marcados; ' +
+      'os contatos do cliente entram como opção. Endereço não cadastrado não é aceito no envio.',
+  })
+  async destinatarios(@Param('versaoId', ParseUUIDPipe) versaoId: string) {
+    return this.laudos.destinatarios(versaoId);
+  }
+
+  @Post('versoes/:versaoId/envio')
+  @ExigePermissao(PERMISSOES.LAUDO_LIBERAR)
+  @ApiOperation({
+    summary: 'Envia ou reenvia o laudo ao solicitante',
+    description:
+      'Quarta revisão: "não consigo enviar sem que esteja assinado" — e, no LAPATO, sem estar ' +
+      'liberado, porque a liberação é o ato que entrega o documento. Registra quem mandou, ' +
+      'quando e para quais endereços, e enfileira a entrega no M26.',
+  })
+  async enviar(@Param('versaoId', ParseUUIDPipe) versaoId: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        destinatarios: z.array(z.string().email()).min(1, 'Escolha ao menos um destinatário.'),
+        observacao: z.string().max(500).optional(),
+      }),
+      corpo,
+    );
+    return this.laudos.enviar(versaoId, dados.destinatarios, dados.observacao);
   }
 
   @Get('casos/:casoId')

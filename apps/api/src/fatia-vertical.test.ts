@@ -6675,3 +6675,79 @@ describe('quarta revisão (Hugo): cada tipo de solicitação com seu fluxo', () 
     expect(recusada.status).toBe(400);
   });
 });
+
+describe('quarta revisão (Hugo): a tela de chegada abre nas minhas pendências', () => {
+  /**
+   * "Sempre que cada um de nós entrar no sistema, a primeira coisa que aparece
+   * são as nossas pendências e prioridades." Duas listas: o que esperam de mim
+   * e o que eu pedi e ainda não voltou.
+   */
+  let casoId: string;
+  let tipoId: string;
+
+  test('quem pede vê em "pedi"; quem recebe vê em "para mim"', async () => {
+    await entrar('admin@lapato.local');
+    const tipo = await req('POST', '/administracao/tipos-solicitacao', {
+      chave: `painel_teste_${Date.now().toString().slice(-6)}`,
+      nome: 'Coloração especial (painel)',
+      etapas: [{ rotulo: 'Recebida' }, { rotulo: 'Lâmina enviada' }],
+    });
+    expect(tipo.status, JSON.stringify(tipo.body)).toBe(201);
+    tipoId = tipo.body.id;
+
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const caso = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Painel ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Nódulo' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    casoId = caso.body.id;
+
+    await entrar('patologista@lapato.local');
+    const equipe = await req('GET', '/usuarios/equipe');
+    // O técnico do seed de demonstração; a lista traz nome e setor.
+    const tecnico = equipe.body.find((m: { nome: string }) => m.nome === 'João Pedro Almeida');
+    expect(tecnico, JSON.stringify(equipe.body)).toBeTruthy();
+
+    const pedido = await req('POST', '/solicitacoes', {
+      casoId,
+      tipoId,
+      tipo: 'coloracao_especial',
+      descricao: 'PAS no bloco A1',
+      responsavelId: tecnico.id,
+    });
+    expect(pedido.status, JSON.stringify(pedido.body)).toBe(201);
+
+    // Quem pediu: aparece em "pedi", com o estágio para não precisar abrir.
+    const doPatologista = await req('GET', '/painel');
+    expect(doPatologista.status).toBe(200);
+    const meu = doPatologista.body.minhasDemandas.pedi.find(
+      (d: { id: string }) => d.id === pedido.body.id,
+    );
+    expect(meu, JSON.stringify(doPatologista.body.minhasDemandas)).toBeTruthy();
+    expect(meu.totalEtapas).toBe(2);
+    expect(meu.etapaAtual).toBe(0);
+    expect(meu.caso).toBeTruthy();
+
+    // Quem recebeu: aparece em "para mim", pelo destino nominal.
+    await entrar('tecnico@lapato.local');
+    const doTecnico = await req('GET', '/painel');
+    const paraMim = doTecnico.body.minhasDemandas.paraMim.find(
+      (d: { id: string }) => d.id === pedido.body.id,
+    );
+    expect(paraMim, JSON.stringify(doTecnico.body.minhasDemandas)).toBeTruthy();
+    expect(paraMim.solicitante).toBeTruthy();
+
+    // Concluída sai das duas listas: pendência resolvida não é pendência.
+    await req('POST', `/solicitacoes/${pedido.body.id}/etapa`);
+    await req('POST', `/solicitacoes/${pedido.body.id}/etapa`);
+    const depois = await req('GET', '/painel');
+    expect(
+      depois.body.minhasDemandas.paraMim.map((d: { id: string }) => d.id),
+    ).not.toContain(pedido.body.id);
+  });
+});

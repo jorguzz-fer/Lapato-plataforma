@@ -35,6 +35,34 @@ export interface ItemDeAtencao {
   nivel: 'critico' | 'atencao' | 'informacao';
 }
 
+/**
+ * Uma demanda minha, como ela aparece na tela de chegada.
+ *
+ * Quarta revisao com o Hugo: a lista diz o que e, de que caso, desde quando,
+ * em que estagio e com quem esta - as mesmas colunas que ele desenhou no
+ * PowerPoint que levou para a reuniao.
+ */
+export interface DemandaMinha {
+  id: string;
+  identificador: string;
+  tipo: string;
+  nomeTipo: string | null;
+  descricao: string;
+  prioridade: string;
+  status: string;
+  etapaAtual: number;
+  totalEtapas: number;
+  ultimaEtapa: string | null;
+  setorResponsavel: string | null;
+  prazoEm: string | null;
+  criadaEm: string;
+  casoId: string | null;
+  caso: string | null;
+  paciente: string | null;
+  solicitante: string | null;
+  responsavel: string | null;
+}
+
 export interface Painel {
   geradoEm: string;
   fuso: string;
@@ -47,6 +75,12 @@ export interface Painel {
     diasDaMedia: number;
   };
   atencao: ItemDeAtencao[];
+  /**
+   * As minhas pendencias, nominais. A faixa de atencao da o TAMANHO do dia
+   * ("12 casos fora do prazo"); isto diz o que e meu agora, com nome e
+   * registro - a diferenca que a quarta revisao pediu.
+   */
+  minhasDemandas: { paraMim: DemandaMinha[]; pedi: DemandaMinha[] };
   funil: { etapa: Etapa; rotulo: string; total: number }[];
   serie: { dia: string; entradas: number; liberacoes: number }[];
 }
@@ -259,7 +293,15 @@ export class PainelService {
       });
     }
 
+    /**
+     * Quarta revisao: "sempre que cada um de nos entrar no sistema, a primeira
+     * coisa que aparece sao as nossas pendencias e prioridades". Quem nao ve
+     * solicitacao recebe as listas vazias e a tela nem desenha os cartoes.
+     */
+    let minhasDemandas: Painel['minhasDemandas'] = { paraMim: [], pedi: [] };
+
     if (pode(PERMISSOES.SOLICITACAO_VISUALIZAR)) {
+      minhasDemandas = (await this.solicitacoes.minhasDemandas()) as Painel['minhasDemandas'];
       const m10 = await this.solicitacoes.resumoPainel();
       this.acrescentar(atencao, {
         chave: 'pendencias_bloqueantes',
@@ -349,6 +391,7 @@ export class PainelService {
         diasDaMedia: DIAS_DA_MEDIA,
       },
       atencao,
+      minhasDemandas,
       funil: this.montarFunil(doFluxo.porEtapa),
       serie: this.montarSerie(agora, fuso, doFluxo.entradasPorDia, doFluxo.liberacoesPorDia),
     };

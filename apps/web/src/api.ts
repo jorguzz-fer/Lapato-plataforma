@@ -215,8 +215,31 @@ export interface Painel {
     diasDaMedia: number;
   };
   atencao: ItemDeAtencao[];
+  /** Quarta revisão: as minhas pendências, nominais, na tela de chegada. */
+  minhasDemandas: { paraMim: DemandaMinha[]; pedi: DemandaMinha[] };
   funil: { etapa: string; rotulo: string; total: number }[];
   serie: { dia: string; entradas: number; liberacoes: number }[];
+}
+
+export interface DemandaMinha {
+  id: string;
+  identificador: string;
+  tipo: string;
+  nomeTipo: string | null;
+  descricao: string;
+  prioridade: string;
+  status: string;
+  etapaAtual: number;
+  totalEtapas: number;
+  ultimaEtapa: string | null;
+  setorResponsavel: string | null;
+  prazoEm: string | null;
+  criadaEm: string;
+  casoId: string | null;
+  caso: string | null;
+  paciente: string | null;
+  solicitante: string | null;
+  responsavel: string | null;
 }
 
 export interface EventoTimeline {

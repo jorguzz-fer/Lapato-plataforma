@@ -4,6 +4,7 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
+import Chip from '@mui/material/Chip';
 import TextField from '@mui/material/TextField';
 import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
@@ -16,7 +17,13 @@ import ErrorOutline from '@mui/icons-material/ErrorOutlineOutlined';
 import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
 import { primeiroNome } from '@lapato/shared';
-import { api, ErroApi, type Painel as DadosPainel, type ItemDeAtencao } from '../api';
+import {
+  api,
+  ErroApi,
+  type DemandaMinha,
+  type Painel as DadosPainel,
+  type ItemDeAtencao,
+} from '../api';
 
 /**
  * Tela de chegada.
@@ -251,6 +258,179 @@ function Serie({ dias: todos }: { dias: DadosPainel['serie'] }) {
  * bipando as laminas dele". O leitor de codigo de barras digita o
  * identificador e manda Enter; o caso vira dele e a tela ja abre o dossie.
  */
+/**
+ * Minhas pendencias, nominais.
+ *
+ * Quarta revisao com o Hugo: "sempre que cada um de nos entrar no sistema, a
+ * primeira coisa que aparece sao as nossas pendencias e prioridades". Duas
+ * colunas, porque sao dois papeis no mesmo dia: o que esperam de mim e o que
+ * eu pedi e ainda nao voltou ("eu pedi uma coloracao de PAS, ela precisa
+ * voltar pra mim pra que eu leia - senao ele esquece").
+ *
+ * O estagio vai em cada linha: a lista nao diz so o que falta, diz quanto
+ * falta - e e isso que se responde ao telefone sem abrir o caso.
+ */
+function MinhasDemandas({ demandas }: { demandas: DadosPainel['minhasDemandas'] }) {
+  if (demandas.paraMim.length === 0 && demandas.pedi.length === 0) return null;
+
+  return (
+    <Stack direction="row" sx={{ gap: 2, flexWrap: 'wrap', alignItems: 'stretch' }}>
+      <ColunaDeDemandas
+        titulo="Para mim"
+        ajuda="Pedidos no seu nome ou do seu setor, mais antigos primeiro."
+        vazio="Nada esperando por você."
+        demandas={demandas.paraMim}
+        mostrarQuemPediu
+      />
+      <ColunaDeDemandas
+        titulo="Pedi e estou esperando"
+        ajuda="O que você solicitou e ainda não voltou."
+        vazio="Você não tem pedidos em aberto."
+        demandas={demandas.pedi}
+      />
+    </Stack>
+  );
+}
+
+function ColunaDeDemandas({
+  titulo,
+  ajuda,
+  vazio,
+  demandas,
+  mostrarQuemPediu = false,
+}: {
+  titulo: string;
+  ajuda: string;
+  vazio: string;
+  demandas: DemandaMinha[];
+  mostrarQuemPediu?: boolean;
+}) {
+  return (
+    <Card sx={{ flex: '1 1 420px', minWidth: 300, display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ px: 2, pt: 2, pb: 1.25 }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }}>
+          <Typography variant="h4">{titulo}</Typography>
+          <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{demandas.length}</Typography>
+        </Stack>
+        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{ajuda}</Typography>
+      </Box>
+
+      {demandas.length === 0 ? (
+        <Typography
+          sx={{
+            fontSize: 13,
+            color: 'text.secondary',
+            px: 2,
+            py: 2,
+            borderTop: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          {vazio}
+        </Typography>
+      ) : (
+        <Box>
+          {demandas.slice(0, 8).map((d) => (
+            <LinhaDeDemanda key={d.id} demanda={d} mostrarQuemPediu={mostrarQuemPediu} />
+          ))}
+          {demandas.length > 8 && (
+            <Box
+              component={Link}
+              to="/solicitacoes"
+              sx={{
+                display: 'block',
+                px: 2,
+                py: 1.25,
+                fontSize: 12.5,
+                borderTop: '1px solid',
+                borderColor: 'divider',
+                color: 'primary.main',
+                textDecoration: 'none',
+              }}
+            >
+              Ver as outras {demandas.length - 8} na fila de solicitações
+            </Box>
+          )}
+        </Box>
+      )}
+    </Card>
+  );
+}
+
+function LinhaDeDemanda({
+  demanda: d,
+  mostrarQuemPediu,
+}: {
+  demanda: DemandaMinha;
+  mostrarQuemPediu: boolean;
+}) {
+  const vencida = d.prazoEm !== null && new Date(d.prazoEm) < new Date();
+  const dias = Math.floor((Date.now() - new Date(d.criadaEm).getTime()) / 86_400_000);
+
+  return (
+    <Box
+      component={Link}
+      to="/solicitacoes"
+      sx={{
+        display: 'block',
+        px: 2,
+        py: 1.25,
+        borderTop: '1px solid',
+        borderColor: 'divider',
+        textDecoration: 'none',
+        color: 'inherit',
+        '&:hover': { bgcolor: 'action.hover' },
+      }}
+    >
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{d.nomeTipo ?? d.tipo}</Typography>
+        {d.caso && (
+          <Typography
+            sx={{
+              fontSize: 12,
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              color: 'primary.main',
+            }}
+          >
+            {d.caso}
+          </Typography>
+        )}
+        {(d.prioridade === 'urgente' || d.prioridade === 'critica') && (
+          <Chip size="small" color="warning" label="Urgente" />
+        )}
+        {vencida && <Chip size="small" color="error" label="Vencida" />}
+      </Stack>
+
+      <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>{d.descricao}</Typography>
+
+      <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mt: 0.25 }}>
+        {d.paciente ? `${d.paciente} · ` : ''}
+        {/* "Tá no estágio 3 de 4" — e o nome da última etapa registrada. */}
+        {d.totalEtapas > 0
+          ? `etapa ${d.etapaAtual} de ${d.totalEtapas}${d.ultimaEtapa ? ` · ${d.ultimaEtapa}` : ''}`
+          : STATUS_DEMANDA[d.status] ?? d.status}
+        {' · '}
+        {dias === 0 ? 'pedida hoje' : dias === 1 ? 'há 1 dia' : `há ${dias} dias`}
+        {mostrarQuemPediu && d.solicitante ? ` · por ${d.solicitante}` : ''}
+        {!mostrarQuemPediu && (d.responsavel || d.setorResponsavel)
+          ? ` · com ${d.responsavel ?? d.setorResponsavel}`
+          : ''}
+      </Typography>
+    </Box>
+  );
+}
+
+/** Para a demanda sem fluxo configurado: sem etapas, o status é o que há. */
+const STATUS_DEMANDA: Record<string, string> = {
+  criada: 'criada',
+  aguardando_analise: 'aguardando análise',
+  aprovada: 'aprovada',
+  aguardando_execucao: 'aguardando execução',
+  em_execucao: 'em execução',
+  aguardando_informacao: 'aguardando informação',
+  parcialmente_concluida: 'parcialmente concluída',
+};
+
 function BiparLamina() {
   const navegar = useNavigate();
   const [codigo, setCodigo] = useState('');
@@ -389,6 +569,8 @@ export function Painel({ nomeCompleto, permissoes }: { nomeCompleto: string; per
               detalhe={`Dias corridos, últimos ${dados.volumetria.diasDaMedia}`}
             />
           </Stack>
+
+          <MinhasDemandas demandas={dados.minhasDemandas} />
 
           <Card>
             <Box sx={{ px: 2, pt: 2, pb: 1.5 }}>

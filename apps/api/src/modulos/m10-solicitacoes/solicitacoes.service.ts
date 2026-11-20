@@ -1,5 +1,18 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { aliasedTable, and, asc, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import {
+  aliasedTable,
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import {
   andamentoSolicitacao,
   caso,
@@ -7,6 +20,7 @@ import {
   mensagemSolicitacao,
   paciente,
   pendencia,
+  setor,
   solicitacao,
   tipoSolicitacao,
   usuario,
@@ -734,6 +748,102 @@ export class SolicitacoesService {
         autorId: ctx.usuarioId,
         texto: texto.trim(),
       });
+    });
+  }
+
+  /**
+   * As minhas demandas, para a tela de chegada.
+   *
+   * Quarta revisao com o Hugo: "sempre que cada um de nos entrar no sistema, a
+   * primeira coisa que aparece sao as nossas pendencias e prioridades". Duas
+   * listas, porque sao dois papeis diferentes no mesmo dia:
+   *
+   * - `paraMim`: o que esperam que EU faca (destino nominal, ou o setor em que
+   *   eu trabalho). E a fila da Raquel.
+   * - `pedi`: o que EU pedi e ainda nao voltou - "eu pedi uma coloracao de PAS,
+   *   ela precisa voltar pra mim pra que eu leia... senao ele esquece".
+   *
+   * O estagio vem junto ("tá no estágio 3 de 4") porque sem ele a lista diz o
+   * que falta mas nao diz quanto falta, e e isso que se responde ao telefone.
+   */
+  async minhasDemandas(): Promise<{ paraMim: unknown[]; pedi: unknown[] }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const [eu] = await tx
+        .select({ setor: setor.tipo })
+        .from(usuario)
+        .leftJoin(setor, eq(setor.id, usuario.setorPrincipalId))
+        .where(and(eq(usuario.tenantId, ctx.tenantId), eq(usuario.id, ctx.usuarioId)))
+        .limit(1);
+
+      const responsavel = aliasedTable(usuario, 'responsavel');
+      const colunas = {
+        id: solicitacao.id,
+        identificador: solicitacao.identificador,
+        tipo: solicitacao.tipo,
+        nomeTipo: tipoSolicitacao.nome,
+        descricao: solicitacao.descricao,
+        prioridade: solicitacao.prioridade,
+        status: solicitacao.status,
+        etapaAtual: solicitacao.etapaAtual,
+        totalEtapas: sql<number>`(
+          select count(*)::int from etapa_tipo_solicitacao e
+          where e.tenant_id = ${solicitacao.tenantId} and e.tipo_id = ${solicitacao.tipoId}
+        )`,
+        ultimaEtapa: sql<string | null>`(
+          select a.rotulo from andamento_solicitacao a
+          where a.tenant_id = ${solicitacao.tenantId} and a.solicitacao_id = ${solicitacao.id}
+          order by a.ordem desc limit 1
+        )`,
+        setorResponsavel: solicitacao.setorResponsavel,
+        prazoEm: solicitacao.prazoEm,
+        criadaEm: solicitacao.criadoEm,
+        casoId: solicitacao.casoId,
+        caso: caso.identificador,
+        paciente: paciente.nome,
+        solicitante: usuario.nomeCompleto,
+        responsavel: responsavel.nomeCompleto,
+      };
+
+      const consulta = (filtro: SQL) =>
+        tx
+          .select(colunas)
+          .from(solicitacao)
+          .leftJoin(caso, eq(caso.id, solicitacao.casoId))
+          .leftJoin(paciente, eq(paciente.id, caso.pacienteId))
+          .leftJoin(usuario, eq(usuario.id, solicitacao.solicitantePorId))
+          .leftJoin(responsavel, eq(responsavel.id, solicitacao.responsavelId))
+          .leftJoin(tipoSolicitacao, eq(tipoSolicitacao.id, solicitacao.tipoId))
+          .where(
+            and(
+              eq(solicitacao.tenantId, ctx.tenantId),
+              inArray(solicitacao.status, STATUS_ABERTOS),
+              filtro,
+            ),
+          )
+          // Mais antiga primeiro: a demanda esquecida e o inimigo (secao 92).
+          .orderBy(asc(solicitacao.criadoEm))
+          .limit(50);
+
+      /**
+       * O setor entra na fila so quando a pessoa tem setor principal cadastrado.
+       * Sem ele, a lista fica nos destinos nominais - que e a recomendacao da
+       * review de todo modo.
+       */
+      const meuDestino = eu?.setor
+        ? or(
+            eq(solicitacao.responsavelId, ctx.usuarioId),
+            eq(solicitacao.setorResponsavel, eu.setor),
+          )!
+        : eq(solicitacao.responsavelId, ctx.usuarioId);
+
+      // Em sequencia, e nao em Promise.all: as duas rodam na MESMA transacao, e
+      // uma transacao atende uma consulta por vez.
+      const paraMim = await consulta(meuDestino);
+      const pedi = await consulta(eq(solicitacao.solicitantePorId, ctx.usuarioId));
+
+      return { paraMim, pedi };
     });
   }
 

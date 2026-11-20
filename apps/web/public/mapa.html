@@ -885,7 +885,7 @@
 
   <nav class="abas" role="tablist" aria-label="Seções do mapa">
     <button class="aba" role="tab" id="aba-modulos" aria-controls="painel-modulos" aria-selected="true" data-aba="modulos">Módulos <span class="badge">26</span></button>
-    <button class="aba" role="tab" id="aba-entregas" aria-controls="painel-entregas" aria-selected="false" data-aba="entregas">Entregas <span class="badge">36 PRs</span></button>
+    <button class="aba" role="tab" id="aba-entregas" aria-controls="painel-entregas" aria-selected="false" data-aba="entregas">Entregas <span class="badge">41 PRs</span></button>
     <button class="aba" role="tab" id="aba-homologacao" aria-controls="painel-homologacao" aria-selected="false" data-aba="homologacao">Homologação <span class="badge">24 cenários</span></button>
   </nav>
 
@@ -973,7 +973,7 @@
       <span class="nome">Solicitações e Pendências</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronta</span></span>
-      <span class="nota">Fila única de demandas com numeração própria, aprovação prévia, conversa por demanda e resolução que desbloqueia o caso. Aba <em>Minhas</em> para o patologista não esquecer a coloração que pediu; o recorte da macroscopia entra aqui como solicitação.</span>
+      <span class="nota">Fila única de demandas com numeração própria, aprovação prévia, conversa por demanda e resolução que desbloqueia o caso. <strong>Cada tipo tem seu fluxo</strong> (quarta revisão): catálogo editável na Administração, etapas clicadas uma a uma com data, hora e nome, destino nominal e a última etapa devolvendo a demanda a quem pediu. O cliente abre pelo Portal os tipos liberados e acompanha a fase; o recorte da macroscopia entra aqui como solicitação.</span>
     </div>
   </section>
 
@@ -993,7 +993,7 @@
       <span class="nome">Laudos e Microscopia</span>
       <span class="celula-estado"><span class="rotulo-movel">Domínio</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
       <span class="celula-estado"><span class="rotulo-movel">Tela</span><span class="selo selo-pronto"><span class="glifo" aria-hidden="true">●</span> Pronto</span></span>
-      <span class="nota">Elaboração, revisão, assinatura, liberação e o PDF assinado com QR Code de validação pública. Agora com o cabeçalho do material (cliente, raça, entrada, potes e ressalvas) na tela do laudo e o <strong>Arquivo de laudos</strong>: busca por paciente, cliente, responsável, palavra da conclusão, lâmina ou OS, com o trecho ao redor do termo.</span>
+      <span class="nota">Elaboração, revisão, assinatura, liberação e o PDF assinado com QR Code de validação pública. Cabeçalho do material (cliente, raça, entrada, potes e ressalvas) na tela do laudo e o <strong>Arquivo de laudos</strong>: busca por paciente, cliente, responsável, palavra da conclusão, lâmina ou OS, agora com recorte por assinado/enviado e por data. O <strong>envio</strong> escolhe os e-mails do cadastro, fica registrado com quem mandou e para quem, e permite reenviar — a entrega em si continua sendo do 26.</span>
     </div>
 
     <div class="modulo">
@@ -1253,17 +1253,17 @@
   <div class="painel" id="painel-entregas" role="tabpanel" aria-labelledby="aba-entregas" hidden>
 
   <section class="entregas-placar" aria-label="Resumo das entregas desde a última versão do mapa">
-    <div class="metrica"><span class="n">36</span><span class="r">PRs mergeados de 23/08 a 09/09</span></div>
-    <div class="metrica"><span class="n">11</span><span class="r">migrações de banco (0011–0021)</span></div>
-    <div class="metrica"><span class="n">320</span><span class="r">testes automatizados (214 na API, 72 no shared, 34 no db)</span></div>
+    <div class="metrica"><span class="n">41</span><span class="r">PRs mergeados de 23/08 a 20/11</span></div>
+    <div class="metrica"><span class="n">14</span><span class="r">migrações de banco (0011–0024)</span></div>
+    <div class="metrica"><span class="n">338</span><span class="r">testes automatizados (226 na API, 78 no shared, 34 no db)</span></div>
     <div class="metrica"><span class="n">10</span><span class="r">achados do code review, todos corrigidos</span></div>
   </section>
 
   <p class="resumo-texto">
     Tudo o que entrou em produção desde a versão anterior deste mapa, na ordem em que chegou.
-    As duas rodadas de revisão com o Hugo (patologista) e a Roberta (recepção e financeiro)
-    são o fio: cada pedido virou uma entrega pequena, com teste, e a rodada de code review no
-    final conferiu o conjunto.
+    As rodadas de revisão com o Hugo (patologista) e a Roberta (recepção e financeiro) são o
+    fio: cada pedido virou uma entrega pequena, com teste, e a rodada de code review no final
+    conferiu o conjunto.
   </p>
 
   <section class="rodada">
@@ -1327,10 +1327,23 @@
     <div class="entrega"><span class="pr">#83</span><div><p class="titulo">Biblioteca: documentos com versão vigente, revisão, ciência de leitura, contexto nas bancadas e orientações no Portal <span class="mods">M21 · M04</span></p><p class="detalhe">Código próprio por tipo e categoria, uma versão vigente por documento, fluxo rascunho → revisão → aprovação → publicação, autor sem concluir a própria revisão. Ciência por versão, feedback, revisão periódica vigiada pelo Guardian. Botão "Consultar Biblioteca" nas bancadas e aba Orientações no Portal. Migração 0018.</p></div></div>
   </section>
 
+  <section class="rodada">
+    <div class="rodada-cabeca"><h2>Quarta revisão: as solicitações saem do WhatsApp</h2><span class="quando">20 de novembro</span></div>
+    <p class="rodada-intro">A reunião inteira gira em torno de uma devolução de bloco pedida por mensagem: a técnica deu "ok", entrou de férias, e dez dias depois ninguém sabia onde o bloco estava — com o cliente cobrando. Cinco entregas para que nenhum pedido more numa conversa.</p>
+
+    <div class="entrega"><span class="pr">#89</span><div><p class="titulo">Cada tipo de solicitação com seu fluxo, destino nominal e trilha <span class="mods">M10 · M01 · M02</span></p><p class="detalhe">Catálogo de tipos editável em Configurações: nome, setor padrão, aprovação prévia e "o cliente pode pedir no Portal". Cada tipo tem suas etapas — a devolução de bloco passa por localizar no arquivo, receber de volta e entregar; uma coloração especial passa pelo processamento. Um clique = uma linha na trilha, com rótulo, data, hora e nome; a última etapa conclui a execução e devolve a demanda a quem pediu. O destino é nominal: "eu recomendo sempre o nome da pessoa, porque você sabe quem colocou a mão". A fila mostra "etapa 3 de 5 · Bloco separado". Migração 0022.</p></div></div>
+    <div class="entrega"><span class="pr">#90</span><div><p class="titulo">A tela de chegada abre nas minhas pendências e prioridades <span class="mods">M07 · M10</span></p><p class="detalhe">"Sempre que cada um de nós entrar no sistema, a primeira coisa que aparece são as nossas pendências." Dois cartões: "Para mim" (no meu nome ou do meu setor) e "Pedi e estou esperando" — porque "eu pedi uma coloração de PAS, ela precisa voltar pra mim pra que eu leia; senão ele esquece". Cada linha traz o estágio, o paciente, há quantos dias está aberta e com quem está.</p></div></div>
+    <div class="entrega"><span class="pr">#91</span><div><p class="titulo">O cliente abre a solicitação pelo Portal e acompanha a fase <span class="mods">M04 · M10</span></p><p class="detalhe">Só os tipos liberados ao Portal (devolução de bloco e de lâmina, segunda opinião, cópia de laudo); ordem técnica interna não aparece do lado dele. O pedido nasce numerado, com fluxo e setor responsável, e a fase aparece na língua do cliente — "material sendo localizado", não "enviado ao processamento". Pedido no caso de outro cliente responde 404.</p></div></div>
+    <div class="entrega"><span class="pr">#92</span><div><p class="titulo">Quando o caso muda de cor, configurado por serviço <span class="mods">M01 · M07</span></p><p class="detalhe">"No citopatológico ele calcula em horas: 24 e 48; o histopatológico são sete dias, de zero a três verde, três a cinco amarelo." Os limiares de atenção e crítico viram campo do serviço, em horas desde a entrada do material; vencido continua vindo da previsão de liberação. A mesma função calcula a cor na escrita do estado e na leitura da Central, e a legenda das quatro faixas entrou na tela. Migração 0023.</p></div></div>
+    <div class="entrega"><span class="pr">#93</span><div><p class="titulo">Enviar o laudo escolhendo os e-mails, com registro e reenvio <span class="mods">M11 · M26</span></p><p class="detalhe">"Pra enviar precisa tá assinado"; e, no LAPATO, também liberado — a liberação é o ato que entrega o documento. Os endereços vêm do cadastro (cliente e veterinário solicitante já marcados); endereço fora do cadastro é recusado. O envio fica registrado com quem mandou, quando e para quem, e o arquivo de laudos mostra as duas datas lado a lado, com recorte por assinado/enviado e por data, e o botão de reenviar. A entrega sai pela fila do 26, quando o canal de e-mail estiver configurado. Migração 0024.</p></div></div>
+  </section>
+
+
   <section class="bloco">
     <h2>Pendências de deploy</h2>
     <p class="intro">Uma vez, no container da API em produção (Coolify → API-Lapato → Terminal), porque o #72, o #82 e o #83 acrescentaram permissões aos perfis padrão (destino do caso, atribuição na Logística, as quatro da Biblioteca e a correção da identificação na bancada) e elas só chegam a instituições existentes por aqui. Depois todo mundo sai e entra de novo.</p>
     <div class="hom-aviso" style="margin-top: -8px;"><pre>node node_modules/@lapato/db/dist/cli/sincronizar-perfis.js</pre></div>
+    <p class="intro" style="margin-top: 14px;">A quarta revisão <strong>não</strong> acrescenta permissão: o que ela precisa são as migrações 0022 a 0024, que o deploy aplica sozinho. A 0022 já semeia o catálogo de tipos de solicitação para a instituição que está rodando — com as etapas de cada um —, então a tela de Solicitações sobe configurada. Só confira, em Configurações → Solicitações, se os fluxos batem com a rotina de vocês.</p>
   </section>
 
   </div><!-- /painel-entregas -->
@@ -1341,7 +1354,7 @@
   <div class="painel" id="painel-homologacao" role="tabpanel" aria-labelledby="aba-homologacao" hidden>
 
   <p class="resumo-texto">
-    O que entrou nos PRs #69 a #87 e ainda não passou pelas mãos de quem opera. Cada cenário diz
+    O que entrou nos PRs #69 a #93 e ainda não passou pelas mãos de quem opera. Cada cenário diz
     <strong>quem testa</strong>, onde, os passos e o que tem de acontecer. Marque o resultado
     embaixo de cada um: fica salvo neste navegador. Quando terminar, o que estiver
     <em>Falhou</em> ou <em>Bloqueado</em> vai para o Fernando com a observação.
@@ -1366,7 +1379,7 @@
   <thead><tr><th>Quem</th><th>Perfil na plataforma</th><th>Cenários</th></tr></thead>
   <tbody>
     <tr><td>Roberta</td><td>Recepção / Financeiro</td><td>H-01 a H-06, H-13 a H-16, H-19, H-23</td></tr>
-    <tr><td>Hugo</td><td>Patologista</td><td>H-07 a H-12, H-17, H-20 a H-22, H-24</td></tr>
+    <tr><td>Hugo</td><td>Patologista</td><td>H-07 a H-12, H-17, H-20 a H-22, H-24 a H-26, H-28</td></tr>
     <tr><td>Raquel</td><td>Administrativo</td><td>H-04, H-13, H-18, H-19</td></tr>
     <tr><td>Fernando</td><td>Infra (Coolify)</td><td>Pré-requisitos, antes de todo mundo</td></tr>
   </tbody>
@@ -1866,6 +1879,84 @@
     <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
   </article>
 </section>
+
+<section class="hom-bloco">
+  <div class="hom-bloco-cab"><h2>13. Quarta revisão (20/11)</h2><span class="pr">PR #89 · #90 · #91 · #92 · #93</span><span class="menu">Painel · Solicitações · Configurações · Portal · Arquivo de laudos</span></div>
+
+  <article class="cenario" data-id="H-25">
+    <div class="cab"><span class="id">H-25</span><h3>Devolução de bloco: o pedido deixa de morar no WhatsApp</h3><div class="meta"><span>Hugo e Raquel</span><span>Solicitações</span><span>8 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Configurações → <strong>Solicitações</strong>: abra "Devolução de bloco", confira as etapas, renomeie uma e salve.</li>
+        <li>Como patologista: Solicitações → <strong>Solicitação</strong>. Escolha o tipo (o fluxo aparece antes de pedir), aponte o <strong>destino na pessoa</strong> da técnica, escreva o pedido e crie.</li>
+        <li>Entre como a técnica, abra o cartão e clique em <strong>Avançar</strong> etapa por etapa, deixando uma observação na primeira.</li>
+        <li>Volte a entrar como patologista e procure a solicitação na aba "Minhas".</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>A fila mostra o estágio no cartão: <strong>"Etapa 2 de 5 · Bloco solicitado ao arquivo"</strong>.</li>
+        <li>Cada avanço entra na trilha com data, hora e o nome de quem clicou; a observação fica ao lado da etapa.</li>
+        <li>No último clique a solicitação <strong>sai da fila aberta</strong> da técnica e volta concluída para quem pediu — sem um segundo botão.</li>
+        <li>A linha do tempo do caso registra cada avanço.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+
+  <article class="cenario" data-id="H-26">
+    <div class="cab"><span class="id">H-26</span><h3>A tela de chegada abre no que é meu</h3><div class="meta"><span>Hugo e Raquel</span><span>Painel</span><span>3 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Com a solicitação do H-25 em aberto, entre como patologista e olhe o topo do Painel.</li>
+        <li>Entre como a técnica e olhe o mesmo lugar.</li>
+        <li>Avance a solicitação até o fim e recarregue os dois painéis.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>O patologista vê o pedido em <strong>"Pedi e estou esperando"</strong>, com o estágio e "com quem" está.</li>
+        <li>A técnica vê o mesmo pedido em <strong>"Para mim"</strong>, com quem pediu e há quantos dias está aberto.</li>
+        <li>Concluída, a solicitação <strong>sai das duas listas</strong>.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+
+  <article class="cenario" data-id="H-27">
+    <div class="cab"><span class="id">H-27</span><h3>O cliente pede pelo login dele e acompanha a fase</h3><div class="meta"><span>Raquel</span><span>Portal</span><span>5 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Entre com uma conta do Portal e vá em <strong>Solicitações → Nova solicitação</strong>.</li>
+        <li>Escolha "Devolução de bloco", o exame e escreva o pedido. Envie.</li>
+        <li>Entre como a técnica, ache o pedido na fila interna e avance uma etapa.</li>
+        <li>Volte ao Portal e recarregue a tela de Solicitações.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>O cliente só enxerga os tipos liberados ao Portal — <strong>coloração especial e IHQ não aparecem</strong>.</li>
+        <li>O pedido nasce numerado (SOL-) e chega na fila interna com fluxo e setor responsável.</li>
+        <li>No Portal aparece <strong>"Fase atual: material sendo localizado"</strong> — nunca o rótulo interno da etapa.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+
+  <article class="cenario" data-id="H-28">
+    <div class="cab"><span class="id">H-28</span><h3>Cor por tipo de exame, e o laudo enviado com registro</h3><div class="meta"><span>Hugo</span><span>Configurações · Laudo · Arquivo</span><span>8 min</span></div></div>
+    <div class="corpo">
+      <div><h4>Passos</h4><ol>
+        <li>Configurações → Serviços → Citopatologia → Editar: em "Quando o caso muda de cor na Central", confira 24 h e 48 h. Salve.</li>
+        <li>Na Central de Casos, olhe a legenda das quatro faixas e a cor de um caso citológico de ontem.</li>
+        <li>Num caso com laudo pronto: assine, libere e clique em <strong>Enviar laudo</strong>. Confira os e-mails marcados e envie.</li>
+        <li>Arquivo de laudos: filtre por <strong>Enviados</strong> e depois por <strong>Não enviados</strong>; no laudo enviado, clique em <strong>Reenviar</strong>.</li>
+      </ol></div>
+      <div><h4>Esperado</h4><ul class="esperado">
+        <li>O caso muda de cor pelo tempo desde a <strong>entrada do material</strong>, não pelos dias úteis que faltam; vencido continua vermelho escuro.</li>
+        <li>O diálogo de envio já vem com o e-mail do cliente e o do veterinário solicitante marcados, e <strong>não aceita endereço fora do cadastro</strong>.</li>
+        <li>O arquivo mostra <strong>"Assinado 09/10 15:51 por … · enviado 09/10 15:52"</strong>, e o reenvio aparece como segundo envio.</li>
+        <li>Tentar enviar um laudo não liberado é recusado, com a razão na tela.</li>
+      </ul></div>
+    </div>
+    <div class="hom-rodape"><label>Resultado <select><option value="">Sem marcar</option><option value="ok">OK</option><option value="falhou">Falhou</option><option value="bloqueado">Bloqueado</option></select></label><input type="text" placeholder="Observação"></div>
+  </article>
+</section>
+
 
 <section class="hom-fora bloco">
   <h2>Fora deste roteiro</h2>

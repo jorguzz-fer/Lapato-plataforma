@@ -65,6 +65,16 @@ export interface NovaSolicitacao {
   responsavelId?: string;
   prazoEm?: Date;
   exigeAprovacao?: boolean;
+  /**
+   * Quem originou: interna | cliente | veterinario | guardian. O Portal abre
+   * como `cliente` - e o que separa "o laboratorio decidiu pedir" de "o
+   * cliente pediu", que muda quem cobra e quem responde.
+   */
+  origem?: string;
+  /** M10: visibilidade externa controlada - nao | parcial | sim. */
+  visibilidadePortal?: string;
+  /** Texto que o cliente le no lugar da descricao interna (traducao contextual). */
+  textoPortal?: string;
 }
 
 export interface NovaPendencia {
@@ -179,7 +189,9 @@ export class SolicitacoesService {
           tipoId: tipo?.id ?? null,
           tipo: tipo?.chave ?? dados.tipo,
           categoria: dados.categoria ?? null,
-          origem: 'interna',
+          origem: dados.origem ?? 'interna',
+          visibilidadePortal: dados.visibilidadePortal ?? 'nao',
+          textoPortal: dados.textoPortal ?? null,
           descricao: dados.descricao,
           justificativa: dados.justificativa ?? null,
           prioridade: dados.prioridade ?? 'rotina',

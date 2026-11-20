@@ -141,6 +141,8 @@ function App() {
    */
   if (sessao.clienteId) {
     const podeComplementar = sessao.permissoes.includes('portal:historico_complementar');
+    /** Quarta revisão: o pedido deixa de ser WhatsApp e passa a ser o login dele. */
+    const podeSolicitar = sessao.permissoes.includes('portal:solicitar');
 
     return (
       <Routes>
@@ -172,7 +174,7 @@ function App() {
           path="/portal/solicitacoes"
           element={
             <ShellPortal aoSair={sair}>
-              <PortalSolicitacoes />
+              <PortalSolicitacoes podeSolicitar={podeSolicitar} />
             </ShellPortal>
           }
         />

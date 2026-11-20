@@ -6751,3 +6751,101 @@ describe('quarta revisão (Hugo): a tela de chegada abre nas minhas pendências'
     ).not.toContain(pedido.body.id);
   });
 });
+
+describe('quarta revisão (Hugo): o cliente abre a solicitação pelo Portal', () => {
+  /**
+   * "Ele não faz mais solicitação pelo WhatsApp, faz pelo login deles... e
+   * quando ele entrar no sistema ele vai saber em que fase tá: tá solicitado,
+   * já foi encaminhado, foi separado." O caso contado na review é uma
+   * devolução de bloco que ficou dez dias parada porque o pedido morava numa
+   * conversa.
+   */
+  let casoId: string;
+  let solicitacaoId: string;
+  let tipoPortalId: string;
+
+  test('o cliente só enxerga os tipos liberados ao Portal', async () => {
+    await entrar('portal@clinicacentral.local');
+    const tipos = await req('GET', '/portal/tipos-solicitacao');
+    expect(tipos.status, JSON.stringify(tipos.body)).toBe(200);
+    // A base institucional libera devolução de bloco, lâmina, segunda opinião e cópia de laudo.
+    expect(tipos.body.length).toBeGreaterThan(0);
+    tipoPortalId = tipos.body[0].id;
+
+    // Coloração especial é ordem técnica interna: não aparece deste lado.
+    await entrar('admin@lapato.local');
+    const todos = await req('GET', '/administracao/tipos-solicitacao');
+    const interno = todos.body.find((t: { chave: string }) => t.chave === 'coloracao_especial');
+    expect(interno.visivelPortal).toBe(false);
+    expect(tipos.body.map((t: { id: string }) => t.id)).not.toContain(interno.id);
+  });
+
+  test('o pedido nasce numerado, com fluxo, e o cliente vê a fase', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const central = clientes.body.find((c: { codigo: string }) => c.codigo === 'CV');
+    const caso = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: central.id,
+      paciente: { nome: `Portal ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Nódulo' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(caso.status, JSON.stringify(caso.body)).toBe(201);
+    casoId = caso.body.id;
+
+    await entrar('portal@clinicacentral.local');
+    const pedido = await req('POST', '/portal/solicitacoes', {
+      casoId,
+      tipoId: tipoPortalId,
+      descricao: 'Preciso do bloco para exame complementar em outro laboratório.',
+    });
+    expect(pedido.status, JSON.stringify(pedido.body)).toBe(201);
+    expect(pedido.body.identificador).toMatch(/^SOL-/);
+    solicitacaoId = pedido.body.id;
+
+    // Antes de qualquer etapa: sem fase, só o status externo.
+    const antes = await req('GET', '/portal/solicitacoes');
+    const minha = antes.body.find((s: { id: string }) => s.id === solicitacaoId);
+    expect(minha.fase).toBeNull();
+    expect(minha.nomeTipo).toBeTruthy();
+
+    // O laboratório recebe o pedido como qualquer outro, com fluxo e destino.
+    await entrar('tecnico@lapato.local');
+    const naFila = await req('GET', '/solicitacoes?aba=abertas');
+    const interna = naFila.body.find((s: { id: string }) => s.id === solicitacaoId);
+    expect(interna, JSON.stringify(naFila.body.slice(0, 3))).toBeTruthy();
+    expect(interna.totalEtapas).toBeGreaterThan(0);
+    expect((await req('POST', `/solicitacoes/${solicitacaoId}/etapa`)).status).toBe(201);
+
+    // E a fase aparece para o cliente na língua dele, não no rótulo interno.
+    await entrar('portal@clinicacentral.local');
+    const depois = await req('GET', '/portal/solicitacoes');
+    const comFase = depois.body.find((s: { id: string }) => s.id === solicitacaoId);
+    expect(comFase.fase).toBeTruthy();
+    expect(JSON.stringify(depois.body)).not.toContain('histotecnica');
+  });
+
+  test('o cliente não abre pedido no caso de outro, nem de tipo interno', async () => {
+    await entrar('portal@petcare.local');
+    const alheio = await req('POST', '/portal/solicitacoes', {
+      casoId,
+      tipoId: tipoPortalId,
+      descricao: 'Pedido no caso de outro cliente.',
+    });
+    expect([403, 404]).toContain(alheio.status);
+
+    await entrar('admin@lapato.local');
+    const todos = await req('GET', '/administracao/tipos-solicitacao');
+    const interno = todos.body.find((t: { chave: string }) => t.chave === 'coloracao_especial');
+
+    await entrar('portal@clinicacentral.local');
+    const recusado = await req('POST', '/portal/solicitacoes', {
+      casoId,
+      tipoId: interno.id,
+      descricao: 'Quero pedir uma coloração especial.',
+    });
+    expect(recusado.status).toBe(404);
+  });
+});

@@ -602,11 +602,23 @@ export interface SolicitacaoPortal {
   id: string;
   identificador: string;
   tipo: string;
+  nomeTipo: string | null;
   descricao: string;
   status: string;
+  /**
+   * Em que fase está, na língua do cliente: o texto de Portal da etapa, não o
+   * rótulo interno. Nulo enquanto nenhuma etapa visível foi registrada.
+   */
+  fase: string | null;
   criadoEm: string;
   casoIdentificador: string;
   paciente: string;
+}
+
+export interface TipoSolicitacaoPortal {
+  id: string;
+  nome: string;
+  descricao: string | null;
 }
 
 // --- M16: imagens do caso ---------------------------------------------------

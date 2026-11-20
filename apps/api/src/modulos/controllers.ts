@@ -1086,6 +1086,18 @@ export class UsuariosController {
     return this.usuarios.listarPatologistas();
   }
 
+  @Get('equipe')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Equipe interna ativa — o seletor de destino das solicitações',
+    description:
+      'Lista enxuta (nome e setor), sem contas do Portal. Quarta revisão: o destino nominal é o ' +
+      'que impede "cinco técnicos, um espera que o outro faça e ninguém faz".',
+  })
+  async equipe() {
+    return this.usuarios.listarEquipe();
+  }
+
   @Get('perfis')
   @ExigePermissao(PERMISSOES.USUARIO_VISUALIZAR)
   @ApiOperation({ summary: 'Perfis disponíveis para atribuição (M02 seção 9)' })
@@ -1470,9 +1482,15 @@ export class VeterinariosController {
 const novaSolicitacaoSchema = z.object({
   casoId: z.string().uuid().optional(),
   /**
+   * Tipo do catálogo (quarta revisão): é ele que traz o fluxo, a aprovação
+   * prévia e o setor padrão. Quando vem, o `tipo` em texto é preenchido com a
+   * chave dele.
+   */
+  tipoId: z.string().uuid().optional(),
+  /**
    * Texto livre de propósito: o M10 seção 112 entrega os tipos à configuração
-   * do M01. A tela oferece os comuns (coloração especial, IHQ, recorte...);
-   * fixar um enum aqui congelaria no código o que a documentação quer em dados.
+   * do M01. Segue aceito sem `tipoId` para o que nasce dentro do sistema (o
+   * recorte do M08) e para o que o laboratório ainda não cadastrou.
    */
   tipo: z.string().min(1),
   categoria: z.string().optional(),
@@ -1482,8 +1500,14 @@ const novaSolicitacaoSchema = z.object({
   objetoTipo: z.enum(['amostra', 'cassete', 'bloco', 'lamina']).optional(),
   objetoId: z.string().uuid().optional(),
   setorResponsavel: z.string().optional(),
+  /** Destino nominal - a recomendação da review é sempre a pessoa. */
+  responsavelId: z.string().uuid().optional(),
   prazoEm: z.coerce.date().optional(),
   exigeAprovacao: z.boolean().optional(),
+});
+
+const avancoEtapaSchema = z.object({
+  observacao: z.string().max(2000).optional(),
 });
 
 const analiseSchema = z
@@ -1549,6 +1573,18 @@ export class SolicitacoesController {
   })
   async pendencias() {
     return this.solicitacoes.listarPendencias();
+  }
+
+  @Get('tipos')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Tipos de solicitação ativos, com o fluxo de cada um',
+    description:
+      'Catálogo do M01 editado na Administração (quarta revisão): é daqui que o formulário tira ' +
+      'as opções e o número de etapas de cada tipo.',
+  })
+  async tipos() {
+    return this.solicitacoes.listarTipos();
   }
 
   @Post('pendencias')
@@ -1637,6 +1673,31 @@ export class SolicitacoesController {
     const dados = validarCorpo(cancelamentoSchema, corpo);
     await this.solicitacoes.cancelar(id, dados.motivo);
     return { ok: true };
+  }
+
+  @Get(':id/trilha')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Fluxo da solicitação: as etapas do tipo e o que já aconteceu',
+    description:
+      'Cada linha do andamento traz rótulo, data, hora e quem registrou — é o "tem um fluxo ' +
+      'dele aqui embaixo" da quarta revisão.',
+  })
+  async trilha(@Param('id', ParseUUIDPipe) id: string) {
+    return this.solicitacoes.trilha(id);
+  }
+
+  @Post(':id/etapa')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_EXECUTAR)
+  @ApiOperation({
+    summary: 'Avança uma etapa do fluxo do tipo',
+    description:
+      'Um clique = uma linha na trilha. O setor da etapa passa a responder pela solicitação, ' +
+      'e a última etapa conclui a execução — é ela que devolve a solicitação a quem pediu.',
+  })
+  async avancarEtapa(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(avancoEtapaSchema, corpo);
+    return this.solicitacoes.avancar(id, dados.observacao);
   }
 
   @Get(':id/mensagens')

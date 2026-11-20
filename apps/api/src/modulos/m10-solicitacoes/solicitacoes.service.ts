@@ -1,11 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { aliasedTable, and, asc, desc, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
+import { aliasedTable, and, asc, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import {
+  andamentoSolicitacao,
   caso,
+  etapaTipoSolicitacao,
   mensagemSolicitacao,
   paciente,
   pendencia,
   solicitacao,
+  tipoSolicitacao,
   usuario,
   type Transacao,
 } from '@lapato/db';
@@ -26,6 +29,12 @@ import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
 
 export interface NovaSolicitacao {
   casoId?: string;
+  /**
+   * Tipo do catalogo (quarta revisao). Com ele a solicitacao ganha fluxo
+   * proprio; sem ele continua valendo o `tipo` em texto, que e como as
+   * solicitacoes nascidas dentro do sistema (o recorte do M08) entram.
+   */
+  tipoId?: string;
   tipo: string;
   categoria?: string;
   descricao: string;
@@ -34,6 +43,12 @@ export interface NovaSolicitacao {
   objetoTipo?: string;
   objetoId?: string;
   setorResponsavel?: string;
+  /**
+   * Destino da solicitacao. Review: "eu recomendo sempre o nome da pessoa,
+   * porque voce sabe quem colocou a mao - senao vai pro setor, tem cinco
+   * tecnicos, um espera que o outro faca, ninguem faz e fica pendurado".
+   */
+  responsavelId?: string;
   prazoEm?: Date;
   exigeAprovacao?: boolean;
 }
@@ -117,6 +132,14 @@ export class SolicitacoesService {
     const ctx = exigirContexto();
 
     {
+      /**
+       * O tipo do catalogo manda no que a solicitacao sabe de si: se exige
+       * aprovacao e para que setor vai quando quem pede nao escolhe uma
+       * pessoa. Quem passa `exigeAprovacao` explicitamente vence o catalogo -
+       * e como o M08 cria o recorte.
+       */
+      const tipo = dados.tipoId ? await this.exigirTipo(tx, dados.tipoId) : null;
+
       const identificador = await this.numeracao.proximaSolicitacao(
         tx,
         new Date().getFullYear(),
@@ -128,7 +151,8 @@ export class SolicitacoesService {
        * como estado de repouso nao existe na pratica - criada sem proximo passo
        * e exatamente a demanda esquecida que o modulo quer eliminar.
        */
-      const status: StatusSolicitacao = dados.exigeAprovacao
+      const exigeAprovacao = dados.exigeAprovacao ?? tipo?.exigeAprovacao ?? false;
+      const status: StatusSolicitacao = exigeAprovacao
         ? 'aguardando_analise'
         : 'aguardando_execucao';
 
@@ -138,7 +162,8 @@ export class SolicitacoesService {
           tenantId: ctx.tenantId,
           identificador,
           casoId: dados.casoId ?? null,
-          tipo: dados.tipo,
+          tipoId: tipo?.id ?? null,
+          tipo: tipo?.chave ?? dados.tipo,
           categoria: dados.categoria ?? null,
           origem: 'interna',
           descricao: dados.descricao,
@@ -148,9 +173,11 @@ export class SolicitacoesService {
           objetoTipo: dados.objetoTipo ?? null,
           objetoId: dados.objetoId ?? null,
           solicitantePorId: ctx.usuarioId,
-          setorResponsavel: dados.setorResponsavel ?? null,
+          responsavelId: dados.responsavelId ?? null,
+          setorResponsavel:
+            dados.setorResponsavel ?? (dados.responsavelId ? null : tipo?.setorPadrao ?? null),
           prazoEm: dados.prazoEm ?? null,
-          exigeAprovacao: dados.exigeAprovacao ?? false,
+          exigeAprovacao,
         })
         .returning({ id: solicitacao.id });
 
@@ -160,7 +187,12 @@ export class SolicitacoesService {
         moduloOrigem: MODULOS.M10_SOLICITACOES,
         objetoTipo: 'solicitacao',
         objetoId: nova!.id,
-        payload: { identificador, tipo: dados.tipo, prioridade: dados.prioridade ?? 'rotina' },
+        payload: {
+          identificador,
+          tipo: tipo?.chave ?? dados.tipo,
+          nomeTipo: tipo?.nome ?? dados.tipo,
+          prioridade: dados.prioridade ?? 'rotina',
+        },
       });
 
       return { id: nova!.id, identificador };
@@ -223,63 +255,78 @@ export class SolicitacoesService {
    * pertence ao modulo diagnostico.
    */
   async concluir(id: string, resultadoTecnico?: string): Promise<void> {
-    const ctx = exigirContexto();
-
     return this.db.executar(async (tx) => {
       const atual = await this.buscar(tx, id);
-
-      if (!STATUS_ABERTOS.includes(atual.status)) {
-        throw new BadRequestException(
-          `Esta solicitação não está aberta (status atual: ${atual.status}).`,
-        );
-      }
-      if (atual.status === 'aguardando_analise') {
-        throw new BadRequestException(
-          'Esta solicitação ainda aguarda aprovação - conclua a análise antes da execução.',
-        );
-      }
-
-      await tx
-        .update(solicitacao)
-        .set({
-          status: 'concluida',
-          concluidaEm: new Date(),
-          concluidaPorId: ctx.usuarioId,
-          resultadoTecnico: resultadoTecnico?.trim() || null,
-          atualizadoEm: new Date(),
-        })
-        .where(eq(solicitacao.id, id));
-
-      await this.eventos.publicar(tx, {
-        tipo: 'solicitacao.concluida',
-        casoId: atual.casoId,
-        moduloOrigem: MODULOS.M10_SOLICITACOES,
-        objetoTipo: 'solicitacao',
-        objetoId: id,
-        payload: { identificador: atual.identificador, tipo: atual.tipo },
-      });
-
-      /**
-       * Secao 93 - resolucao automatica: a pendencia "aguardando PAS" morre
-       * junto com a conclusao da execucao, sem alguem lembrar de fecha-la.
-       * Pendencias que exigem validacao humana (secao 94) nao entram aqui
-       * porque nao nascem vinculadas a uma solicitacao executavel.
-       */
-      const vinculadas = await tx
-        .select({ id: pendencia.id, casoId: pendencia.casoId })
-        .from(pendencia)
-        .where(
-          and(
-            eq(pendencia.tenantId, ctx.tenantId),
-            eq(pendencia.solicitacaoId, id),
-            inArray(pendencia.status, PENDENCIA_ABERTA),
-          ),
-        );
-
-      for (const p of vinculadas) {
-        await this.encerrarPendencia(tx, p.id, p.casoId, 'Execução da solicitação concluída.');
-      }
+      this.garantirExecutavel(atual.status);
+      await this.concluirEmTransacao(tx, atual, resultadoTecnico);
     });
+  }
+
+  /** Recusa concluir o que nao esta aberto, ou o que ainda espera aprovacao. */
+  private garantirExecutavel(status: StatusSolicitacao): void {
+    if (!STATUS_ABERTOS.includes(status)) {
+      throw new BadRequestException(`Esta solicitação não está aberta (status atual: ${status}).`);
+    }
+    if (status === 'aguardando_analise') {
+      throw new BadRequestException(
+        'Esta solicitação ainda aguarda aprovação - conclua a análise antes da execução.',
+      );
+    }
+  }
+
+  /**
+   * Conclusao propriamente dita, compartilhada pela conclusao direta e pela
+   * ultima etapa do fluxo do tipo - as duas tem de resolver as pendencias
+   * vinculadas e publicar o mesmo evento, ou o caso fica preso por uma
+   * pendencia que o trabalho ja resolveu.
+   */
+  private async concluirEmTransacao(
+    tx: Transacao,
+    atual: { id: string; casoId: string | null; identificador: string; tipo: string },
+    resultadoTecnico?: string,
+  ): Promise<void> {
+    const ctx = exigirContexto();
+
+    await tx
+      .update(solicitacao)
+      .set({
+        status: 'concluida',
+        concluidaEm: new Date(),
+        concluidaPorId: ctx.usuarioId,
+        resultadoTecnico: resultadoTecnico?.trim() || null,
+        atualizadoEm: new Date(),
+      })
+      .where(eq(solicitacao.id, atual.id));
+
+    await this.eventos.publicar(tx, {
+      tipo: 'solicitacao.concluida',
+      casoId: atual.casoId,
+      moduloOrigem: MODULOS.M10_SOLICITACOES,
+      objetoTipo: 'solicitacao',
+      objetoId: atual.id,
+      payload: { identificador: atual.identificador, tipo: atual.tipo },
+    });
+
+    /**
+     * Secao 93 - resolucao automatica: a pendencia "aguardando PAS" morre
+     * junto com a conclusao da execucao, sem alguem lembrar de fecha-la.
+     * Pendencias que exigem validacao humana (secao 94) nao entram aqui
+     * porque nao nascem vinculadas a uma solicitacao executavel.
+     */
+    const vinculadas = await tx
+      .select({ id: pendencia.id, casoId: pendencia.casoId })
+      .from(pendencia)
+      .where(
+        and(
+          eq(pendencia.tenantId, ctx.tenantId),
+          eq(pendencia.solicitacaoId, atual.id),
+          inArray(pendencia.status, PENDENCIA_ABERTA),
+        ),
+      );
+
+    for (const p of vinculadas) {
+      await this.encerrarPendencia(tx, p.id, p.casoId, 'Execução da solicitação concluída.');
+    }
   }
 
   async cancelar(id: string, motivo: string): Promise<void> {
@@ -483,6 +530,23 @@ export class SolicitacoesService {
           id: solicitacao.id,
           identificador: solicitacao.identificador,
           tipo: solicitacao.tipo,
+          /** Nome do catalogo; a chave em texto fica no `tipo` para o legado. */
+          nomeTipo: tipoSolicitacao.nome,
+          etapaAtual: solicitacao.etapaAtual,
+          /**
+           * Review: "cê precisa saber em que status tá - eu pedi, tá no estágio
+           * 3 de 4". Duas subconsultas em vez de dois joins porque o join com
+           * as etapas multiplicaria as linhas da fila.
+           */
+          totalEtapas: sql<number>`(
+            select count(*)::int from etapa_tipo_solicitacao e
+            where e.tenant_id = ${solicitacao.tenantId} and e.tipo_id = ${solicitacao.tipoId}
+          )`,
+          ultimaEtapa: sql<string | null>`(
+            select a.rotulo from andamento_solicitacao a
+            where a.tenant_id = ${solicitacao.tenantId} and a.solicitacao_id = ${solicitacao.id}
+            order by a.ordem desc limit 1
+          )`,
           descricao: solicitacao.descricao,
           justificativa: solicitacao.justificativa,
           prioridade: solicitacao.prioridade,
@@ -505,6 +569,7 @@ export class SolicitacoesService {
         .leftJoin(paciente, eq(paciente.id, caso.pacienteId))
         .leftJoin(usuario, eq(usuario.id, solicitacao.solicitantePorId))
         .leftJoin(responsavel, eq(responsavel.id, solicitacao.responsavelId))
+        .leftJoin(tipoSolicitacao, eq(tipoSolicitacao.id, solicitacao.tipoId))
         .where(and(...filtros))
         .orderBy(desc(solicitacao.criadoEm))
         .limit(200),
@@ -596,6 +661,12 @@ export class SolicitacoesService {
           id: solicitacao.id,
           identificador: solicitacao.identificador,
           tipo: solicitacao.tipo,
+          nomeTipo: tipoSolicitacao.nome,
+          etapaAtual: solicitacao.etapaAtual,
+          totalEtapas: sql<number>`(
+            select count(*)::int from etapa_tipo_solicitacao e
+            where e.tenant_id = ${solicitacao.tenantId} and e.tipo_id = ${solicitacao.tipoId}
+          )`,
           descricao: solicitacao.descricao,
           prioridade: solicitacao.prioridade,
           status: solicitacao.status,
@@ -603,6 +674,7 @@ export class SolicitacoesService {
           criadaEm: solicitacao.criadoEm,
         })
         .from(solicitacao)
+        .leftJoin(tipoSolicitacao, eq(tipoSolicitacao.id, solicitacao.tipoId))
         .where(and(eq(solicitacao.tenantId, ctx.tenantId), eq(solicitacao.casoId, casoId)))
         .orderBy(desc(solicitacao.criadoEm));
 
@@ -665,7 +737,258 @@ export class SolicitacoesService {
     });
   }
 
+  // --- tipos e fluxo (quarta revisao) ---------------------------------------
+
+  /**
+   * Catalogo de tipos ativos, com as etapas de cada um.
+   *
+   * Alimenta tres telas com a mesma verdade: o formulario de solicitacao, a
+   * aba da Administracao e o Portal (que recebe so os tipos marcados).
+   */
+  async listarTipos(apenasPortal = false): Promise<unknown[]> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const filtros = [eq(tipoSolicitacao.tenantId, ctx.tenantId), isNull(tipoSolicitacao.inativadoEm)];
+      if (apenasPortal) filtros.push(eq(tipoSolicitacao.visivelPortal, true));
+
+      const tipos = await tx
+        .select({
+          id: tipoSolicitacao.id,
+          chave: tipoSolicitacao.chave,
+          nome: tipoSolicitacao.nome,
+          descricao: tipoSolicitacao.descricao,
+          exigeAprovacao: tipoSolicitacao.exigeAprovacao,
+          visivelPortal: tipoSolicitacao.visivelPortal,
+          setorPadrao: tipoSolicitacao.setorPadrao,
+          ordem: tipoSolicitacao.ordem,
+        })
+        .from(tipoSolicitacao)
+        .where(and(...filtros))
+        .orderBy(asc(tipoSolicitacao.ordem), asc(tipoSolicitacao.nome));
+
+      if (tipos.length === 0) return [];
+
+      const etapas = await tx
+        .select({
+          tipoId: etapaTipoSolicitacao.tipoId,
+          ordem: etapaTipoSolicitacao.ordem,
+          rotulo: etapaTipoSolicitacao.rotulo,
+          setor: etapaTipoSolicitacao.setor,
+          textoPortal: etapaTipoSolicitacao.textoPortal,
+        })
+        .from(etapaTipoSolicitacao)
+        .where(
+          and(
+            eq(etapaTipoSolicitacao.tenantId, ctx.tenantId),
+            inArray(
+              etapaTipoSolicitacao.tipoId,
+              tipos.map((t) => t.id),
+            ),
+          ),
+        )
+        .orderBy(asc(etapaTipoSolicitacao.ordem));
+
+      return tipos.map((t) => ({ ...t, etapas: etapas.filter((e) => e.tipoId === t.id) }));
+    });
+  }
+
+  /**
+   * Avanca uma etapa do fluxo do tipo.
+   *
+   * Review com o Hugo: "ela vai clicando, e isso vai caminhando... e ai a gente
+   * sabe que no dia quinze esse material foi devolvido pro Hugo". Um clique =
+   * uma linha na trilha, com rotulo, data, hora e nome - e a ultima etapa
+   * conclui a solicitacao, que e o momento em que ela sai da lista de quem
+   * executa e volta para quem pediu.
+   */
+  async avancar(
+    id: string,
+    observacao?: string,
+  ): Promise<{ etapa: number; total: number; rotulo: string; concluida: boolean }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const atual = await this.buscar(tx, id);
+      this.garantirExecutavel(atual.status);
+
+      if (!atual.tipoId) {
+        throw new BadRequestException(
+          'Esta solicitação não segue um tipo do catálogo, então não tem etapas - conclua a execução direto.',
+        );
+      }
+
+      const etapas = await this.etapasDoTipo(tx, atual.tipoId);
+      if (etapas.length === 0) {
+        throw new BadRequestException(
+          'O tipo desta solicitação não tem etapas configuradas. Configure o fluxo na Administração ou conclua a execução direto.',
+        );
+      }
+
+      const proxima = etapas[atual.etapaAtual];
+      if (!proxima) {
+        throw new BadRequestException('O fluxo desta solicitação já passou pela última etapa.');
+      }
+
+      const ordem = atual.etapaAtual + 1;
+      const ultima = ordem === etapas.length;
+      const nota = observacao?.trim() || null;
+
+      await tx.insert(andamentoSolicitacao).values({
+        tenantId: ctx.tenantId,
+        solicitacaoId: id,
+        ordem,
+        // Congelado: renomear a etapa na Administracao nao reescreve o passado.
+        rotulo: proxima.rotulo,
+        observacao: nota,
+        registradoPorId: ctx.usuarioId,
+      });
+
+      await tx
+        .update(solicitacao)
+        .set({
+          etapaAtual: ordem,
+          /**
+           * O setor da etapa passa a responder pela solicitacao: a fila segue o
+           * fluxo sozinha, em vez de alguem ter de reatribuir a cada passo.
+           */
+          ...(proxima.setor ? { setorResponsavel: proxima.setor } : {}),
+          ...(ultima ? {} : { status: 'em_execucao' as const }),
+          atualizadoEm: new Date(),
+        })
+        .where(eq(solicitacao.id, id));
+
+      await this.eventos.publicar(tx, {
+        tipo: 'solicitacao.etapa_avancada',
+        casoId: atual.casoId,
+        moduloOrigem: MODULOS.M10_SOLICITACOES,
+        objetoTipo: 'solicitacao',
+        objetoId: id,
+        /**
+         * Visivel ao cliente quando o tipo e dele: e por este evento que o
+         * Portal mostra "em que fase esta" sem ninguem mandar mensagem.
+         */
+        visibilidade: atual.visibilidadePortal === 'nao' ? 'interno' : 'externo',
+        payload: {
+          identificador: atual.identificador,
+          etapa: ordem,
+          total: etapas.length,
+          rotulo: proxima.rotulo,
+          textoPortal: proxima.textoPortal,
+        },
+      });
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'solicitacao',
+        entidadeId: id,
+        acao: 'avancar_etapa',
+        casoId: atual.casoId ?? undefined,
+        valorNovo: { etapa: ordem, rotulo: proxima.rotulo, observacao: nota },
+      });
+
+      /**
+       * Review: o ultimo clique da tecnica ("enviado pro patologista") E a
+       * conclusao da execucao - nao existe um segundo botao depois dele.
+       */
+      if (ultima) {
+        await this.concluirEmTransacao(tx, atual, nota ?? proxima.rotulo);
+      }
+
+      return { etapa: ordem, total: etapas.length, rotulo: proxima.rotulo, concluida: ultima };
+    });
+  }
+
+  /**
+   * Trilha de uma solicitacao: o fluxo configurado e o que ja aconteceu.
+   *
+   * Vai inteira para a tela porque e assim que a review pediu que se leia -
+   * "tem um fluxo dele aqui embaixo", com o que falta visivel ao lado do que
+   * ja foi feito.
+   */
+  async trilha(id: string): Promise<{
+    etapaAtual: number;
+    etapas: { ordem: number; rotulo: string; setor: string | null }[];
+    andamento: {
+      ordem: number;
+      rotulo: string;
+      observacao: string | null;
+      registradoEm: Date;
+      por: string | null;
+    }[];
+  }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const atual = await this.buscar(tx, id);
+
+      const etapas = atual.tipoId ? await this.etapasDoTipo(tx, atual.tipoId) : [];
+
+      const andamento = await tx
+        .select({
+          ordem: andamentoSolicitacao.ordem,
+          rotulo: andamentoSolicitacao.rotulo,
+          observacao: andamentoSolicitacao.observacao,
+          registradoEm: andamentoSolicitacao.registradoEm,
+          por: usuario.nomeCompleto,
+        })
+        .from(andamentoSolicitacao)
+        .leftJoin(usuario, eq(usuario.id, andamentoSolicitacao.registradoPorId))
+        .where(
+          and(
+            eq(andamentoSolicitacao.tenantId, ctx.tenantId),
+            eq(andamentoSolicitacao.solicitacaoId, id),
+          ),
+        )
+        .orderBy(asc(andamentoSolicitacao.ordem));
+
+      return {
+        etapaAtual: atual.etapaAtual,
+        etapas: etapas.map((e) => ({ ordem: e.ordem, rotulo: e.rotulo, setor: e.setor })),
+        andamento,
+      };
+    });
+  }
+
   // --- internos -------------------------------------------------------------
+
+  /** Tipo ativo do catalogo; inativo recusa solicitacao nova (M01 secao 21). */
+  private async exigirTipo(tx: Transacao, tipoId: string) {
+    const ctx = exigirContexto();
+
+    const [linha] = await tx
+      .select()
+      .from(tipoSolicitacao)
+      .where(and(eq(tipoSolicitacao.tenantId, ctx.tenantId), eq(tipoSolicitacao.id, tipoId)))
+      .limit(1);
+
+    if (!linha) throw new NotFoundException('Tipo de solicitação não encontrado.');
+    if (linha.inativadoEm) {
+      throw new BadRequestException(
+        `O tipo "${linha.nome}" está inativo e não aceita solicitações novas.`,
+      );
+    }
+    return linha;
+  }
+
+  private async etapasDoTipo(tx: Transacao, tipoId: string) {
+    const ctx = exigirContexto();
+
+    return tx
+      .select({
+        ordem: etapaTipoSolicitacao.ordem,
+        rotulo: etapaTipoSolicitacao.rotulo,
+        setor: etapaTipoSolicitacao.setor,
+        textoPortal: etapaTipoSolicitacao.textoPortal,
+      })
+      .from(etapaTipoSolicitacao)
+      .where(
+        and(
+          eq(etapaTipoSolicitacao.tenantId, ctx.tenantId),
+          eq(etapaTipoSolicitacao.tipoId, tipoId),
+        ),
+      )
+      .orderBy(asc(etapaTipoSolicitacao.ordem));
+  }
 
   private async buscar(tx: Transacao, id: string) {
     const ctx = exigirContexto();

@@ -59,6 +59,7 @@ export const TIPO_EVENTO = [
   'laminas.disponiveis',
   // M10 Solicitacoes e Pendencias
   'solicitacao.criada',
+  'solicitacao.etapa_avancada',
   'solicitacao.concluida',
   'pendencia.criada',
   'pendencia.resolvida',
@@ -211,6 +212,7 @@ export const EVENTO_LABEL: Record<TipoEvento, string> = {
   'divergencia.cassetes': 'Divergência de cassetes apontada',
   'laminas.disponiveis': 'Lâminas disponíveis',
   'solicitacao.criada': 'Solicitação criada',
+  'solicitacao.etapa_avancada': 'Solicitação avançou de etapa',
   'solicitacao.concluida': 'Solicitação concluída',
   'pendencia.criada': 'Pendência criada',
   'pendencia.resolvida': 'Pendência resolvida',

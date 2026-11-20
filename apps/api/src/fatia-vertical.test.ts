@@ -6523,3 +6523,155 @@ describe('terceira revisão (Hugo, 9/9): modelos prontos de macroscopia', () => 
     expect(daBancada.body.map((m: { id: string }) => m.id)).not.toContain(modeloId);
   });
 });
+
+describe('quarta revisão (Hugo): cada tipo de solicitação com seu fluxo', () => {
+  /**
+   * A reunião inteira gira em torno de uma devolução de bloco perdida no
+   * WhatsApp: a técnica deu "ok", entrou de férias, e dez dias depois ninguém
+   * sabia onde o bloco estava. "Cada tipo de solicitação vai ter seu fluxo...
+   * ela vai clicando, e isso vai caminhando" - e o último clique devolve a
+   * demanda a quem pediu.
+   */
+  let tipoId: string;
+  let casoId: string;
+  let solicitacaoId: string;
+
+  test('admin cadastra o tipo com as etapas; o formulário passa a oferecê-lo', async () => {
+    await entrar('admin@lapato.local');
+    const criado = await req('POST', '/administracao/tipos-solicitacao', {
+      chave: `devolucao_teste_${Date.now().toString().slice(-6)}`,
+      nome: 'Devolução de bloco (teste)',
+      visivelPortal: true,
+      setorPadrao: 'histotecnica',
+      etapas: [
+        { rotulo: 'Recebida pelo laboratório', setor: 'histotecnica', textoPortal: 'Recebida' },
+        { rotulo: 'Bloco localizado', setor: 'histotecnica' },
+        { rotulo: 'Entregue ao solicitante', setor: 'recepcao', textoPortal: 'Entregue' },
+      ],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    tipoId = criado.body.id;
+
+    const noAdmin = await req('GET', '/administracao/tipos-solicitacao');
+    const meu = noAdmin.body.find((t: { id: string }) => t.id === tipoId);
+    expect(meu.etapas.map((e: { ordem: number }) => e.ordem)).toEqual([1, 2, 3]);
+
+    // A chave não se edita: é a referência do tipo nas solicitações gravadas.
+    const chaveOriginal = meu.chave;
+    const edicao = await req('POST', `/administracao/tipos-solicitacao/${tipoId}`, {
+      nome: 'Devolução de bloco (teste)',
+      chave: 'outra_chave',
+    });
+    expect(edicao.status).toBe(201);
+    const depois = await req('GET', '/administracao/tipos-solicitacao');
+    expect(depois.body.find((t: { id: string }) => t.id === tipoId).chave).toBe(chaveOriginal);
+  });
+
+  test('o patologista pede com destino nominal e a técnica vai clicando', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const caso = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Fluxo ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Nódulo' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(caso.status, JSON.stringify(caso.body)).toBe(201);
+    casoId = caso.body.id;
+
+    await entrar('patologista@lapato.local');
+    const equipe = await req('GET', '/usuarios/equipe');
+    expect(equipe.status).toBe(200);
+    const tecnico = equipe.body.find((m: { nome: string }) => m.nome);
+    expect(tecnico).toBeTruthy();
+
+    const tipos = await req('GET', '/solicitacoes/tipos');
+    expect(tipos.body.find((t: { id: string }) => t.id === tipoId).etapas).toHaveLength(3);
+
+    const pedido = await req('POST', '/solicitacoes', {
+      casoId,
+      tipoId,
+      tipo: 'devolucao_bloco',
+      descricao: 'Devolver o bloco A1 para exame complementar',
+      responsavelId: tecnico.id,
+    });
+    expect(pedido.status, JSON.stringify(pedido.body)).toBe(201);
+    solicitacaoId = pedido.body.id;
+
+    // "Eu pedi, tá no estágio 3 de 4": a fila mostra o tipo e o estágio.
+    const minhas = await req('GET', '/solicitacoes?aba=minhas');
+    const naFila = minhas.body.find((s: { id: string }) => s.id === solicitacaoId);
+    expect(naFila.nomeTipo).toBe('Devolução de bloco (teste)');
+    expect(naFila.totalEtapas).toBe(3);
+    expect(naFila.etapaAtual).toBe(0);
+
+    await entrar('tecnico@lapato.local');
+    const primeira = await req('POST', `/solicitacoes/${solicitacaoId}/etapa`, {
+      observacao: 'Bloco pedido ao arquivo',
+    });
+    expect(primeira.status, JSON.stringify(primeira.body)).toBe(201);
+    expect(primeira.body).toMatchObject({ etapa: 1, total: 3, concluida: false });
+
+    expect((await req('POST', `/solicitacoes/${solicitacaoId}/etapa`)).body.etapa).toBe(2);
+
+    const trilha = await req('GET', `/solicitacoes/${solicitacaoId}/trilha`);
+    expect(trilha.body.etapaAtual).toBe(2);
+    expect(trilha.body.etapas).toHaveLength(3);
+    expect(trilha.body.andamento[0]).toMatchObject({
+      ordem: 1,
+      rotulo: 'Recebida pelo laboratório',
+      observacao: 'Bloco pedido ao arquivo',
+    });
+    // Cada linha da trilha traz o nome de quem clicou (review).
+    expect(trilha.body.andamento[0].por).toBeTruthy();
+  });
+
+  test('a última etapa conclui a solicitação e devolve a demanda a quem pediu', async () => {
+    await entrar('tecnico@lapato.local');
+    const ultima = await req('POST', `/solicitacoes/${solicitacaoId}/etapa`, {
+      observacao: 'Entregue ao motoboy',
+    });
+    expect(ultima.status, JSON.stringify(ultima.body)).toBe(201);
+    expect(ultima.body).toMatchObject({ etapa: 3, total: 3, concluida: true });
+
+    // Passou da última: não existe quarta etapa para clicar.
+    expect((await req('POST', `/solicitacoes/${solicitacaoId}/etapa`)).status).toBe(400);
+
+    const encerradas = await req('GET', '/solicitacoes?aba=concluidas');
+    const minha = encerradas.body.find((s: { id: string }) => s.id === solicitacaoId);
+    expect(minha.status).toBe('concluida');
+    expect(minha.resultadoTecnico).toBe('Entregue ao motoboy');
+    expect(minha.ultimaEtapa).toBe('Entregue ao solicitante');
+
+    // Sai da fila aberta de quem executa.
+    const abertas = await req('GET', '/solicitacoes?aba=abertas');
+    expect(abertas.body.map((s: { id: string }) => s.id)).not.toContain(solicitacaoId);
+
+    // A linha do tempo do caso registra cada avanço (evento do M10).
+    const dossie = await req('GET', `/casos/${casoId}`);
+    const avancos = dossie.body.linhaDoTempo.filter(
+      (e: { tipo: string }) => e.tipo === 'solicitacao.etapa_avancada',
+    );
+    expect(avancos.length).toBe(3);
+    expect(avancos[0].usuarioNome).toBeTruthy();
+  });
+
+  test('tipo inativo não aceita solicitação nova', async () => {
+    await entrar('admin@lapato.local');
+    expect((await req('POST', `/administracao/tipos-solicitacao/${tipoId}/inativacao`)).status).toBe(201);
+
+    const semTipo = await req('GET', '/solicitacoes/tipos');
+    expect(semTipo.body.map((t: { id: string }) => t.id)).not.toContain(tipoId);
+
+    await entrar('patologista@lapato.local');
+    const recusada = await req('POST', '/solicitacoes', {
+      casoId,
+      tipoId,
+      tipo: 'devolucao_bloco',
+      descricao: 'Outra devolução',
+    });
+    expect(recusada.status).toBe(400);
+  });
+});

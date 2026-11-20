@@ -2,6 +2,7 @@ import { relations } from 'drizzle-orm';
 import {
   boolean,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -10,6 +11,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import {
+  colunasInativacao,
   colunasTempo,
   colunasTenant,
   etapaEnum,
@@ -42,6 +44,14 @@ export const solicitacao = pgTable(
 
     /** Ex.: 'coloracao_especial', 'ihq', 'recorte', 'reamostragem', 'nova_coleta'. */
     tipo: text('tipo').notNull(),
+    /**
+     * Tipo do catalogo (quarta revisao). Nulo nas solicitacoes criadas antes do
+     * catalogo e nas que nascem de dentro do sistema sem passar por ele - essas
+     * seguem com o `tipo` em texto e sem fluxo proprio.
+     */
+    tipoId: uuid('tipo_id').references(() => tipoSolicitacao.id),
+    /** Quantas etapas do fluxo do tipo ja foram registradas. 0 = nenhuma. */
+    etapaAtual: integer('etapa_atual').notNull().default(0),
     categoria: text('categoria'),
     /** interna | cliente | veterinario | guardian */
     origem: text('origem').notNull().default('interna'),
@@ -189,4 +199,122 @@ export const pendenciaRelations = relations(pendencia, ({ one, many }) => ({
     references: [solicitacao.id],
   }),
   mensagens: many(mensagemSolicitacao),
+}));
+
+/**
+ * Catalogo de tipos de solicitacao (quarta revisao com o Hugo).
+ *
+ * Antes, "tipo" era texto livre gravado na solicitacao e o andamento era um
+ * status generico igual para todos. A review mostrou por que isso nao serve:
+ * "cada tipo de solicitacao vai ter seu fluxo" - devolucao de bloco passa por
+ * separar, mandar ao laboratorio, receber de volta e devolver ao patologista;
+ * uma coloracao especial nao passa por nada disso. E o catalogo tem de ser
+ * editavel ("entrou funcionario novo, funcionario saiu de ferias, eu tenho que
+ * tirar o nome dele dai"), porque quem configura e o laboratorio, nao o deploy.
+ *
+ * M01: inativa, nunca exclui - o tipo ja gravado numa solicitacao e dela.
+ */
+export const tipoSolicitacao = pgTable(
+  'tipo_solicitacao',
+  {
+    ...colunasTenant,
+    /** Ex.: 'coloracao_especial', 'devolucao_bloco'. Estavel; o nome muda, a chave nao. */
+    chave: text('chave').notNull(),
+    nome: text('nome').notNull(),
+    descricao: text('descricao'),
+    /** Nasce aguardando analise em vez de cair direto na fila (secao 29). */
+    exigeAprovacao: boolean('exige_aprovacao').notNull().default(false),
+    /**
+     * Review: "ele nao faz mais solicitacao pelo WhatsApp, faz pelo login
+     * deles". So os tipos marcados aqui aparecem para o cliente no Portal.
+     */
+    visivelPortal: boolean('visivel_portal').notNull().default(false),
+    /** Setor que recebe quando quem pede nao escolhe uma pessoa. */
+    setorPadrao: text('setor_padrao'),
+    ordem: integer('ordem').notNull().default(0),
+    ...colunasTempo,
+    ...colunasInativacao,
+  },
+  (t) => [
+    unique('uq_tipo_solicitacao_chave').on(t.tenantId, t.chave),
+    index('idx_tipo_solicitacao_ordem').on(t.tenantId, t.ordem),
+  ],
+);
+
+/**
+ * Uma etapa do fluxo de um tipo (review: "ela vai clicando, e isso vai
+ * caminhando").
+ *
+ * E configuracao, nao historico: o historico vive em `andamento_solicitacao`,
+ * que congela o rotulo. Mudar a etapa aqui nao reescreve o que ja aconteceu.
+ */
+export const etapaTipoSolicitacao = pgTable(
+  'etapa_tipo_solicitacao',
+  {
+    ...colunasTenant,
+    tipoId: uuid('tipo_id')
+      .notNull()
+      .references(() => tipoSolicitacao.id, { onDelete: 'cascade' }),
+    /** 1 em diante; a ordem e o proprio fluxo. */
+    ordem: integer('ordem').notNull(),
+    rotulo: text('rotulo').notNull(),
+    /** Setor que executa esta etapa. Informativo na tela de quem acompanha. */
+    setor: text('setor'),
+    /**
+     * M10: "traducao contextual" - o cliente le "material separado para
+     * envio", nao "separando o bloco". Vazio: a etapa nao aparece no Portal.
+     */
+    textoPortal: text('texto_portal'),
+    ...colunasTempo,
+  },
+  (t) => [
+    unique('uq_etapa_tipo_ordem').on(t.tenantId, t.tipoId, t.ordem),
+    index('idx_etapa_tipo').on(t.tenantId, t.tipoId),
+  ],
+);
+
+/**
+ * Trilha do que de fato aconteceu com uma solicitacao.
+ *
+ * Review: "a Raquel deu ok e recebeu, esta separando o bloco no dia cinco, foi
+ * enviado pro processamento, a Alane recebeu..., e ai foi enviado pro
+ * patologista" - cada clique com data, hora e nome. O rotulo e copiado da
+ * configuracao no momento do clique, pelo mesmo motivo que o item da OS copia
+ * o preco: configuracao muda, historico nao.
+ */
+export const andamentoSolicitacao = pgTable(
+  'andamento_solicitacao',
+  {
+    ...colunasTenant,
+    solicitacaoId: uuid('solicitacao_id')
+      .notNull()
+      .references(() => solicitacao.id, { onDelete: 'cascade' }),
+    ordem: integer('ordem').notNull(),
+    rotulo: text('rotulo').notNull(),
+    observacao: text('observacao'),
+    registradoPorId: uuid('registrado_por_id').references(() => usuario.id),
+    registradoEm: timestamp('registrado_em', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('uq_andamento_ordem').on(t.tenantId, t.solicitacaoId, t.ordem),
+    index('idx_andamento_solicitacao').on(t.tenantId, t.solicitacaoId),
+  ],
+);
+
+export const tipoSolicitacaoRelations = relations(tipoSolicitacao, ({ many }) => ({
+  etapas: many(etapaTipoSolicitacao),
+}));
+
+export const etapaTipoSolicitacaoRelations = relations(etapaTipoSolicitacao, ({ one }) => ({
+  tipo: one(tipoSolicitacao, {
+    fields: [etapaTipoSolicitacao.tipoId],
+    references: [tipoSolicitacao.id],
+  }),
+}));
+
+export const andamentoSolicitacaoRelations = relations(andamentoSolicitacao, ({ one }) => ({
+  solicitacao: one(solicitacao, {
+    fields: [andamentoSolicitacao.solicitacaoId],
+    references: [solicitacao.id],
+  }),
 }));

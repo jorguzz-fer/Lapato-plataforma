@@ -110,6 +110,66 @@ export function alertaDePrazo(
 }
 
 /**
+ * Limiares de cor de um servico, em HORAS desde a entrada do material.
+ *
+ * Quarta revisao com o Hugo, sobre o mapa de exames que ele ja opera: "lá nos
+ * cadastros eu posso alterar os prazos de exame. No citopatológico ele calcula
+ * em horas: entre 0 e 24 fica verde, entre 24 e 48 amarelo, passou de 48
+ * vermelho. O histopatológico são sete dias... de zero a três verde, três a
+ * cinco amarelo, passou de cinco vermelho. E depois disso ele fica preto."
+ *
+ * Dois limiares, nao quatro faixas: verde e "antes do primeiro", e preto e
+ * vencido - que ja e o `atrasado` calculado pela previsao, e nao por hora
+ * decorrida. Nulo significa "nao configurado", e a contagem cai nos dias uteis
+ * restantes.
+ */
+export interface LimiaresAlerta {
+  /** Horas decorridas a partir das quais o caso fica em 'atencao' (amarelo). */
+  atencaoHoras: number | null;
+  /** Horas decorridas a partir das quais fica 'critico' (vermelho). */
+  criticoHoras: number | null;
+}
+
+const HORA_EM_MS = 3_600_000;
+
+/**
+ * Alerta de prazo de um caso, com tres regras em ordem:
+ *
+ * 1. Vencido manda: passou da previsao, e 'atrasado' - seja o que for o
+ *    tempo decorrido. E o "preto" do mapa do Hugo.
+ * 2. Limiares do servico, quando configurados: horas desde a ENTRADA do
+ *    material (nao desde o cadastro - segunda review).
+ * 3. Sem limiares, os dias uteis que restam para a previsao, como antes.
+ *
+ * Centralizado aqui porque a mesma conta e feita na escrita do estado (M07) e
+ * na leitura da Central: duas implementacoes divergiriam em uma semana.
+ */
+export function alertaDoCaso(dados: {
+  entradaEm: Date | null;
+  previsaoLiberacao: Date | null;
+  agora: Date;
+  limiares?: LimiaresAlerta | null;
+  calendario?: CalendarioInstitucional;
+}): AlertaPrazo {
+  const { entradaEm, previsaoLiberacao, agora, limiares } = dados;
+
+  if (previsaoLiberacao && agora > previsaoLiberacao) return 'atrasado';
+
+  if (entradaEm && limiares && (limiares.atencaoHoras !== null || limiares.criticoHoras !== null)) {
+    const horas = (agora.getTime() - entradaEm.getTime()) / HORA_EM_MS;
+    if (limiares.criticoHoras !== null && horas >= limiares.criticoHoras) return 'critico';
+    if (limiares.atencaoHoras !== null && horas >= limiares.atencaoHoras) return 'atencao';
+    return 'normal';
+  }
+
+  if (previsaoLiberacao) {
+    return alertaDePrazo(previsaoLiberacao, agora, dados.calendario ?? CALENDARIO_PADRAO);
+  }
+
+  return 'normal';
+}
+
+/**
  * M07: suspensao de prazo. Uma pendencia aguardando o cliente pode suspender a
  * contagem; alguns SLAs legais nao podem ser suspensos, e isso e decidido pela
  * configuracao, nao aqui.

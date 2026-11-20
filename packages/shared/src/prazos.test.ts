@@ -2,6 +2,7 @@ import { test, describe, expect } from 'vitest';
 import {
   CALENDARIO_PADRAO,
   alertaDePrazo,
+  alertaDoCaso,
   aplicarSuspensoes,
   contarDiasUteis,
   ehDiaUtil,
@@ -131,5 +132,97 @@ describe('aplicarSuspensoes', () => {
     const previsao = utc('2026-08-17');
     const nova = aplicarSuspensoes(previsao, [], utc('2026-08-12'));
     expect(nova.getTime()).toBe(previsao.getTime());
+  });
+});
+
+describe('alertaDoCaso: a cor do mapa de exames (quarta revisão)', () => {
+  /**
+   * "No citopatológico ele calcula em horas: entre 0 e 24 fica verde, entre 24
+   * e 48 amarelo, passou de 48 vermelho. O histopatológico são sete dias... de
+   * zero a três verde, três a cinco amarelo. E depois disso ele fica preto."
+   */
+  const cito = { atencaoHoras: 24, criticoHoras: 48 };
+  const entrada = new Date('2026-08-10T08:00:00Z');
+  const previsao = new Date('2026-08-14T08:00:00Z');
+
+  test('antes do primeiro limiar fica no prazo', () => {
+    const alerta = alertaDoCaso({
+      entradaEm: entrada,
+      previsaoLiberacao: previsao,
+      agora: new Date('2026-08-10T20:00:00Z'), // 12 h
+      limiares: cito,
+    });
+    expect(alerta).toBe('normal');
+  });
+
+  test('passou de 24 h vira atenção; passou de 48 h vira crítico', () => {
+    expect(
+      alertaDoCaso({
+        entradaEm: entrada,
+        previsaoLiberacao: previsao,
+        agora: new Date('2026-08-11T09:00:00Z'), // 25 h
+        limiares: cito,
+      }),
+    ).toBe('atencao');
+
+    expect(
+      alertaDoCaso({
+        entradaEm: entrada,
+        previsaoLiberacao: previsao,
+        agora: new Date('2026-08-12T09:00:00Z'), // 49 h
+        limiares: cito,
+      }),
+    ).toBe('critico');
+  });
+
+  test('vencido manda: passar da previsão é atrasado, por mais cedo que seja', () => {
+    const alerta = alertaDoCaso({
+      entradaEm: new Date('2026-08-14T07:00:00Z'),
+      previsaoLiberacao: previsao,
+      agora: new Date('2026-08-14T09:00:00Z'), // 2 h de entrada, mas já venceu
+      limiares: cito,
+    });
+    expect(alerta).toBe('atrasado');
+  });
+
+  test('sem limiares configurados, a conta volta a ser por dias úteis', () => {
+    // Segunda-feira 10/8/2026 com previsão na terça: 1 dia útil restante.
+    const alerta = alertaDoCaso({
+      entradaEm: entrada,
+      previsaoLiberacao: new Date('2026-08-11T08:00:00Z'),
+      agora: new Date('2026-08-10T09:00:00Z'),
+      limiares: { atencaoHoras: null, criticoHoras: null },
+    });
+    expect(alerta).toBe('critico');
+  });
+
+  test('um limiar só funciona sozinho: sem atenção, vai de verde a crítico', () => {
+    const limiares = { atencaoHoras: null, criticoHoras: 48 };
+    expect(
+      alertaDoCaso({
+        entradaEm: entrada,
+        previsaoLiberacao: previsao,
+        agora: new Date('2026-08-11T09:00:00Z'),
+        limiares,
+      }),
+    ).toBe('normal');
+    expect(
+      alertaDoCaso({
+        entradaEm: entrada,
+        previsaoLiberacao: previsao,
+        agora: new Date('2026-08-12T09:00:00Z'),
+        limiares,
+      }),
+    ).toBe('critico');
+  });
+
+  test('caso sem entrada registrada não inventa cor pela hora', () => {
+    const alerta = alertaDoCaso({
+      entradaEm: null,
+      previsaoLiberacao: null,
+      agora: new Date('2026-08-12T09:00:00Z'),
+      limiares: cito,
+    });
+    expect(alerta).toBe('normal');
   });
 });

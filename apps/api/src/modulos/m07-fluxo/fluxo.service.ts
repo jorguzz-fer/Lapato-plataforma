@@ -13,7 +13,7 @@ import {
 } from '@lapato/db';
 import {
   MODULOS,
-  alertaDePrazo,
+  alertaDoCaso,
   aplicarSuspensoes,
   somarDiasUteis,
   type CalendarioInstitucional,
@@ -319,11 +319,35 @@ export class FluxoService {
     const base = somarDiasUteis(estado.prazoIniciadoEm, estado.prazoDiasUteis, calendario);
     const previsao = aplicarSuspensoes(base, suspensoes, agora, calendario);
 
+    /**
+     * Quarta revisao: a cor do caso pode vir dos limiares do servico (horas
+     * desde a entrada do material), e nao dos dias uteis que restam. Sem
+     * limiares configurados, a conta e a de antes.
+     */
+    const [doServico] = await tx
+      .select({
+        entradaEm: caso.entradaEm,
+        atencaoHoras: servico.alertaAtencaoHoras,
+        criticoHoras: servico.alertaCriticoHoras,
+      })
+      .from(caso)
+      .innerJoin(servico, eq(servico.id, caso.servicoId))
+      .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.id, casoId)))
+      .limit(1);
+
     await tx
       .update(estadoCaso)
       .set({
         previsaoLiberacao: previsao,
-        alertaPrazo: alertaDePrazo(previsao, agora, calendario),
+        alertaPrazo: alertaDoCaso({
+          entradaEm: doServico?.entradaEm ?? null,
+          previsaoLiberacao: previsao,
+          agora,
+          limiares: doServico
+            ? { atencaoHoras: doServico.atencaoHoras, criticoHoras: doServico.criticoHoras }
+            : null,
+          calendario,
+        }),
         atualizadoEm: agora,
       })
       .where(and(eq(estadoCaso.tenantId, ctx.tenantId), eq(estadoCaso.casoId, casoId)));

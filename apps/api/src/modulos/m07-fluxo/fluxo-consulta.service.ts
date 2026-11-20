@@ -9,7 +9,7 @@ import {
   type Transacao,
   tutor,
 } from '@lapato/db';
-import { alertaDePrazo, type Etapa, ETAPA } from '@lapato/shared';
+import { alertaDoCaso, type Etapa, ETAPA } from '@lapato/shared';
 import { DbService } from '../../core/db/db.service.js';
 import { FluxoService } from './fluxo.service.js';
 import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
@@ -78,6 +78,9 @@ export class FluxoConsultaService {
           entrouNaEtapaEm: estadoCaso.entrouNaEtapaEm,
           previsaoLiberacao: estadoCaso.previsaoLiberacao,
           alertaPrazo: estadoCaso.alertaPrazo,
+          /** Limiares de cor do serviço (quarta revisão), em horas desde a entrada. */
+          alertaAtencaoHoras: servico.alertaAtencaoHoras,
+          alertaCriticoHoras: servico.alertaCriticoHoras,
           bloqueado: estadoCaso.bloqueado,
           responsavelId: estadoCaso.responsavelId,
         })
@@ -103,11 +106,18 @@ export class FluxoConsultaService {
         /**
          * O alerta e recalculado na leitura, e nao apenas o valor persistido:
          * um caso que virou o prazo desde a ultima escrita precisa aparecer
-         * como atrasado sem depender de um job ter rodado.
+         * como atrasado sem depender de um job ter rodado. E a conta e a mesma
+         * da escrita (`alertaDoCaso`), com os limiares do servico.
          */
-        alertaPrazo: l.previsaoLiberacao
-          ? alertaDePrazo(l.previsaoLiberacao, agora)
-          : l.alertaPrazo,
+        alertaPrazo: alertaDoCaso({
+          entradaEm: l.entradaEm,
+          previsaoLiberacao: l.previsaoLiberacao,
+          agora,
+          limiares: {
+            atencaoHoras: l.alertaAtencaoHoras,
+            criticoHoras: l.alertaCriticoHoras,
+          },
+        }),
       }));
     });
   }

@@ -838,6 +838,9 @@ export async function criarBaseInstitucional(
       geraMaterialBioteca: true,
       prazoDiasUteis: 5,
       prazoUrgenteDiasUteis: 2,
+      // Quarta revisao: "de zero a tres dias verde, tres a cinco amarelo".
+      alertaAtencaoHoras: 72,
+      alertaCriticoHoras: 120,
     })
     .returning();
 
@@ -853,6 +856,9 @@ export async function criarBaseInstitucional(
     exigeProcessamento: false,
     exigeMicroscopia: true,
     prazoDiasUteis: 3,
+    // "No citopatologico ele calcula em horas: 24 e 48."
+    alertaAtencaoHoras: 24,
+    alertaCriticoHoras: 48,
   });
 
   await tx.insert(s.servico).values({

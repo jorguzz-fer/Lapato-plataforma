@@ -71,6 +71,19 @@ export const servico = pgTable(
     prazoDiasUteis: integer('prazo_dias_uteis').notNull().default(5),
     prazoUrgenteDiasUteis: integer('prazo_urgente_dias_uteis'),
 
+    /**
+     * Quando o caso muda de cor na Central, em HORAS desde a entrada do
+     * material (quarta revisao com o Hugo): "no citopatologico ele calcula em
+     * horas - entre 0 e 24 verde, 24 e 48 amarelo, passou de 48 vermelho; o
+     * histopatologico sao sete dias, de zero a tres verde, tres a cinco
+     * amarelo". Nulo = nao configurado, e a cor sai dos dias uteis restantes.
+     *
+     * O vencido (preto) nao mora aqui: ele vem da previsao de liberacao, que e
+     * calculada pelo prazo em dias uteis e pelo calendario institucional.
+     */
+    alertaAtencaoHoras: integer('alerta_atencao_horas'),
+    alertaCriticoHoras: integer('alerta_critico_horas'),
+
     /** Recipiente recomendado, fixador, metodo de conservacao. */
     caracteristicasOperacionais: jsonb('caracteristicas_operacionais')
       .$type<Record<string, unknown>>()

@@ -33,6 +33,9 @@ export interface DadosServico {
   permiteComplementares?: boolean;
   prazoDiasUteis?: number;
   prazoUrgenteDiasUteis?: number | null;
+  /** Horas desde a entrada em que o caso fica amarelo e vermelho na Central. */
+  alertaAtencaoHoras?: number | null;
+  alertaCriticoHoras?: number | null;
   valorPadrao?: number | null;
 }
 
@@ -184,6 +187,8 @@ export class AdministracaoService {
           permiteComplementares: dados.permiteComplementares ?? true,
           prazoDiasUteis: dados.prazoDiasUteis ?? 5,
           prazoUrgenteDiasUteis: dados.prazoUrgenteDiasUteis ?? null,
+          alertaAtencaoHoras: dados.alertaAtencaoHoras ?? null,
+          alertaCriticoHoras: dados.alertaCriticoHoras ?? null,
           valorPadrao: dados.valorPadrao != null ? dados.valorPadrao.toFixed(2) : null,
         })
         .returning({ id: servico.id });
@@ -226,6 +231,11 @@ export class AdministracaoService {
       if (dados.prazoDiasUteis !== undefined) mudancas.prazoDiasUteis = dados.prazoDiasUteis;
       if (dados.prazoUrgenteDiasUteis !== undefined)
         mudancas.prazoUrgenteDiasUteis = dados.prazoUrgenteDiasUteis ?? null;
+      // Quarta revisao: os limiares de cor do mapa de exames, por servico.
+      if (dados.alertaAtencaoHoras !== undefined)
+        mudancas.alertaAtencaoHoras = dados.alertaAtencaoHoras ?? null;
+      if (dados.alertaCriticoHoras !== undefined)
+        mudancas.alertaCriticoHoras = dados.alertaCriticoHoras ?? null;
       /**
        * O preco vigente vale para itens NOVOS de OS; itens ja lancados
        * guardam o retrato do momento (M01: alteracoes nao retroagem).

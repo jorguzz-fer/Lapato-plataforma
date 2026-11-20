@@ -1235,6 +1235,12 @@ export interface ServicoAdmin {
   permiteComplementares: boolean;
   prazoDiasUteis: number;
   prazoUrgenteDiasUteis: number | null;
+  /**
+   * Quarta revisão: quando o caso muda de cor na Central, em horas desde a
+   * entrada do material. Nulo = conta pelos dias úteis que restam.
+   */
+  alertaAtencaoHoras: number | null;
+  alertaCriticoHoras: number | null;
   /** Decimal serializado ("120.00"); nulo = sem preco na tabela padrao. */
   valorPadrao: string | null;
   inativadoEm: string | null;

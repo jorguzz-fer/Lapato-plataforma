@@ -127,6 +127,28 @@ export function CentralDeCasos() {
         </TextField>
       </Stack>
 
+      {/*
+        Legenda das cores (quarta revisão com o Hugo).
+        O mapa de exames que ele já opera se lê de relance pela cor, e o prazo
+        de cada tipo de exame é configurado em Configurações › Serviços. Aqui a
+        legenda diz o que cada faixa significa — e os indicadores carregam
+        símbolo, porque o M07 exige que não dependam só de cor.
+      */}
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ mb: 1.5, flexWrap: 'wrap', gap: 0.75, alignItems: 'center' }}
+      >
+        <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>Prazo:</Typography>
+        <IndicadorPrazo estado="normal" />
+        <IndicadorPrazo estado="atencao" />
+        <IndicadorPrazo estado="critico" />
+        <IndicadorPrazo estado="atrasado" />
+        <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
+          As faixas de atenção e crítico são configuradas por serviço.
+        </Typography>
+      </Stack>
+
       {/**
         * Duas apresentacoes, e nao uma tabela encolhida: seis colunas num
         * aparelho de 375px sao ilegiveis mesmo com rolagem horizontal. Em tela

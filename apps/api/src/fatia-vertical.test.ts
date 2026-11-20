@@ -6849,3 +6849,71 @@ describe('quarta revisão (Hugo): o cliente abre a solicitação pelo Portal', (
     expect(recusado.status).toBe(404);
   });
 });
+
+describe('quarta revisão (Hugo): a cor do mapa de exames vem do serviço', () => {
+  /**
+   * "Lá nos cadastros eu posso alterar os prazos de exame. No citopatológico
+   * ele calcula em horas: entre 24 e 48 ele fica amarelo, passou de 48
+   * vermelho... e depois disso ele fica preto."
+   */
+  let servicoId: string;
+
+  test('serviço com limiares em horas pinta o caso pelo tempo desde a entrada', async () => {
+    await entrar('admin@lapato.local');
+    const criado = await req('POST', '/administracao/servicos', {
+      nome: 'Citologia expressa (teste)',
+      codigo: `CEX${Date.now().toString().slice(-5)}`,
+      categoria: 'Anatomopatologia',
+      modalidade: 'histopatologia',
+      exigeMacroscopia: false,
+      exigeProcessamento: false,
+      exigeMicroscopia: true,
+      prazoDiasUteis: 5,
+      alertaAtencaoHoras: 2,
+      alertaCriticoHoras: 4,
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    servicoId = criado.body.id;
+
+    const noAdmin = await req('GET', '/administracao/servicos');
+    const meu = noAdmin.body.find((s: { id: string }) => s.id === servicoId);
+    expect(meu.alertaAtencaoHoras).toBe(2);
+    expect(meu.alertaCriticoHoras).toBe(4);
+
+    await entrar('recepcao@lapato.local');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const seisHoras = new Date(Date.now() - 6 * 3_600_000).toISOString();
+    const caso = await req('POST', '/casos', {
+      servicoId,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Cor ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Esfregaço' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+      entradaEm: seisHoras,
+    });
+    expect(caso.status, JSON.stringify(caso.body)).toBe(201);
+
+    // Seis horas desde a entrada, com crítico em quatro: vermelho, e o prazo
+    // em dias úteis (cinco) nem chegou perto de vencer.
+    const central = await req('GET', '/fluxo/casos');
+    const naLista = central.body.find((c: { casoId: string }) => c.casoId === caso.body.id);
+    expect(naLista, 'o caso precisa aparecer na Central').toBeTruthy();
+    expect(naLista.alertaPrazo).toBe('critico');
+
+    // Tirar os limiares devolve a conta aos dias úteis: cinco dias à frente é normal.
+    await entrar('admin@lapato.local');
+    expect(
+      (
+        await req('POST', `/administracao/servicos/${servicoId}`, {
+          alertaAtencaoHoras: null,
+          alertaCriticoHoras: null,
+        })
+      ).status,
+    ).toBe(201);
+
+    await entrar('recepcao@lapato.local');
+    const semLimiares = await req('GET', '/fluxo/casos');
+    const agora = semLimiares.body.find((c: { casoId: string }) => c.casoId === caso.body.id);
+    expect(agora.alertaPrazo).toBe('normal');
+  });
+});

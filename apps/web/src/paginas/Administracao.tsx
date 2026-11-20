@@ -181,6 +181,9 @@ function AbaServicos({ podeEditar }: { podeEditar: boolean }) {
               <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.25 }}>
                 Prazo: {s.prazoDiasUteis} dias úteis
                 {s.prazoUrgenteDiasUteis ? ` (urgente: ${s.prazoUrgenteDiasUteis})` : ''}
+                {s.alertaAtencaoHoras || s.alertaCriticoHoras
+                  ? ` · cor em ${s.alertaAtencaoHoras ?? '—'}h/${s.alertaCriticoHoras ?? '—'}h`
+                  : ''}
                 {s.valorPadrao != null ? ` · ${formatarReais(s.valorPadrao)}` : ' · sem preço'}
                 {' · '}
                 {FLAGS_SERVICO.filter(([f]) => s[f])
@@ -239,6 +242,8 @@ function DialogoServico({
   const [modalidade, setModalidade] = useState('histopatologia');
   const [prazo, setPrazo] = useState('5');
   const [prazoUrgente, setPrazoUrgente] = useState('');
+  const [alertaAtencao, setAlertaAtencao] = useState('');
+  const [alertaCritico, setAlertaCritico] = useState('');
   const [valorPadrao, setValorPadrao] = useState('');
   const [flags, setFlags] = useState<Record<string, boolean>>({});
   const [erro, setErro] = useState<string | null>(null);
@@ -251,6 +256,8 @@ function DialogoServico({
     setModalidade(servico?.modalidade ?? 'histopatologia');
     setPrazo(String(servico?.prazoDiasUteis ?? 5));
     setPrazoUrgente(servico?.prazoUrgenteDiasUteis ? String(servico.prazoUrgenteDiasUteis) : '');
+    setAlertaAtencao(servico?.alertaAtencaoHoras ? String(servico.alertaAtencaoHoras) : '');
+    setAlertaCritico(servico?.alertaCriticoHoras ? String(servico.alertaCriticoHoras) : '');
     setValorPadrao(servico?.valorPadrao != null ? String(servico.valorPadrao) : '');
     setFlags(
       Object.fromEntries(
@@ -270,6 +277,8 @@ function DialogoServico({
         modalidade,
         prazoDiasUteis: Number(prazo),
         prazoUrgenteDiasUteis: prazoUrgente.trim() ? Number(prazoUrgente) : null,
+        alertaAtencaoHoras: alertaAtencao.trim() ? Number(alertaAtencao) : null,
+        alertaCriticoHoras: alertaCritico.trim() ? Number(alertaCritico) : null,
         // Vale para itens NOVOS de OS; os ja lancados guardam o retrato (M01).
         valorPadrao: valorPadrao.trim() ? Number(valorPadrao.replace(',', '.')) : null,
         ...flags,
@@ -342,6 +351,36 @@ function DialogoServico({
               helperText="Tabela padrão; acordos por cliente ficam no cadastro do cliente."
             />
           </Stack>
+
+          {/*
+            Quarta revisão: "lá nos cadastros eu posso alterar os prazos de
+            exame — no citopatológico ele calcula em horas; o histopatológico
+            são sete dias". As duas horas são contadas da ENTRADA do material;
+            vencido (vermelho escuro) continua vindo da previsão de liberação.
+          */}
+          <Box>
+            <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 0.5 }}>
+              Quando o caso muda de cor na Central
+            </Typography>
+            <Stack direction="row" spacing={2}>
+              <TextField
+                label="Atenção (horas)"
+                type="number"
+                value={alertaAtencao}
+                onChange={(e) => setAlertaAtencao(e.target.value)}
+                sx={{ flex: 1 }}
+                helperText="Horas desde a entrada. Ex.: 24 na citologia, 72 na histopatologia."
+              />
+              <TextField
+                label="Crítico (horas)"
+                type="number"
+                value={alertaCritico}
+                onChange={(e) => setAlertaCritico(e.target.value)}
+                sx={{ flex: 1 }}
+                helperText="Vazio nos dois: a cor volta a contar pelos dias úteis que faltam."
+              />
+            </Stack>
+          </Box>
 
           {/* Seção 11: as flags decidem por quais etapas o caso passa. */}
           <Box>

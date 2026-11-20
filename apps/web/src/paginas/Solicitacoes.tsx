@@ -28,9 +28,12 @@ import {
   api,
   ErroApi,
   type CasoNaFila,
+  type MembroEquipe,
   type MensagemSolicitacao,
   type PendenciaResumo,
   type SolicitacaoResumo,
+  type TipoSolicitacao,
+  type TrilhaSolicitacao,
 } from '../api';
 
 /**
@@ -46,6 +49,12 @@ import {
  * a tela so esconde; a autorizacao de verdade e da API.
  */
 
+/**
+ * Rotulos de tipos ANTIGOS, gravados em texto antes do catalogo do M01
+ * (quarta revisao). O formulario novo le o catalogo do servidor; esta lista
+ * sobrevive so para a fila nao mostrar `coloracao_especial` cru num registro
+ * de 2026. Nao acrescente nada aqui: tipo novo se cadastra na Administracao.
+ */
 const TIPOS_SOLICITACAO = [
   { valor: 'coloracao_especial', rotulo: 'Coloração especial' },
   { valor: 'ihq', rotulo: 'Imuno-histoquímica' },
@@ -132,6 +141,8 @@ export function Solicitacoes({ permissoes }: Props) {
 
   const [dialogoSolicitacao, setDialogoSolicitacao] = useState(false);
   const [dialogoPendencia, setDialogoPendencia] = useState(false);
+  const [tipos, setTipos] = useState<TipoSolicitacao[]>([]);
+  const [equipe, setEquipe] = useState<MembroEquipe[]>([]);
 
   const podeCriar = permissoes.includes('solicitacao:criar');
 
@@ -154,6 +165,17 @@ export function Solicitacoes({ permissoes }: Props) {
     if (!podeCriar || !permissoes.includes('fluxo:visualizar')) return;
     api.get<CasoNaFila[]>('/fluxo/casos').then(setCasos).catch(() => setCasos([]));
   }, [podeCriar, permissoes]);
+
+  /**
+   * Catálogo de tipos e equipe: o que o laboratório cadastrou na Administração
+   * (quarta revisão) é o que o formulário oferece, e o destino é nominal.
+   */
+  useEffect(() => {
+    api.get<TipoSolicitacao[]>('/solicitacoes/tipos').then(setTipos).catch(() => setTipos([]));
+    if (podeCriar) {
+      api.get<MembroEquipe[]>('/usuarios/equipe').then(setEquipe).catch(() => setEquipe([]));
+    }
+  }, [podeCriar]);
 
   return (
     <Box component="section" sx={{ maxWidth: 1080 }}>
@@ -243,6 +265,8 @@ export function Solicitacoes({ permissoes }: Props) {
       <DialogoNovaSolicitacao
         aberto={dialogoSolicitacao}
         casos={casos}
+        tipos={tipos}
+        equipe={equipe}
         aoFechar={() => setDialogoSolicitacao(false)}
         aoCriar={() => {
           setDialogoSolicitacao(false);
@@ -300,6 +324,7 @@ function CartaoSolicitacao({
 }) {
   const [aberto, setAberto] = useState(false);
   const [mensagens, setMensagens] = useState<MensagemSolicitacao[] | null>(null);
+  const [trilha, setTrilha] = useState<TrilhaSolicitacao | null>(null);
   const [novaMensagem, setNovaMensagem] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -311,6 +336,21 @@ function CartaoSolicitacao({
   const podeConcluir =
     aberta && s.status !== 'aguardando_analise' && permissoes.includes('solicitacao:executar');
   const podeCancelar = aberta && permissoes.includes('solicitacao:cancelar');
+  /**
+   * Quarta revisão: quando o tipo tem fluxo, o caminho normal é avançar etapa
+   * por etapa — a última delas é que conclui. "Concluir execução" continua ali
+   * para o que não tem fluxo e para encerrar no meio, com o resultado técnico.
+   */
+  const temFluxo = s.totalEtapas > 0;
+  const proximaEtapa = trilha?.etapas[s.etapaAtual] ?? null;
+  const podeAvancar = podeConcluir && temFluxo && proximaEtapa !== null;
+
+  function carregarTrilha() {
+    api
+      .get<TrilhaSolicitacao>(`/solicitacoes/${s.id}/trilha`)
+      .then(setTrilha)
+      .catch(() => setTrilha(null));
+  }
 
   function expandir() {
     const proximo = !aberto;
@@ -320,6 +360,7 @@ function CartaoSolicitacao({
         .get<MensagemSolicitacao[]>(`/solicitacoes/${s.id}/mensagens`)
         .then(setMensagens)
         .catch(() => setMensagens([]));
+      if (temFluxo) carregarTrilha();
     }
   }
 
@@ -362,8 +403,25 @@ function CartaoSolicitacao({
             <Typography sx={{ ...MONO, fontSize: 13, fontWeight: 700, color: 'primary.main' }}>
               {s.identificador}
             </Typography>
-            <Chip size="small" variant="outlined" label={TIPO_LABEL[s.tipo] ?? s.tipo} />
+            <Chip
+              size="small"
+              variant="outlined"
+              label={s.nomeTipo ?? TIPO_LABEL[s.tipo] ?? s.tipo}
+            />
             <ChipStatus status={s.status} />
+            {/* Review: "cê precisa saber em que status tá — tá no estágio 3 de 4". */}
+            {s.totalEtapas > 0 && s.status !== 'cancelada' && (
+              <Chip
+                size="small"
+                color={s.etapaAtual >= s.totalEtapas ? 'success' : 'default'}
+                variant={s.etapaAtual >= s.totalEtapas ? 'filled' : 'outlined'}
+                label={
+                  s.ultimaEtapa
+                    ? `Etapa ${s.etapaAtual} de ${s.totalEtapas} · ${s.ultimaEtapa}`
+                    : `Etapa 0 de ${s.totalEtapas} · ainda não iniciada`
+                }
+              />
+            )}
             {vencida && <Chip size="small" color="error" label="Vencida" />}
             {(s.prioridade === 'urgente' || s.prioridade === 'critica') && (
               <Chip size="small" color="warning" label={PRIORIDADE_LABEL[s.prioridade]} />
@@ -407,6 +465,7 @@ function CartaoSolicitacao({
         <Divider sx={{ my: 1.5 }} />
 
         <Stack spacing={1.5}>
+          {temFluxo && trilha && <Trilha trilha={trilha} />}
           {s.justificativa && <Detalhe rotulo="Justificativa" valor={s.justificativa} />}
           {s.motivoRecusa && <Detalhe rotulo="Motivo da recusa" valor={s.motivoRecusa} />}
           {s.resultadoTecnico && (
@@ -454,6 +513,25 @@ function CartaoSolicitacao({
 
           {(podeAnalisar || podeConcluir || podeCancelar) && (
             <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              {podeAvancar && (
+                <AcaoComTexto
+                  rotulo={`Avançar: ${proximaEtapa!.rotulo}`}
+                  cor="primary"
+                  variante="contained"
+                  titulo={proximaEtapa!.rotulo}
+                  campo="Observação"
+                  ajuda="Opcional — fica na trilha, com a data, a hora e o seu nome."
+                  ocupado={ocupado}
+                  aoConfirmar={(observacao) =>
+                    agir(async () => {
+                      await api.post(`/solicitacoes/${s.id}/etapa`, {
+                        ...(observacao.trim() ? { observacao: observacao.trim() } : {}),
+                      });
+                      carregarTrilha();
+                    }, 'Não foi possível avançar a etapa.')
+                  }
+                />
+              )}
               {podeCancelar && (
                 <AcaoComTexto
                   rotulo="Cancelar"
@@ -530,6 +608,70 @@ function CartaoSolicitacao({
         </Stack>
       </Collapse>
     </Card>
+  );
+}
+
+/**
+ * O fluxo da solicitacao: o que ja aconteceu e o que falta, na mesma coluna.
+ *
+ * Quarta revisao com o Hugo: "tem um fluxo dele aqui embaixo... a Raquel deu
+ * ok e recebeu, esta separando o bloco no dia cinco, foi enviado pro
+ * processamento, a Alane recebeu tambem, e ai foi enviado pro patologista".
+ * Cada linha cumprida traz quem clicou e quando; as que faltam ficam em
+ * cinza, para a pessoa saber quanto resta antes de prometer prazo a alguem.
+ */
+function Trilha({ trilha }: { trilha: TrilhaSolicitacao }) {
+  const feitas = new Map(trilha.andamento.map((a) => [a.ordem, a]));
+
+  return (
+    <Box>
+      <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'text.secondary', mb: 0.75 }}>
+        FLUXO
+      </Typography>
+      <Stack spacing={0.75}>
+        {trilha.etapas.map((etapa) => {
+          const feita = feitas.get(etapa.ordem);
+          return (
+            <Stack key={etapa.ordem} direction="row" spacing={1} sx={{ alignItems: 'baseline' }}>
+              <Box
+                sx={{
+                  width: 18,
+                  flexShrink: 0,
+                  textAlign: 'center',
+                  fontSize: 12,
+                  color: feita ? 'success.main' : 'text.disabled',
+                }}
+              >
+                {feita ? '✓' : etapa.ordem}
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography
+                  sx={{
+                    fontSize: 13,
+                    fontWeight: feita ? 600 : 400,
+                    color: feita ? 'text.primary' : 'text.disabled',
+                  }}
+                >
+                  {etapa.rotulo}
+                  {etapa.setor && !feita ? (
+                    <Box component="span" sx={{ color: 'text.disabled', fontWeight: 400 }}>
+                      {` · ${etapa.setor}`}
+                    </Box>
+                  ) : null}
+                </Typography>
+                {feita && (
+                  <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
+                    {new Date(feita.registradoEm).toLocaleString('pt-BR')}
+                    {feita.por ? ` · ${feita.por}` : ''}
+                    {feita.observacao ? ` — ${feita.observacao}` : ''}
+                  </Typography>
+                )}
+              </Box>
+            </Stack>
+          );
+        })}
+      </Stack>
+    </Box>
   );
 }
 
@@ -626,16 +768,21 @@ function ListaPendencias({
 function DialogoNovaSolicitacao({
   aberto,
   casos,
+  tipos,
+  equipe,
   aoFechar,
   aoCriar,
 }: {
   aberto: boolean;
   casos: CasoNaFila[];
+  tipos: TipoSolicitacao[];
+  equipe: MembroEquipe[];
   aoFechar: () => void;
   aoCriar: () => void;
 }) {
   const [casoId, setCasoId] = useState('');
-  const [tipo, setTipo] = useState('coloracao_especial');
+  const [tipoId, setTipoId] = useState('');
+  const [responsavelId, setResponsavelId] = useState('');
   const [descricao, setDescricao] = useState('');
   const [justificativa, setJustificativa] = useState('');
   const [prioridade, setPrioridade] = useState('rotina');
@@ -643,13 +790,29 @@ function DialogoNovaSolicitacao({
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
+  /** O primeiro tipo do catálogo é o padrão — abrir vazio só dá trabalho. */
+  useEffect(() => {
+    if (!tipoId && tipos.length > 0) setTipoId(tipos[0]!.id);
+  }, [tipoId, tipos]);
+
+  const tipo = tipos.find((t) => t.id === tipoId) ?? null;
+
+  /**
+   * Aprovação prévia é característica do tipo (IHQ de alto custo). A caixa
+   * segue ali para a exceção, mas nasce marcada quando o tipo já pede.
+   */
+  useEffect(() => {
+    if (tipo) setExigeAprovacao(tipo.exigeAprovacao);
+  }, [tipo]);
+
   async function criar() {
     setOcupado(true);
     setErro(null);
     try {
       await api.post('/solicitacoes', {
         ...(casoId ? { casoId } : {}),
-        tipo,
+        ...(tipo ? { tipoId: tipo.id, tipo: tipo.chave } : { tipo: 'outra' }),
+        ...(responsavelId ? { responsavelId } : {}),
         descricao: descricao.trim(),
         ...(justificativa.trim() ? { justificativa: justificativa.trim() } : {}),
         prioridade,
@@ -657,7 +820,7 @@ function DialogoNovaSolicitacao({
       });
       setDescricao('');
       setJustificativa('');
-      setExigeAprovacao(false);
+      setResponsavelId('');
       aoCriar();
     } catch (err) {
       setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível criar a solicitação.');
@@ -686,10 +849,55 @@ function DialogoNovaSolicitacao({
             ))}
           </TextField>
 
-          <TextField select label="Tipo" value={tipo} onChange={(e) => setTipo(e.target.value)}>
-            {TIPOS_SOLICITACAO.map((t) => (
-              <MenuItem key={t.valor} value={t.valor}>
-                {t.rotulo}
+          <TextField
+            select
+            label="Tipo"
+            value={tipoId}
+            onChange={(e) => setTipoId(e.target.value)}
+            disabled={tipos.length === 0}
+            helperText={
+              tipos.length === 0
+                ? 'Nenhum tipo cadastrado — configure em Configurações › Solicitações.'
+                : tipo?.descricao ?? ' '
+            }
+          >
+            {tipos.map((t) => (
+              <MenuItem key={t.id} value={t.id}>
+                {t.nome}
+              </MenuItem>
+            ))}
+          </TextField>
+
+          {/* O fluxo do tipo, antes de pedir: quem solicita vê por onde isso passa. */}
+          {tipo && tipo.etapas.length > 0 && (
+            <Box>
+              <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'text.secondary' }}>
+                FLUXO DESTE TIPO
+              </Typography>
+              <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+                {tipo.etapas.map((e) => e.rotulo).join(' → ')}
+              </Typography>
+            </Box>
+          )}
+
+          <TextField
+            select
+            label="Destino"
+            value={responsavelId}
+            onChange={(e) => setResponsavelId(e.target.value)}
+            helperText={
+              responsavelId
+                ? 'Fica no nome dessa pessoa — é assim que se sabe quem colocou a mão.'
+                : `Sem nome, vai para o setor${tipo?.setorPadrao ? ` ${tipo.setorPadrao}` : ' do tipo'}.`
+            }
+          >
+            <MenuItem value="">
+              Setor{tipo?.setorPadrao ? ` · ${tipo.setorPadrao}` : ''}
+            </MenuItem>
+            {equipe.map((m) => (
+              <MenuItem key={m.id} value={m.id}>
+                {m.nome}
+                {m.setor ? ` · ${m.setor}` : ''}
               </MenuItem>
             ))}
           </TextField>

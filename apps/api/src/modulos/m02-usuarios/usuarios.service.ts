@@ -7,6 +7,7 @@ import {
   cliente,
   perfil,
   sessao,
+  setor,
   unidade,
   usuario,
   usuarioPerfil,
@@ -112,6 +113,33 @@ export class UsuariosService {
             eq(usuario.tenantId, ctx.tenantId),
             eq(usuario.status, 'ativo'),
             inArray(perfil.chave, ['patologista', 'patologista_revisor']),
+          ),
+        )
+        .orderBy(asc(usuario.nomeCompleto)),
+    );
+  }
+
+  /**
+   * Equipe interna ativa: o seletor de DESTINO das solicitacoes.
+   *
+   * Quarta revisao com o Hugo: "eu escolho pra quem e que vai essa pendencia -
+   * pode ser o nome da pessoa, pode ser o setor... eu recomendo sempre o nome
+   * da pessoa, porque voce sabe quem colocou a mao". Contas do Portal ficam de
+   * fora: cliente nao executa etapa interna.
+   */
+  async listarEquipe(): Promise<Array<{ id: string; nome: string; setor: string | null }>> {
+    const ctx = exigirContexto();
+
+    return this.db.executar((tx) =>
+      tx
+        .select({ id: usuario.id, nome: usuario.nomeCompleto, setor: setor.nome })
+        .from(usuario)
+        .leftJoin(setor, eq(setor.id, usuario.setorPrincipalId))
+        .where(
+          and(
+            eq(usuario.tenantId, ctx.tenantId),
+            eq(usuario.status, 'ativo'),
+            isNull(usuario.clienteId),
           ),
         )
         .orderBy(asc(usuario.nomeCompleto)),

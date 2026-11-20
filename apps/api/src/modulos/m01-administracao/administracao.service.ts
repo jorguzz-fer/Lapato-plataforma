@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
   diaNaoUtil,
+  etapaTipoSolicitacao,
   localFisico,
   modeloEtiqueta,
   modeloMacroscopia,
@@ -9,6 +10,7 @@ import {
   setor,
   tabelaMestre,
   termo,
+  tipoSolicitacao,
   unidade,
   type Transacao,
 } from '@lapato/db';
@@ -39,6 +41,22 @@ export interface DadosModeloMacroscopia {
   titulo: string;
   texto: string;
   ordem?: number;
+}
+
+export interface DadosTipoSolicitacao {
+  chave: string;
+  nome: string;
+  descricao?: string | null;
+  exigeAprovacao?: boolean;
+  visivelPortal?: boolean;
+  setorPadrao?: string | null;
+  ordem?: number;
+  /**
+   * Fluxo completo, em ordem. Vem inteiro de proposito: a tela edita a lista
+   * como lista ("remover etapa", "mover para cima"), e salvar peca por peca
+   * abriria espaco para ordens com buraco ou duplicada.
+   */
+  etapas?: Array<{ rotulo: string; setor?: string | null; textoPortal?: string | null }>;
 }
 
 export interface DadosTermo {
@@ -429,6 +447,191 @@ export class AdministracaoService {
     await this.alternarAtivacao(modeloMacroscopia, 'modelo_macroscopia', id, ativar, 'Modelo de macroscopia');
   }
 
+  // --- tipos de solicitacao e seus fluxos (quarta revisao) ------------------
+
+  /**
+   * Catalogo administrativo dos tipos de solicitacao, inclusive inativos.
+   *
+   * Review com o Hugo: "seria interessante que a gente pudesse editar isso -
+   * adicionar gente, remover gente, adicionar serviço". O que o laboratorio
+   * edita aqui e o que aparece no formulario de solicitacao e no Portal.
+   */
+  async listarTiposSolicitacao(): Promise<unknown[]> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const tipos = await tx
+        .select()
+        .from(tipoSolicitacao)
+        .where(eq(tipoSolicitacao.tenantId, ctx.tenantId))
+        .orderBy(asc(tipoSolicitacao.ordem), asc(tipoSolicitacao.nome));
+
+      if (tipos.length === 0) return [];
+
+      const etapas = await tx
+        .select()
+        .from(etapaTipoSolicitacao)
+        .where(
+          and(
+            eq(etapaTipoSolicitacao.tenantId, ctx.tenantId),
+            inArray(
+              etapaTipoSolicitacao.tipoId,
+              tipos.map((t) => t.id),
+            ),
+          ),
+        )
+        .orderBy(asc(etapaTipoSolicitacao.ordem));
+
+      return tipos.map((t) => ({
+        id: t.id,
+        chave: t.chave,
+        nome: t.nome,
+        descricao: t.descricao,
+        exigeAprovacao: t.exigeAprovacao,
+        visivelPortal: t.visivelPortal,
+        setorPadrao: t.setorPadrao,
+        ordem: t.ordem,
+        inativadoEm: t.inativadoEm,
+        etapas: etapas
+          .filter((e) => e.tipoId === t.id)
+          .map((e) => ({
+            ordem: e.ordem,
+            rotulo: e.rotulo,
+            setor: e.setor,
+            textoPortal: e.textoPortal,
+          })),
+      }));
+    });
+  }
+
+  async criarTipoSolicitacao(dados: DadosTipoSolicitacao): Promise<{ id: string }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const [novo] = await tx
+        .insert(tipoSolicitacao)
+        .values({
+          tenantId: ctx.tenantId,
+          chave: dados.chave.trim(),
+          nome: dados.nome.trim(),
+          descricao: dados.descricao?.trim() || null,
+          exigeAprovacao: dados.exigeAprovacao ?? false,
+          visivelPortal: dados.visivelPortal ?? false,
+          setorPadrao: dados.setorPadrao?.trim() || null,
+          ordem: dados.ordem ?? 0,
+        })
+        .returning({ id: tipoSolicitacao.id });
+
+      await this.gravarEtapas(tx, novo!.id, dados.etapas ?? []);
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'tipo_solicitacao',
+        entidadeId: novo!.id,
+        acao: 'criacao',
+        valorNovo: { ...dados },
+      });
+
+      return { id: novo!.id };
+    });
+  }
+
+  async editarTipoSolicitacao(id: string, dados: Partial<DadosTipoSolicitacao>): Promise<void> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const [atual] = await tx
+        .select()
+        .from(tipoSolicitacao)
+        .where(and(eq(tipoSolicitacao.tenantId, ctx.tenantId), eq(tipoSolicitacao.id, id)))
+        .limit(1);
+      if (!atual) throw new NotFoundException('Tipo de solicitação não encontrado.');
+
+      const mudancas: Record<string, unknown> = {};
+      if (dados.nome !== undefined) mudancas.nome = dados.nome.trim();
+      if (dados.descricao !== undefined) mudancas.descricao = dados.descricao?.trim() || null;
+      if (dados.exigeAprovacao !== undefined) mudancas.exigeAprovacao = dados.exigeAprovacao;
+      if (dados.visivelPortal !== undefined) mudancas.visivelPortal = dados.visivelPortal;
+      if (dados.setorPadrao !== undefined) mudancas.setorPadrao = dados.setorPadrao?.trim() || null;
+      if (dados.ordem !== undefined) mudancas.ordem = dados.ordem;
+      /**
+       * A chave nao se edita: ela e a referencia estavel do tipo (o M08 cria o
+       * recorte por chave, e solicitacoes antigas a guardam em texto). Renomear
+       * e trocar o `nome`, que e o que a tela mostra.
+       */
+
+      if (Object.keys(mudancas).length > 0) {
+        await tx
+          .update(tipoSolicitacao)
+          .set({ ...mudancas, atualizadoEm: new Date() })
+          .where(eq(tipoSolicitacao.id, id));
+      }
+
+      if (dados.etapas) await this.gravarEtapas(tx, id, dados.etapas);
+
+      const antes = {
+        nome: atual.nome,
+        descricao: atual.descricao,
+        exigeAprovacao: atual.exigeAprovacao,
+        visivelPortal: atual.visivelPortal,
+        setorPadrao: atual.setorPadrao,
+        ordem: atual.ordem,
+      };
+      await this.auditoria.registrarAlteracao(tx, 'tipo_solicitacao', id, antes, {
+        ...antes,
+        ...mudancas,
+        ...(dados.etapas ? { etapas: dados.etapas.map((e) => e.rotulo) } : {}),
+      });
+    });
+  }
+
+  async alternarTipoSolicitacao(id: string, ativar: boolean): Promise<void> {
+    await this.alternarAtivacao(
+      tipoSolicitacao,
+      'tipo_solicitacao',
+      id,
+      ativar,
+      'Tipo de solicitação',
+    );
+  }
+
+  /**
+   * Substitui o fluxo inteiro do tipo.
+   *
+   * Apagar e reinserir e seguro aqui porque isto e configuracao: o historico
+   * mora em `andamento_solicitacao`, que copia o rotulo no momento do clique.
+   * As solicitacoes em andamento seguem pela ordem - por isso a tela avisa que
+   * mexer no meio do fluxo mexe em quem esta no meio dele.
+   */
+  private async gravarEtapas(
+    tx: Transacao,
+    tipoId: string,
+    etapas: Array<{ rotulo: string; setor?: string | null; textoPortal?: string | null }>,
+  ): Promise<void> {
+    const ctx = exigirContexto();
+
+    await tx
+      .delete(etapaTipoSolicitacao)
+      .where(
+        and(
+          eq(etapaTipoSolicitacao.tenantId, ctx.tenantId),
+          eq(etapaTipoSolicitacao.tipoId, tipoId),
+        ),
+      );
+
+    if (etapas.length === 0) return;
+
+    await tx.insert(etapaTipoSolicitacao).values(
+      etapas.map((etapa, i) => ({
+        tenantId: ctx.tenantId,
+        tipoId,
+        ordem: i + 1,
+        rotulo: etapa.rotulo.trim(),
+        setor: etapa.setor?.trim() || null,
+        textoPortal: etapa.textoPortal?.trim() || null,
+      })),
+    );
+  }
+
   // --- unidades e setores (secoes 7-8) --------------------------------------
 
   async listarUnidades(): Promise<unknown[]> {
@@ -788,7 +991,8 @@ export class AdministracaoService {
       | typeof tabelaMestre
       | typeof localFisico
       | typeof modeloEtiqueta
-      | typeof modeloMacroscopia,
+      | typeof modeloMacroscopia
+      | typeof tipoSolicitacao,
     id: string,
     rotulo: string,
   ) {
@@ -810,7 +1014,8 @@ export class AdministracaoService {
       | typeof unidade
       | typeof setor
       | typeof localFisico
-      | typeof modeloMacroscopia,
+      | typeof modeloMacroscopia
+      | typeof tipoSolicitacao,
     entidade: string,
     id: string,
     ativar: boolean,

@@ -1322,10 +1322,46 @@ export interface VeterinarioLista {
 
 // --- M10: solicitações e pendências ------------------------------------------
 
+export interface TipoSolicitacao {
+  id: string;
+  chave: string;
+  nome: string;
+  descricao: string | null;
+  exigeAprovacao: boolean;
+  visivelPortal: boolean;
+  setorPadrao: string | null;
+  ordem: number;
+  etapas: { ordem: number; rotulo: string; setor: string | null; textoPortal: string | null }[];
+}
+
+/** Fluxo configurado do tipo + o que já aconteceu (quarta revisão). */
+export interface TrilhaSolicitacao {
+  etapaAtual: number;
+  etapas: { ordem: number; rotulo: string; setor: string | null }[];
+  andamento: {
+    ordem: number;
+    rotulo: string;
+    observacao: string | null;
+    registradoEm: string;
+    por: string | null;
+  }[];
+}
+
+export interface MembroEquipe {
+  id: string;
+  nome: string;
+  setor: string | null;
+}
+
 export interface SolicitacaoResumo {
   id: string;
   identificador: string;
   tipo: string;
+  /** Nome do catálogo; nulo nas solicitações criadas antes dele. */
+  nomeTipo: string | null;
+  etapaAtual: number;
+  totalEtapas: number;
+  ultimaEtapa: string | null;
   descricao: string;
   justificativa: string | null;
   prioridade: string;

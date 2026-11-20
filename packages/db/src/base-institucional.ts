@@ -422,6 +422,125 @@ export const TABELAS_MESTRES: Array<{ chave: string; nome: string; termos: strin
   },
 ];
 
+
+/**
+ * M10: catalogo inicial de tipos de solicitacao, com o fluxo de cada um.
+ *
+ * Quarta revisao com o Hugo. Duas coisas que a reuniao deixou claras:
+ *
+ * 1. **O fluxo e do tipo.** A devolucao de um bloco passa por localizar no
+ *    arquivo, receber de volta e entregar; uma coloracao especial passa pelo
+ *    processamento. Um status generico igual para os dois nao responde "em que
+ *    fase isso esta", que e a pergunta que o telefone do laboratorio faz.
+ *
+ * 2. **Isto e ponto de partida, nao verdade.** O laboratorio edita na
+ *    Administracao - inclui tipo, renomeia etapa, inativa o que nao usa. Por
+ *    isso nada aqui esta no codigo: esta no banco, desde o primeiro dia.
+ *
+ * `visivelPortal` marca o que o cliente pode pedir sozinho, substituindo o
+ * WhatsApp que perdeu a devolucao de bloco contada na review.
+ */
+export const TIPOS_SOLICITACAO: Array<{
+  chave: string;
+  nome: string;
+  descricao?: string;
+  exigeAprovacao?: boolean;
+  visivelPortal?: boolean;
+  setorPadrao?: string;
+  etapas: Array<{ rotulo: string; setor?: string; textoPortal?: string }>;
+}> = [
+  {
+    chave: 'coloracao_especial',
+    nome: 'Coloração especial',
+    descricao: 'PAS, Ziehl-Neelsen, Grocott, Tricrômico, Perls.',
+    setorPadrao: 'histotecnica',
+    etapas: [
+      { rotulo: 'Recebida pelo laboratório', setor: 'histotecnica' },
+      { rotulo: 'Bloco separado', setor: 'histotecnica' },
+      { rotulo: 'Enviado ao processamento', setor: 'histotecnica' },
+      { rotulo: 'Lâmina corada', setor: 'histotecnica' },
+      { rotulo: 'Enviada ao patologista', setor: 'microscopia' },
+    ],
+  },
+  {
+    chave: 'imuno_histoquimica',
+    nome: 'Imuno-histoquímica (IHQ)',
+    descricao: 'Custo alto: passa por aprovação antes de ir para a fila.',
+    exigeAprovacao: true,
+    setorPadrao: 'histotecnica',
+    etapas: [
+      { rotulo: 'Recebida pelo laboratório', setor: 'histotecnica' },
+      { rotulo: 'Bloco separado', setor: 'histotecnica' },
+      { rotulo: 'Enviado ao laboratório de IHQ', setor: 'histotecnica' },
+      { rotulo: 'Resultado recebido', setor: 'histotecnica' },
+      { rotulo: 'Enviado ao patologista', setor: 'microscopia' },
+    ],
+  },
+  {
+    chave: 'recorte',
+    nome: 'Recorte da amostra',
+    descricao: 'A amostragem não foi representativa: volta à bancada.',
+    setorPadrao: 'macroscopia',
+    etapas: [
+      { rotulo: 'Recebida pela macroscopia', setor: 'macroscopia' },
+      { rotulo: 'Material localizado', setor: 'macroscopia' },
+      { rotulo: 'Recortado e incluído', setor: 'macroscopia' },
+      { rotulo: 'Enviado ao processamento', setor: 'histotecnica' },
+      { rotulo: 'Lâmina enviada ao patologista', setor: 'microscopia' },
+    ],
+  },
+  {
+    chave: 'devolucao_bloco',
+    nome: 'Devolução de bloco',
+    descricao: 'Bloco devolvido ao solicitante, em geral para exame complementar externo.',
+    visivelPortal: true,
+    setorPadrao: 'histotecnica',
+    etapas: [
+      { rotulo: 'Recebida pelo laboratório', setor: 'histotecnica', textoPortal: 'Solicitação recebida' },
+      { rotulo: 'Bloco solicitado ao arquivo', setor: 'histotecnica', textoPortal: 'Material sendo localizado' },
+      { rotulo: 'Bloco recebido de volta', setor: 'histotecnica', textoPortal: 'Material localizado' },
+      { rotulo: 'Separado para envio', setor: 'recepcao', textoPortal: 'Material separado para envio' },
+      { rotulo: 'Entregue ao solicitante', setor: 'recepcao', textoPortal: 'Material entregue' },
+    ],
+  },
+  {
+    chave: 'devolucao_lamina',
+    nome: 'Devolução de lâmina',
+    visivelPortal: true,
+    setorPadrao: 'histotecnica',
+    etapas: [
+      { rotulo: 'Recebida pelo laboratório', setor: 'histotecnica', textoPortal: 'Solicitação recebida' },
+      { rotulo: 'Lâmina localizada', setor: 'histotecnica', textoPortal: 'Material sendo localizado' },
+      { rotulo: 'Separada para envio', setor: 'recepcao', textoPortal: 'Material separado para envio' },
+      { rotulo: 'Entregue ao solicitante', setor: 'recepcao', textoPortal: 'Material entregue' },
+    ],
+  },
+  {
+    chave: 'segunda_opiniao',
+    nome: 'Segunda opinião',
+    visivelPortal: true,
+    setorPadrao: 'microscopia',
+    etapas: [
+      { rotulo: 'Recebida pelo laboratório', setor: 'recepcao', textoPortal: 'Solicitação recebida' },
+      { rotulo: 'Lâminas separadas', setor: 'histotecnica', textoPortal: 'Material sendo preparado' },
+      { rotulo: 'Enviadas ao consultor', setor: 'microscopia', textoPortal: 'Em análise com o consultor' },
+      { rotulo: 'Parecer recebido', setor: 'microscopia', textoPortal: 'Parecer recebido' },
+      { rotulo: 'Enviado ao solicitante', setor: 'microscopia', textoPortal: 'Parecer enviado' },
+    ],
+  },
+  {
+    chave: 'copia_laudo',
+    nome: 'Cópia do laudo',
+    visivelPortal: true,
+    setorPadrao: 'recepcao',
+    etapas: [
+      { rotulo: 'Recebida pela recepção', setor: 'recepcao', textoPortal: 'Solicitação recebida' },
+      { rotulo: 'Laudo localizado', setor: 'recepcao', textoPortal: 'Documento localizado' },
+      { rotulo: 'Enviado ao solicitante', setor: 'recepcao', textoPortal: 'Documento enviado' },
+    ],
+  },
+];
+
 /** Setores criados na unidade sede, na ordem do fluxo. */
 const SETORES_PADRAO = ['recepcao', 'triagem', 'macroscopia', 'microscopia', 'histotecnica'];
 
@@ -748,6 +867,34 @@ export async function criarBaseInstitucional(
     exigeMicroscopia: true,
     prazoDiasUteis: 3,
   });
+
+  // --- M10: tipos de solicitacao e seus fluxos ---------------------------
+  for (const def of TIPOS_SOLICITACAO) {
+    const [tipo] = await tx
+      .insert(s.tipoSolicitacao)
+      .values({
+        tenantId,
+        chave: def.chave,
+        nome: def.nome,
+        descricao: def.descricao ?? null,
+        exigeAprovacao: def.exigeAprovacao ?? false,
+        visivelPortal: def.visivelPortal ?? false,
+        setorPadrao: def.setorPadrao ?? null,
+        ordem: TIPOS_SOLICITACAO.indexOf(def),
+      })
+      .returning();
+
+    await tx.insert(s.etapaTipoSolicitacao).values(
+      def.etapas.map((etapa, i) => ({
+        tenantId,
+        tipoId: tipo!.id,
+        ordem: i + 1,
+        rotulo: etapa.rotulo,
+        setor: etapa.setor ?? null,
+        textoPortal: etapa.textoPortal ?? null,
+      })),
+    );
+  }
 
   // --- M01: modelos de etiqueta ------------------------------------------
   await tx.insert(s.modeloEtiqueta).values([

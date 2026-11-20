@@ -72,7 +72,16 @@ const FLAGS_SERVICO = [
 
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
 
-type Aba = 'servicos' | 'precos' | 'tabelas' | 'modelos' | 'unidades' | 'locais' | 'etiquetas' | 'calendario';
+type Aba =
+  | 'servicos'
+  | 'precos'
+  | 'tabelas'
+  | 'modelos'
+  | 'solicitacoes'
+  | 'unidades'
+  | 'locais'
+  | 'etiquetas'
+  | 'calendario';
 
 export function Administracao({ permissoes }: { permissoes: string[] }) {
   const [aba, setAba] = useState<Aba>('servicos');
@@ -101,6 +110,7 @@ export function Administracao({ permissoes }: { permissoes: string[] }) {
         {podePrecos && <Tab value="precos" label="Tabelas de preço" />}
         <Tab value="tabelas" label="Tabelas mestres" />
         <Tab value="modelos" label="Modelos de macroscopia" />
+        <Tab value="solicitacoes" label="Solicitações" />
         <Tab value="unidades" label="Unidades e setores" />
         <Tab value="locais" label="Locais físicos" />
         <Tab value="etiquetas" label="Etiquetas" />
@@ -110,6 +120,7 @@ export function Administracao({ permissoes }: { permissoes: string[] }) {
       {aba === 'servicos' && <AbaServicos podeEditar={podeConfig} />}
       {aba === 'tabelas' && <AbaTabelas podeEditar={podeTabelas} />}
       {aba === 'modelos' && <AbaModelosMacroscopia podeEditar={podeTabelas} />}
+      {aba === 'solicitacoes' && <AbaTiposSolicitacao podeEditar={podeTabelas} />}
       {aba === 'unidades' && <AbaUnidades podeEditar={podeUnidades} />}
       {aba === 'locais' && <AbaLocais podeEditar={podeUnidades} />}
       {aba === 'etiquetas' && <AbaEtiquetas podeEditar={podeConfig} />}
@@ -772,6 +783,370 @@ function DialogoModeloMacroscopia({
         </Button>
         <Button variant="contained" onClick={() => void salvar()} disabled={ocupado || !orgao.trim() || !titulo.trim() || !texto.trim()}>
           {modelo ? 'Salvar' : 'Criar'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+// --- tipos de solicitação (quarta revisão) -----------------------------------
+
+interface TipoSolicitacaoAdmin {
+  id: string;
+  chave: string;
+  nome: string;
+  descricao: string | null;
+  exigeAprovacao: boolean;
+  visivelPortal: boolean;
+  setorPadrao: string | null;
+  ordem: number;
+  inativadoEm: string | null;
+  etapas: { ordem: number; rotulo: string; setor: string | null; textoPortal: string | null }[];
+}
+
+type EtapaEmEdicao = { rotulo: string; setor: string; textoPortal: string };
+
+/**
+ * Tipos de solicitacao e o fluxo de cada um.
+ *
+ * Quarta revisao com o Hugo: "seria interessante que a gente pudesse editar
+ * isso - adicionar gente, remover gente, adicionar servico", porque funcionario
+ * novo entra, funcionario sai de ferias e o pedido nao pode continuar indo para
+ * quem nao esta lá. O que se cadastra aqui e o que aparece no formulario de
+ * solicitacao e, quando marcado, no Portal do cliente.
+ */
+function AbaTiposSolicitacao({ podeEditar }: { podeEditar: boolean }) {
+  const [tipos, setTipos] = useState<TipoSolicitacaoAdmin[] | null>(null);
+  const [editando, setEditando] = useState<TipoSolicitacaoAdmin | 'novo' | null>(null);
+
+  const recarregar = useCallback(() => {
+    api
+      .get<TipoSolicitacaoAdmin[]>('/administracao/tipos-solicitacao')
+      .then(setTipos)
+      .catch(() => setTipos([]));
+  }, []);
+  useEffect(recarregar, [recarregar]);
+
+  return (
+    <Stack spacing={1.5}>
+      <Stack
+        direction="row"
+        spacing={1.5}
+        sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}
+      >
+        <Typography sx={{ fontSize: 13, color: 'text.secondary', maxWidth: 680 }}>
+          Cada tipo tem seu fluxo: a pessoa que executa vai clicando etapa por etapa, e cada clique
+          fica na trilha com data, hora e nome. A última etapa conclui a solicitação e devolve a
+          demanda a quem pediu.
+        </Typography>
+        {podeEditar && (
+          <Button
+            size="small"
+            variant="contained"
+            startIcon={<AddOutlined />}
+            onClick={() => setEditando('novo')}
+          >
+            Novo tipo
+          </Button>
+        )}
+      </Stack>
+
+      {!tipos && <Skeleton variant="rounded" height={200} />}
+      {tipos && tipos.length === 0 && (
+        <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+          Nenhum tipo cadastrado ainda.
+        </Typography>
+      )}
+
+      <Stack spacing={1}>
+        {(tipos ?? []).map((t) => (
+          <Card key={t.id} sx={{ p: 1.5 }}>
+            <Stack
+              direction="row"
+              sx={{ alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}
+            >
+              <Box sx={{ minWidth: 0 }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{t.nome}</Typography>
+                  {t.visivelPortal && <Chip size="small" color="info" label="Portal" />}
+                  {t.exigeAprovacao && <Chip size="small" variant="outlined" label="Aprovação" />}
+                  {t.setorPadrao && (
+                    <Chip size="small" variant="outlined" label={`Setor: ${t.setorPadrao}`} />
+                  )}
+                  {t.inativadoEm && <Chip size="small" label="Inativo" />}
+                </Stack>
+                {t.descricao && (
+                  <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+                    {t.descricao}
+                  </Typography>
+                )}
+                <Typography sx={{ fontSize: 12.5, color: 'text.secondary', mt: 0.5 }}>
+                  {t.etapas.length === 0
+                    ? 'Sem etapas — a solicitação nasce e se conclui direto.'
+                    : t.etapas.map((e) => e.rotulo).join(' → ')}
+                </Typography>
+              </Box>
+              {podeEditar && (
+                <Stack direction="row" spacing={1} sx={{ flexShrink: 0, alignItems: 'center' }}>
+                  <Button size="small" onClick={() => setEditando(t)}>
+                    Editar
+                  </Button>
+                  <BotaoAtivacao
+                    inativo={t.inativadoEm !== null}
+                    caminho={`/administracao/tipos-solicitacao/${t.id}`}
+                    aoMudar={recarregar}
+                  />
+                </Stack>
+              )}
+            </Stack>
+          </Card>
+        ))}
+      </Stack>
+
+      {editando && (
+        <DialogoTipoSolicitacao
+          tipo={editando === 'novo' ? undefined : editando}
+          aoFechar={() => setEditando(null)}
+          aoSalvar={() => {
+            setEditando(null);
+            recarregar();
+          }}
+        />
+      )}
+    </Stack>
+  );
+}
+
+function DialogoTipoSolicitacao({
+  tipo,
+  aoFechar,
+  aoSalvar,
+}: {
+  tipo?: TipoSolicitacaoAdmin;
+  aoFechar: () => void;
+  aoSalvar: () => void;
+}) {
+  const [chave, setChave] = useState(tipo?.chave ?? '');
+  const [nome, setNome] = useState(tipo?.nome ?? '');
+  const [descricao, setDescricao] = useState(tipo?.descricao ?? '');
+  const [setorPadrao, setSetorPadrao] = useState(tipo?.setorPadrao ?? '');
+  const [exigeAprovacao, setExigeAprovacao] = useState(tipo?.exigeAprovacao ?? false);
+  const [visivelPortal, setVisivelPortal] = useState(tipo?.visivelPortal ?? false);
+  const [etapas, setEtapas] = useState<EtapaEmEdicao[]>(
+    (tipo?.etapas ?? []).map((e) => ({
+      rotulo: e.rotulo,
+      setor: e.setor ?? '',
+      textoPortal: e.textoPortal ?? '',
+    })),
+  );
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+
+  function mudarEtapa(indice: number, campo: keyof EtapaEmEdicao, valor: string) {
+    setEtapas((atual) =>
+      atual.map((e, i) => (i === indice ? { ...e, [campo]: valor } : e)),
+    );
+  }
+
+  function mover(indice: number, direcao: -1 | 1) {
+    const destino = indice + direcao;
+    setEtapas((atual) => {
+      if (destino < 0 || destino >= atual.length) return atual;
+      const copia = [...atual];
+      [copia[indice], copia[destino]] = [copia[destino]!, copia[indice]!];
+      return copia;
+    });
+  }
+
+  async function salvar() {
+    setOcupado(true);
+    setErro(null);
+    try {
+      const corpo = {
+        nome: nome.trim(),
+        descricao: descricao.trim() || null,
+        setorPadrao: setorPadrao.trim() || null,
+        exigeAprovacao,
+        visivelPortal,
+        etapas: etapas
+          .filter((e) => e.rotulo.trim())
+          .map((e) => ({
+            rotulo: e.rotulo.trim(),
+            setor: e.setor.trim() || null,
+            textoPortal: e.textoPortal.trim() || null,
+          })),
+      };
+      if (tipo) await api.post(`/administracao/tipos-solicitacao/${tipo.id}`, corpo);
+      else await api.post('/administracao/tipos-solicitacao', { ...corpo, chave: chave.trim() });
+      aoSalvar();
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível salvar o tipo.');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <Dialog open onClose={aoFechar} fullWidth maxWidth="md">
+      <DialogTitle>{tipo ? `Editar ${tipo.nome}` : 'Novo tipo de solicitação'}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <TextField
+              label="Nome"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              required
+              autoFocus
+              sx={{ flex: 1.5 }}
+              helperText="O que aparece no formulário. Ex.: Devolução de bloco"
+            />
+            <TextField
+              label="Chave"
+              value={tipo ? tipo.chave : chave}
+              onChange={(e) => setChave(e.target.value)}
+              disabled={!!tipo}
+              required
+              sx={{ flex: 1 }}
+              helperText={
+                tipo
+                  ? 'Não muda: é a referência do tipo nas solicitações já gravadas.'
+                  : 'Minúsculas e _ — ex.: devolucao_bloco'
+              }
+            />
+          </Stack>
+
+          <TextField
+            label="Descrição"
+            value={descricao}
+            onChange={(e) => setDescricao(e.target.value)}
+            helperText="Opcional — aparece como ajuda embaixo do seletor de tipo."
+          />
+
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: 'center' }}>
+            <TextField
+              label="Setor padrão"
+              value={setorPadrao}
+              onChange={(e) => setSetorPadrao(e.target.value)}
+              sx={{ flex: 1 }}
+              helperText="Para onde vai quando quem pede não escolhe uma pessoa."
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={exigeAprovacao}
+                  onChange={(e) => setExigeAprovacao(e.target.checked)}
+                />
+              }
+              label="Exige aprovação"
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={visivelPortal}
+                  onChange={(e) => setVisivelPortal(e.target.checked)}
+                />
+              }
+              label="O cliente pode pedir no Portal"
+            />
+          </Stack>
+
+          <Box>
+            <Stack
+              direction="row"
+              sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}
+            >
+              <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'text.secondary' }}>
+                ETAPAS, NA ORDEM
+              </Typography>
+              <Button
+                size="small"
+                startIcon={<AddOutlined />}
+                onClick={() =>
+                  setEtapas((atual) => [...atual, { rotulo: '', setor: '', textoPortal: '' }])
+                }
+              >
+                Etapa
+              </Button>
+            </Stack>
+
+            {etapas.length === 0 && (
+              <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+                Sem etapas, a solicitação não tem fluxo: nasce e se conclui direto.
+              </Typography>
+            )}
+
+            <Stack spacing={1}>
+              {etapas.map((etapa, i) => (
+                <Stack key={i} direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                  <Typography
+                    sx={{ fontSize: 13, color: 'text.secondary', width: 18, pt: 1.75, flexShrink: 0 }}
+                  >
+                    {i + 1}
+                  </Typography>
+                  <TextField
+                    size="small"
+                    label="Etapa"
+                    value={etapa.rotulo}
+                    onChange={(e) => mudarEtapa(i, 'rotulo', e.target.value)}
+                    sx={{ flex: 2 }}
+                  />
+                  <TextField
+                    size="small"
+                    label="Setor"
+                    value={etapa.setor}
+                    onChange={(e) => mudarEtapa(i, 'setor', e.target.value)}
+                    sx={{ flex: 1 }}
+                  />
+                  <TextField
+                    size="small"
+                    label="No Portal"
+                    value={etapa.textoPortal}
+                    onChange={(e) => mudarEtapa(i, 'textoPortal', e.target.value)}
+                    sx={{ flex: 1.5 }}
+                    placeholder={visivelPortal ? 'Material sendo localizado' : '—'}
+                  />
+                  <Stack sx={{ flexShrink: 0 }}>
+                    <Button size="small" sx={{ minWidth: 32, px: 0 }} onClick={() => mover(i, -1)}>
+                      ↑
+                    </Button>
+                    <Button size="small" sx={{ minWidth: 32, px: 0 }} onClick={() => mover(i, 1)}>
+                      ↓
+                    </Button>
+                  </Stack>
+                  <Button
+                    size="small"
+                    color="inherit"
+                    sx={{ flexShrink: 0, minWidth: 32, px: 0, mt: 0.5 }}
+                    onClick={() => setEtapas((atual) => atual.filter((_, j) => j !== i))}
+                  >
+                    ✕
+                  </Button>
+                </Stack>
+              ))}
+            </Stack>
+
+            {tipo && etapas.length > 0 && (
+              <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mt: 1 }}>
+                Mexer no fluxo vale para as solicitações abertas também: elas seguem pela ordem, e o
+                que já foi registrado guarda o nome que a etapa tinha na hora do clique.
+              </Typography>
+            )}
+          </Box>
+
+          {erro && <Alert severity="error">{erro}</Alert>}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={aoFechar} disabled={ocupado}>
+          Cancelar
+        </Button>
+        <Button
+          variant="contained"
+          onClick={() => void salvar()}
+          disabled={ocupado || !nome.trim() || (!tipo && !chave.trim())}
+        >
+          {tipo ? 'Salvar' : 'Criar'}
         </Button>
       </DialogActions>
     </Dialog>

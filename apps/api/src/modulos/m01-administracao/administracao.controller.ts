@@ -53,6 +53,29 @@ const modeloMacroscopiaSchema = z.object({
   ordem: z.number().int().min(0).max(999).optional(),
 });
 
+const etapaTipoSolicitacaoSchema = z.object({
+  rotulo: z.string().min(1, 'Informe o nome da etapa.').max(120),
+  /** Código do setor que executa a etapa (ex.: histotecnica). */
+  setor: z.string().max(60).nullish(),
+  /** O que o cliente lê no Portal nesta etapa. Vazio: a etapa não aparece lá. */
+  textoPortal: z.string().max(160).nullish(),
+});
+
+const tipoSolicitacaoSchema = z.object({
+  chave: z
+    .string()
+    .min(2)
+    .max(40)
+    .regex(/^[a-z0-9_]+$/, 'A chave usa letras minúsculas, números e _ (ex.: devolucao_bloco).'),
+  nome: z.string().min(1, 'Informe o nome do tipo.').max(120),
+  descricao: z.string().max(400).nullish(),
+  exigeAprovacao: z.boolean().optional(),
+  visivelPortal: z.boolean().optional(),
+  setorPadrao: z.string().max(60).nullish(),
+  ordem: z.number().int().min(0).max(999).optional(),
+  etapas: z.array(etapaTipoSolicitacaoSchema).max(20).optional(),
+});
+
 const unidadeSchema = z.object({
   nome: z.string().min(1),
   codigo: z
@@ -283,6 +306,63 @@ export class AdministracaoController {
   @ApiOperation({ summary: 'Reativa termo' })
   async reativarTermo(@Param('id', ParseUUIDPipe) id: string) {
     await this.admin.alternarTermo(id, true);
+    return { ok: true };
+  }
+
+  // --- tipos de solicitação e seus fluxos (quarta revisão) ---------------------
+
+  @Get('tipos-solicitacao')
+  @ExigePermissao(PERMISSOES.CONFIG_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Tipos de solicitação com o fluxo de cada um, inclusive inativos',
+  })
+  async tiposSolicitacao() {
+    return this.admin.listarTiposSolicitacao();
+  }
+
+  @Post('tipos-solicitacao')
+  @ExigePermissao(PERMISSOES.TABELA_MESTRE_GERENCIAR)
+  @ApiOperation({
+    summary: 'Cria um tipo de solicitação com suas etapas',
+    description:
+      'Quarta revisão: cada tipo tem seu fluxo, e quem configura é o laboratório. Marcar ' +
+      '"visível no Portal" é o que deixa o cliente abrir esse pedido sozinho.',
+  })
+  async criarTipoSolicitacao(@Body() corpo: unknown) {
+    return this.admin.criarTipoSolicitacao(validarCorpo(tipoSolicitacaoSchema, corpo));
+  }
+
+  @Post('tipos-solicitacao/:id')
+  @ExigePermissao(PERMISSOES.TABELA_MESTRE_GERENCIAR)
+  @ApiOperation({
+    summary: 'Edita um tipo de solicitação',
+    description:
+      'Enviar `etapas` substitui o fluxo inteiro. A chave não muda: ela é a referência estável ' +
+      'do tipo nas solicitações já gravadas.',
+  })
+  async editarTipoSolicitacao(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.admin.editarTipoSolicitacao(
+      id,
+      validarCorpo(tipoSolicitacaoSchema.omit({ chave: true }).partial(), corpo),
+    );
+    return { ok: true };
+  }
+
+  @Post('tipos-solicitacao/:id/inativacao')
+  @ExigePermissao(PERMISSOES.TABELA_MESTRE_GERENCIAR)
+  @ApiOperation({
+    summary: 'Inativa um tipo: some do formulário, as solicitações abertas seguem o fluxo',
+  })
+  async inativarTipoSolicitacao(@Param('id', ParseUUIDPipe) id: string) {
+    await this.admin.alternarTipoSolicitacao(id, false);
+    return { ok: true };
+  }
+
+  @Post('tipos-solicitacao/:id/reativacao')
+  @ExigePermissao(PERMISSOES.TABELA_MESTRE_GERENCIAR)
+  @ApiOperation({ summary: 'Reativa um tipo de solicitação' })
+  async reativarTipoSolicitacao(@Param('id', ParseUUIDPipe) id: string) {
+    await this.admin.alternarTipoSolicitacao(id, true);
     return { ok: true };
   }
 

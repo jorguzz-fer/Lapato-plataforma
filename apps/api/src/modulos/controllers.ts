@@ -2874,9 +2874,46 @@ export class PortalController {
 
   @Get('solicitacoes')
   @ExigePermissao(PERMISSOES.PORTAL_ACESSAR)
-  @ApiOperation({ summary: 'Solicitações do cliente e seu andamento (§31)' })
+  @ApiOperation({
+    summary: 'Solicitações do cliente e seu andamento (§31)',
+    description:
+      'Cada uma traz a FASE na língua do cliente — o texto de Portal da etapa, não o rótulo ' +
+      'interno. Quarta revisão: "ele vai saber em que fase tá: tá solicitado, já foi encaminhado".',
+  })
   async solicitacoes() {
     return this.portal.solicitacoes();
+  }
+
+  @Get('tipos-solicitacao')
+  @ExigePermissao(PERMISSOES.PORTAL_SOLICITAR)
+  @ApiOperation({
+    summary: 'O que o cliente pode pedir sozinho',
+    description:
+      'Só os tipos marcados como visíveis no Portal pela Administração — devolução de bloco, ' +
+      'segunda opinião, cópia de laudo.',
+  })
+  async tiposSolicitacao() {
+    return this.portal.tiposSolicitacao();
+  }
+
+  @Post('solicitacoes')
+  @ExigePermissao(PERMISSOES.PORTAL_SOLICITAR)
+  @ApiOperation({
+    summary: 'O cliente abre uma solicitação',
+    description:
+      'Substitui o WhatsApp que perdeu a devolução de bloco contada na quarta revisão: o pedido ' +
+      'nasce numerado, com fluxo e responsável, e o cliente acompanha a fase pelo próprio login.',
+  })
+  async abrirSolicitacao(@Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        casoId: z.string().uuid(),
+        tipoId: z.string().uuid(),
+        descricao: z.string().min(1, 'Escreva o que está sendo solicitado.').max(2000),
+      }),
+      corpo,
+    );
+    return this.portal.abrirSolicitacao(dados);
   }
 
   @Get('orientacoes')

@@ -12,6 +12,7 @@ import {
   pendencia,
   servico,
   solicitacao,
+  tipoSolicitacao,
   tutor,
   veterinario,
   type Transacao,
@@ -27,6 +28,7 @@ import { DbService } from '../../core/db/db.service.js';
 import { AuditoriaService } from '../../core/auditoria/auditoria.service.js';
 import { EventosService } from '../../core/eventos/eventos.service.js';
 import { StorageFactory } from '../../core/storage/storage.provider.js';
+import { SolicitacoesService } from '../m10-solicitacoes/solicitacoes.service.js';
 import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
 
 /**
@@ -56,6 +58,12 @@ export class PortalService {
     private readonly auditoria: AuditoriaService,
     private readonly eventos: EventosService,
     private readonly storage: StorageFactory,
+    /**
+     * O Portal nao e dono da solicitacao (secao 83): quem numera, aplica o
+     * fluxo do tipo e publica o evento e o M10. Aqui so se decide que o
+     * cliente pode pedir aquilo, para aquele caso.
+     */
+    private readonly demandas: SolicitacoesService,
   ) {}
 
   /**
@@ -439,19 +447,142 @@ export class PortalService {
           id: solicitacao.id,
           identificador: solicitacao.identificador,
           tipo: solicitacao.tipo,
+          nomeTipo: tipoSolicitacao.nome,
           descricao: solicitacao.descricao,
           status: solicitacao.status,
           criadoEm: solicitacao.criadoEm,
           casoIdentificador: caso.identificador,
           paciente: paciente.nome,
+          /**
+           * Em que fase esta, na lingua do cliente.
+           *
+           * Quarta revisao com o Hugo: "ele vai saber em que fase tá: tá
+           * solicitado, já foi encaminhado, foi separado". A fase nao e o
+           * rotulo interno da etapa - e o `texto_portal` dela, a traducao
+           * contextual do M10. Etapa sem texto nao aparece aqui: o cliente nao
+           * precisa saber que o bloco foi "enviado ao processamento".
+           */
+          fase: sql<string | null>`(
+            select e.texto_portal
+            from andamento_solicitacao a
+            join etapa_tipo_solicitacao e
+              on e.tenant_id = a.tenant_id
+             and e.tipo_id = ${solicitacao.tipoId}
+             and e.ordem = a.ordem
+            where a.tenant_id = ${solicitacao.tenantId}
+              and a.solicitacao_id = ${solicitacao.id}
+              and e.texto_portal is not null
+            order by a.ordem desc
+            limit 1
+          )`,
         })
         .from(solicitacao)
         .innerJoin(caso, eq(caso.id, solicitacao.casoId))
         .innerJoin(paciente, eq(paciente.id, caso.pacienteId))
+        .leftJoin(tipoSolicitacao, eq(tipoSolicitacao.id, solicitacao.tipoId))
         .where(and(eq(solicitacao.tenantId, ctx.tenantId), eq(caso.clienteId, clienteId)))
         .orderBy(desc(solicitacao.criadoEm))
         .limit(100),
     );
+  }
+
+  /**
+   * O que o cliente pode pedir sozinho.
+   *
+   * So os tipos que a Administracao marcou como visiveis no Portal. A lista e
+   * curta de proposito: devolucao de bloco, devolucao de lamina, segunda
+   * opiniao, copia de laudo - o que a review mostrou chegando por WhatsApp.
+   */
+  async tiposSolicitacao() {
+    const ctx = exigirContexto();
+    this.clienteDaConta();
+
+    return this.db.executar((tx) =>
+      tx
+        .select({
+          id: tipoSolicitacao.id,
+          nome: tipoSolicitacao.nome,
+          descricao: tipoSolicitacao.descricao,
+        })
+        .from(tipoSolicitacao)
+        .where(
+          and(
+            eq(tipoSolicitacao.tenantId, ctx.tenantId),
+            eq(tipoSolicitacao.visivelPortal, true),
+            isNull(tipoSolicitacao.inativadoEm),
+          ),
+        )
+        .orderBy(asc(tipoSolicitacao.ordem), asc(tipoSolicitacao.nome)),
+    );
+  }
+
+  /**
+   * O cliente abre a solicitacao.
+   *
+   * A reuniao inteira nasce de uma devolucao de bloco pedida por WhatsApp:
+   * "ele nao faz mais solicitacao pelo WhatsApp, faz pelo login deles... e aí
+   * quando ele entrar no sistema ele vai saber em que fase tá". Aqui se decide
+   * apenas que o cliente pode pedir AQUILO para AQUELE caso; numerar, aplicar
+   * o fluxo do tipo e publicar o evento e trabalho do M10.
+   */
+  async abrirSolicitacao(dados: {
+    casoId: string;
+    tipoId: string;
+    descricao: string;
+  }): Promise<{ id: string; identificador: string }> {
+    const ctx = exigirContexto();
+    const clienteId = this.clienteDaConta();
+
+    if (!dados.descricao?.trim()) {
+      throw new BadRequestException('Escreva o que está sendo solicitado.');
+    }
+
+    return this.db.executar(async (tx) => {
+      await this.exigirCasoDoCliente(tx, dados.casoId, clienteId);
+
+      const [tipo] = await tx
+        .select()
+        .from(tipoSolicitacao)
+        .where(
+          and(
+            eq(tipoSolicitacao.tenantId, ctx.tenantId),
+            eq(tipoSolicitacao.id, dados.tipoId),
+            eq(tipoSolicitacao.visivelPortal, true),
+            isNull(tipoSolicitacao.inativadoEm),
+          ),
+        )
+        .limit(1);
+
+      /**
+       * Mesma mensagem para tipo inexistente, inativo e nao liberado ao
+       * Portal: distinguir os tres contaria ao cliente o que existe do lado de
+       * dentro.
+       */
+      if (!tipo) {
+        throw new NotFoundException('Este tipo de solicitação não está disponível.');
+      }
+
+      const criada = await this.demandas.criarEmTransacao(tx, {
+        casoId: dados.casoId,
+        tipoId: tipo.id,
+        tipo: tipo.chave,
+        descricao: dados.descricao.trim(),
+        origem: 'cliente',
+        /** Pedida por ele: ele acompanha a fase sem precisar ligar. */
+        visibilidadePortal: 'parcial',
+        textoPortal: dados.descricao.trim(),
+      });
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'solicitacao',
+        entidadeId: criada.id,
+        acao: 'abrir_pelo_portal',
+        casoId: dados.casoId,
+        valorNovo: { tipo: tipo.chave, origem: 'cliente' },
+      });
+
+      return criada;
+    });
   }
 
   /**

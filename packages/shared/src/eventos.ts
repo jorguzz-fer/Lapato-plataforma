@@ -116,6 +116,7 @@ export const TIPO_EVENTO = [
   'laudo.revisao_concluida',
   'laudo.assinado',
   'laudo.liberado',
+  'laudo.enviado',
   'laudo.adendo_criado',
   'laudo.corrigido',
   // M04 Portal do Cliente
@@ -260,6 +261,7 @@ export const EVENTO_LABEL: Record<TipoEvento, string> = {
   'laudo.revisao_concluida': 'Revisão concluída',
   'laudo.assinado': 'Laudo assinado',
   'laudo.liberado': 'Laudo liberado',
+  'laudo.enviado': 'Laudo enviado ao solicitante',
   'laudo.adendo_criado': 'Adendo criado',
   'laudo.corrigido': 'Laudo corrigido',
   'historico.complementado': 'Histórico clínico complementado pelo cliente',

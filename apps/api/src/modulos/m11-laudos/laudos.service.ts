@@ -7,7 +7,21 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
+import {
+  aliasedTable,
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  ilike,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import {
   amostra,
   avaliacaoCitologica,
@@ -16,7 +30,9 @@ import {
   assinaturaProfissional,
   caso,
   cliente,
+  clienteContato,
   diagnostico,
+  envioLaudo,
   laudo,
   laudoVersao,
   margemMicroscopica,
@@ -1142,6 +1158,177 @@ export class LaudosService {
     return registro;
   }
 
+  // --- envio ao solicitante (quarta revisao) --------------------------------
+
+  /**
+   * Para quem este laudo pode ir.
+   *
+   * Quarta revisao com o Hugo: "aparece uma caixinha com os e-mails do cliente;
+   * tem o principal que ja vem clicado, e o do veterinario, que as vezes e
+   * outro - eu coloco nos e-mails que eu quiser". A lista sai do cadastro
+   * (M03), nao de digitacao: e-mail digitado na hora do envio e e-mail que
+   * ninguem conferiu.
+   */
+  async destinatarios(versaoId: string): Promise<
+    Array<{ tipo: string; nome: string; email: string; padrao: boolean }>
+  > {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const versao = await this.buscarVersao(tx, versaoId);
+
+      const [dados] = await tx
+        .select({
+          clienteNome: cliente.nomeFantasia,
+          clienteEmail: cliente.email,
+          vetNome: veterinario.nome,
+          vetEmail: veterinario.email,
+        })
+        .from(caso)
+        .innerJoin(cliente, eq(cliente.id, caso.clienteId))
+        .leftJoin(veterinario, eq(veterinario.id, caso.veterinarioId))
+        .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.id, versao.casoId)))
+        .limit(1);
+
+      const contatos = await tx
+        .select({ nome: clienteContato.nome, email: clienteContato.email })
+        .from(clienteContato)
+        .innerJoin(caso, eq(caso.clienteId, clienteContato.clienteId))
+        .where(and(eq(clienteContato.tenantId, ctx.tenantId), eq(caso.id, versao.casoId)));
+
+      const lista: Array<{ tipo: string; nome: string; email: string; padrao: boolean }> = [];
+      const vistos = new Set<string>();
+      const juntar = (tipo: string, nome: string | null, email: string | null, padrao: boolean) => {
+        const endereco = email?.trim().toLowerCase();
+        if (!endereco || vistos.has(endereco)) return;
+        vistos.add(endereco);
+        lista.push({ tipo, nome: nome ?? endereco, email: endereco, padrao });
+      };
+
+      // O principal ja vem marcado; o do veterinario solicitante tambem, porque
+      // foi ele que pediu o exame.
+      juntar('cliente', dados?.clienteNome ?? null, dados?.clienteEmail ?? null, true);
+      juntar('veterinario', dados?.vetNome ?? null, dados?.vetEmail ?? null, true);
+      for (const c of contatos) juntar('contato', c.nome, c.email, false);
+
+      return lista;
+    });
+  }
+
+  /**
+   * Envia (ou reenvia) o laudo.
+   *
+   * Duas condicoes, e nao uma. A do Hugo - "nao consigo enviar sem que esteja
+   * assinado" - e a do LAPATO: a LIBERACAO e o ato que entrega o documento ao
+   * mundo (DIRETRIZES secao 17), entao enviar por e-mail um laudo assinado e
+   * nao liberado seria entregar por fora do ato que registra a entrega.
+   *
+   * O que este metodo faz e registrar a DECISAO de enviar e enfileirar. Quem
+   * entrega e o M26, que sabe falhar e repetir - o M11 nao tem servidor de
+   * e-mail proprio por desenho (DIRETRIZES secao 8.12).
+   */
+  async enviar(
+    versaoId: string,
+    destinatarios: string[],
+    observacao?: string,
+  ): Promise<{ reenvio: boolean; total: number }> {
+    const ctx = exigirContexto();
+
+    if (!ctx.permissoes.has(PERMISSOES.LAUDO_LIBERAR)) {
+      throw new ForbiddenException('Este perfil não pode enviar laudos.');
+    }
+
+    const enderecos = [...new Set(destinatarios.map((e) => e.trim().toLowerCase()).filter(Boolean))];
+    if (enderecos.length === 0) {
+      throw new BadRequestException('Escolha ao menos um destinatário.');
+    }
+
+    return this.db.executar(async (tx) => {
+      const versao = await this.buscarVersao(tx, versaoId);
+
+      if (!versao.assinadaEm) {
+        throw new BadRequestException('Não é possível enviar um laudo sem assinatura.');
+      }
+
+      const [registro] = await tx
+        .select({ id: laudo.id, liberadoEm: laudo.liberadoEm })
+        .from(laudo)
+        .where(eq(laudo.id, versao.laudoId))
+        .limit(1);
+
+      if (!registro?.liberadoEm) {
+        throw new BadRequestException(
+          'Libere o laudo antes de enviar: a liberação é o ato que o entrega.',
+        );
+      }
+
+      /**
+       * A lista permitida vem do cadastro. Aceitar endereco arbitrario no corpo
+       * transformaria "enviar laudo" em "mandar dado clinico para qualquer
+       * lugar" - e o laudo e dado pessoal sensivel.
+       */
+      const permitidos = new Set((await this.destinatarios(versaoId)).map((d) => d.email));
+      const invalido = enderecos.find((e) => !permitidos.has(e));
+      if (invalido) {
+        throw new BadRequestException(
+          `"${invalido}" não está no cadastro do cliente nem do veterinário. Cadastre o e-mail antes de enviar.`,
+        );
+      }
+
+      const [anterior] = await tx
+        .select({ total: sql<number>`count(*)::int` })
+        .from(envioLaudo)
+        .where(and(eq(envioLaudo.tenantId, ctx.tenantId), eq(envioLaudo.laudoId, versao.laudoId)));
+      const reenvio = (anterior?.total ?? 0) > 0;
+
+      await tx.insert(envioLaudo).values({
+        tenantId: ctx.tenantId,
+        laudoId: versao.laudoId,
+        versaoId,
+        casoId: versao.casoId,
+        canal: 'email',
+        destinatarios: enderecos,
+        reenvio,
+        observacao: observacao?.trim() || null,
+        enviadoPorId: ctx.usuarioId,
+      });
+
+      for (const endereco of enderecos) {
+        await tx.insert(notificacaoPendente).values({
+          tenantId: ctx.tenantId,
+          casoId: versao.casoId,
+          canal: 'email',
+          destinatarioTipo: 'escolhido_no_envio',
+          destinatarioEndereco: endereco,
+          assunto: `Laudo ${versao.casoIdentificador}`,
+          corpo: reenvio
+            ? `Reenvio do laudo do caso ${versao.casoIdentificador}.`
+            : `Laudo do caso ${versao.casoIdentificador}.`,
+        });
+      }
+
+      await this.eventos.publicar(tx, {
+        tipo: 'laudo.enviado',
+        casoId: versao.casoId,
+        moduloOrigem: MODULOS.M11_LAUDOS,
+        objetoTipo: 'laudo_versao',
+        objetoId: versaoId,
+        payload: { versao: versao.versao, destinatarios: enderecos.length, reenvio },
+      });
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'laudo',
+        entidadeId: versao.laudoId,
+        acao: reenvio ? 'reenviar' : 'enviar',
+        casoId: versao.casoId,
+        /** Os enderecos ficam na auditoria: "para quem foi" e a pergunta que se faz depois. */
+        valorNovo: { destinatarios: enderecos, versao: versao.versao },
+      });
+
+      return { reenvio, total: enderecos.length };
+    });
+  }
+
   /**
    * Arquivo de laudos (segunda review, Hugo): "busca dos laudos pelo
    * paciente, pelo cliente, pelo nome do responsavel, por uma palavra-chave -
@@ -1150,14 +1337,61 @@ export class LaudosService {
    * arquivo inteiro - Hugo liberou: "nao tem problema ele acessar laudos de
    * outros patologistas".
    */
-  async buscar(termo: string) {
+  async buscar(filtros: {
+    q?: string;
+    /** Quarta revisao: "se foi enviado, nao foi enviado, se foi assinado, nao foi assinado". */
+    situacao?: 'todos' | 'enviados' | 'nao_enviados' | 'assinados' | 'nao_assinados';
+    /** Recorte por data de liberacao - "eu procuro por data" da mesma review. */
+    de?: Date;
+    ate?: Date;
+  }) {
     const ctx = exigirContexto();
-    const q = termo.trim();
-    if (q.length < 2) return [];
+    const q = filtros.q?.trim() ?? '';
+    const situacao = filtros.situacao ?? 'todos';
+
+    /**
+     * Sem termo, sem filtro e sem data a busca devolve vazio, como antes: o
+     * arquivo tem dezenas de milhares de laudos e "tudo" nao e uma resposta.
+     * Com qualquer recorte, porem, o termo deixa de ser obrigatorio - "me mostre
+     * os nao enviados de outubro" e uma pergunta legitima.
+     */
+    const temRecorte = situacao !== 'todos' || !!filtros.de || !!filtros.ate;
+    if (q.length < 2 && !temRecorte) return [];
     const padrao = `%${q}%`;
 
     return this.db.executar(async (tx) => {
       const patologista = usuario;
+      const assinante = aliasedTable(usuario, 'assinante');
+
+      const condicoes: SQL[] = [eq(laudo.tenantId, ctx.tenantId)];
+      if (q.length >= 2) {
+        condicoes.push(
+          or(
+            ilike(caso.identificador, padrao),
+            ilike(paciente.nome, padrao),
+            ilike(cliente.nomeFantasia, padrao),
+            ilike(veterinario.nome, padrao),
+            ilike(patologista.nomeCompleto, padrao),
+            ilike(laudoVersao.conclusao, padrao),
+            ilike(laudoVersao.descricaoMicroscopica, padrao),
+            ilike(laudoVersao.comentarios, padrao),
+            // Lamina e OS: referencias externas literais na subconsulta
+            // (armadilha documentada no M19/M20).
+            sql`exists (select 1 from lamina l where l.caso_id = caso.id and l.identificador ilike ${padrao})`,
+            sql`exists (select 1 from ordem_servico o where o.caso_id = caso.id and o.identificador ilike ${padrao})`,
+          )!,
+        );
+      }
+      if (filtros.de) condicoes.push(gte(laudo.liberadoEm, filtros.de));
+      if (filtros.ate) condicoes.push(lte(laudo.liberadoEm, filtros.ate));
+      if (situacao === 'assinados') condicoes.push(isNotNull(laudoVersao.assinadaEm));
+      if (situacao === 'nao_assinados') condicoes.push(isNull(laudoVersao.assinadaEm));
+      const existeEnvio = sql`exists (
+        select 1 from envio_laudo e where e.tenant_id = ${ctx.tenantId} and e.laudo_id = laudo.id
+      )`;
+      if (situacao === 'enviados') condicoes.push(existeEnvio);
+      if (situacao === 'nao_enviados') condicoes.push(sql`not ${existeEnvio}`);
+
       const linhas = await tx
         .select({
           casoId: caso.id,
@@ -1169,8 +1403,24 @@ export class LaudosService {
           status: laudo.status,
           liberadoEm: laudo.liberadoEm,
           versao: laudoVersao.versao,
+          versaoId: laudoVersao.id,
           conclusao: laudoVersao.conclusao,
           entradaEm: caso.entradaEm,
+          /**
+           * Quarta revisao: "assinado por mim no dia 9 do 10 as 15:51, e foi
+           * enviado no dia 9 do 10 as 15:52". As duas datas, lado a lado, com
+           * quem assinou - e o que o arquivo dele mostra ao abrir o laudo.
+           */
+          assinadaEm: laudoVersao.assinadaEm,
+          assinadaPor: assinante.nomeCompleto,
+          enviadoEm: sql<string | null>`(
+            select max(e.enviado_em) from envio_laudo e
+            where e.tenant_id = ${ctx.tenantId} and e.laudo_id = laudo.id
+          )`,
+          envios: sql<number>`(
+            select count(*)::int from envio_laudo e
+            where e.tenant_id = ${ctx.tenantId} and e.laudo_id = laudo.id
+          )`,
         })
         .from(laudo)
         .innerJoin(
@@ -1182,25 +1432,8 @@ export class LaudosService {
         .innerJoin(cliente, eq(cliente.id, caso.clienteId))
         .leftJoin(veterinario, eq(veterinario.id, caso.veterinarioId))
         .leftJoin(patologista, eq(patologista.id, laudo.patologistaId))
-        .where(
-          and(
-            eq(laudo.tenantId, ctx.tenantId),
-            or(
-              ilike(caso.identificador, padrao),
-              ilike(paciente.nome, padrao),
-              ilike(cliente.nomeFantasia, padrao),
-              ilike(veterinario.nome, padrao),
-              ilike(patologista.nomeCompleto, padrao),
-              ilike(laudoVersao.conclusao, padrao),
-              ilike(laudoVersao.descricaoMicroscopica, padrao),
-              ilike(laudoVersao.comentarios, padrao),
-              // Lamina e OS: referencias externas literais na subconsulta
-              // (armadilha documentada no M19/M20).
-              sql`exists (select 1 from lamina l where l.caso_id = caso.id and l.identificador ilike ${padrao})`,
-              sql`exists (select 1 from ordem_servico o where o.caso_id = caso.id and o.identificador ilike ${padrao})`,
-            ),
-          ),
-        )
+        .leftJoin(assinante, eq(assinante.id, laudoVersao.assinadaPorId))
+        .where(and(...condicoes))
         .orderBy(sql`${laudo.liberadoEm} desc nulls last`, desc(caso.entradaEm))
         .limit(50);
 

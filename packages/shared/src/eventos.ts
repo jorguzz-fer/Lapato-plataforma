@@ -162,7 +162,7 @@ export const envelopeEventoSchema = z.object({
   objetoTipo: z.string().nullable(),
   objetoId: z.string().uuid().nullable(),
   visibilidade: z.enum(VISIBILIDADE_EVENTO),
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
   ocorridoEm: z.coerce.date(),
   registradoEm: z.coerce.date(),
 });

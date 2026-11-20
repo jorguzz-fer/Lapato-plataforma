@@ -11,7 +11,7 @@ const sugerirSchema = z.object({
   modulo: z.string().min(1),
   etapa: z.string().optional(),
   casoId: z.string().uuid().optional(),
-  dados: z.record(z.unknown()).optional(),
+  dados: z.record(z.string(), z.unknown()).optional(),
 });
 
 const feedbackSchema = z.object({

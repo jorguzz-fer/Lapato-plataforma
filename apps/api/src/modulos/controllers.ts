@@ -404,7 +404,7 @@ const triagemSchema = z.object({
           amostraId: z.string().uuid(),
           resultado: z.enum(RESULTADO_TRIAGEM),
           observacoes: z.string().optional(),
-          checklist: z.record(z.unknown()).optional(),
+          checklist: z.record(z.string(), z.unknown()).optional(),
         })
         /**
          * Bloquear ou recusar **exige motivo escrito**.
@@ -466,7 +466,7 @@ export class TriagemController {
 
 const macroscopiaSchema = z.object({
   descricaoTexto: z.string().optional(),
-  caracteristicas: z.record(z.unknown()).optional(),
+  caracteristicas: z.record(z.string(), z.unknown()).optional(),
   comprimentoCm: z.number().positive().optional(),
   larguraCm: z.number().positive().optional(),
   alturaCm: z.number().positive().optional(),
@@ -482,7 +482,7 @@ const macroscopiaSchema = z.object({
         maiorEixoCm: z.number().positive().optional(),
         menorEixoCm: z.number().positive().optional(),
         terceiroEixoCm: z.number().positive().optional(),
-        caracteristicas: z.record(z.unknown()).optional(),
+        caracteristicas: z.record(z.string(), z.unknown()).optional(),
         descricaoTexto: z.string().nullish(),
       }),
     )
@@ -493,7 +493,7 @@ const macroscopiaSchema = z.object({
         nome: z.string().min(1),
         metodoAmostragem: z.enum(METODO_AMOSTRAGEM).optional(),
         distanciaCm: z.number().nonnegative().optional(),
-        tinta: z.record(z.unknown()).optional(),
+        tinta: z.record(z.string(), z.unknown()).optional(),
         naoAvaliavel: z.boolean().optional(),
         lesaoRotulo: z.string().nullish(),
       }),
@@ -763,7 +763,7 @@ const laudoSchema = z.object({
         classificacaoNome: z.string().optional(),
         classificacaoVersao: z.string().optional(),
         grau: z.string().optional(),
-        criteriosGraduacao: z.record(z.unknown()).optional(),
+        criteriosGraduacao: z.record(z.string(), z.unknown()).optional(),
         provisorio: z.boolean().optional(),
       }),
     )
@@ -2595,11 +2595,11 @@ const avaliacaoCitologicaSchema = z.object({
   achadosHemorragia: z.array(z.string()).optional(),
   necrose: z.enum(INTENSIDADE).nullish(),
   materialExtracelular: z.array(z.string()).optional(),
-  populacoes: z.array(z.record(z.unknown())).optional(),
-  criteriosMalignidade: z.record(z.string()).optional(),
+  populacoes: z.array(z.record(z.string(), z.unknown())).optional(),
+  criteriosMalignidade: z.record(z.string(), z.string()).optional(),
   mitoses: z.string().nullish(),
-  inflamacao: z.record(z.unknown()).nullish(),
-  agentes: z.array(z.record(z.unknown())).optional(),
+  inflamacao: z.record(z.string(), z.unknown()).nullish(),
+  agentes: z.array(z.record(z.string(), z.unknown())).optional(),
   descricaoCitologica: z.string().nullish(),
   interpretacao: z.string().nullish(),
   grauCerteza: z.enum(GRAU_CERTEZA).nullish(),
@@ -2683,7 +2683,7 @@ const novaImagemSchema = z.object({
 const edicaoImagemSchema = z.object({
   legenda: z.string().optional(),
   descricao: z.string().optional(),
-  metadados: z.record(z.unknown()).optional(),
+  metadados: z.record(z.string(), z.unknown()).optional(),
   autorizadaEnsino: z.boolean().optional(),
   autorizadaPesquisa: z.boolean().optional(),
   autorizadaTreinamentoIa: z.boolean().optional(),
@@ -3237,7 +3237,7 @@ const aberturaNecropsiaSchema = z.object({
 });
 
 const exameExternoSchema = z.object({
-  exameExterno: z.record(z.unknown()).optional(),
+  exameExterno: z.record(z.string(), z.unknown()).optional(),
   limitacoes: z.array(z.enum(LIMITACAO_NECROPSIA)).optional(),
   limitacoesObservacao: z.string().nullish(),
   conservacao: z.enum(CONSERVACAO_NECROPSIA).nullish(),

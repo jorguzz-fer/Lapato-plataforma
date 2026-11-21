@@ -35,11 +35,11 @@
     "typescript-eslint": "^8.18.1"
   },
   "pnpm": {
-    "//": "Overrides de seguranca: dependencias transitivas que os pacotes pais ainda nao atualizaram. `qs` e `esbuild` entraram na auditoria de 23/08/2026 (ver docs/auditoria-seguranca.md); `multer` (DoS por nome de campo e por upload abortado, GHSA-wc9g-mqfw-jrwm, GHSA-qfvm-cv95-jqjf, GHSA-535w-7cp7-47q4) e o bump do `js-yaml` (GHSA-2883-xcg3-v3hh) em 09/09/2026. Revisar a cada bump de NestJS, Vite e Vitest; remover assim que o pai passar a exigir a versao corrigida.",
+    "//": "Overrides de seguranca: dependencias transitivas que os pacotes pais ainda nao atualizaram. `qs` e `esbuild` entraram na auditoria de 23/08/2026 (ver docs/auditoria-seguranca.md); `multer` (DoS por nome de campo e por upload abortado, GHSA-wc9g-mqfw-jrwm, GHSA-qfvm-cv95-jqjf, GHSA-535w-7cp7-47q4) e o bump do `js-yaml` (GHSA-2883-xcg3-v3hh) em 09/09/2026. Em 20/11/2026 (ver docs/auditoria-dependencias-2026-11.md) os pisos de `multer` (DoS por fileFilter assincrono pendente, >=2.5.0, GHSA-q7qp-rjg7-q26m) e `vite` (launch-editor, GHSA-587h-7wmj-h5pm, >=6.4.4) subiram para a versao corrigida: o override ja forcava a arvore, mas com o piso antigo uma reresolucao podia voltar para a versao vulneravel. Revisar a cada bump de NestJS, Vite e Vitest; remover assim que o pai passar a exigir a versao corrigida.",
     "overrides": {
-      "vite": "^6.4.3",
+      "vite": "^6.4.4",
       "js-yaml": "^4.3.2",
-      "multer": "^2.3.0",
+      "multer": "^2.5.0",
       "qs": "^6.15.2",
       "esbuild": "^0.25.0"
     }

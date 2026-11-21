@@ -181,8 +181,50 @@ export interface JanelaSuspensao {
 }
 
 /**
+ * Funde janelas que se sobrepoem ou se encostam, resolvendo as abertas em
+ * `agora`. Janela degenerada (fim <= inicio) sai fora: nao houve espera.
+ *
+ * A fusao e feita no instante bruto, e nao em dias uteis, porque a
+ * sobreposicao e um fato de calendario real - duas pendencias abertas na mesma
+ * tarde esperaram a MESMA tarde. A conversao para dias uteis vem depois, uma
+ * vez por janela fundida.
+ */
+function unirJanelas(
+  suspensoes: readonly JanelaSuspensao[],
+  agora: Date,
+): { inicio: Date; fim: Date }[] {
+  const ordenadas = suspensoes
+    .map((janela) => ({ inicio: janela.inicio, fim: janela.fim ?? agora }))
+    .filter((janela) => janela.fim > janela.inicio)
+    .sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
+
+  const unidas: { inicio: Date; fim: Date }[] = [];
+
+  for (const janela of ordenadas) {
+    const ultima = unidas[unidas.length - 1];
+
+    // `<=` funde tambem as que apenas se encostam: entre elas nao houve um
+    // instante de trabalho para devolver ao prazo.
+    if (ultima && janela.inicio <= ultima.fim) {
+      if (janela.fim > ultima.fim) ultima.fim = janela.fim;
+    } else {
+      unidas.push({ ...janela });
+    }
+  }
+
+  return unidas;
+}
+
+/**
  * Recalcula a previsao empurrando-a pelos dias uteis em que o prazo esteve
  * suspenso. Suspensao ainda aberta conta ate `agora`.
+ *
+ * O que empurra o prazo e a UNIAO das janelas, nao a soma das duracoes. Um
+ * caso pode ter varias pendencias com `suspendePrazo` ao mesmo tempo - cada
+ * uma abre a sua janela, com seu proprio `origemId`, e nada impede que se
+ * sobreponham. Somando, uma semana de espera com duas pendencias viraria duas
+ * semanas de folga, e o indicador de "atraso laboratorial" do M10 passaria a
+ * mentir a favor do laboratorio.
  */
 export function aplicarSuspensoes(
   previsaoOriginal: Date,
@@ -190,10 +232,10 @@ export function aplicarSuspensoes(
   agora: Date,
   calendario: CalendarioInstitucional = CALENDARIO_PADRAO,
 ): Date {
-  const diasSuspensos = suspensoes.reduce((total, janela) => {
-    const fim = janela.fim ?? agora;
-    return total + contarDiasUteis(janela.inicio, fim, calendario);
-  }, 0);
+  const diasSuspensos = unirJanelas(suspensoes, agora).reduce(
+    (total, janela) => total + contarDiasUteis(janela.inicio, janela.fim, calendario),
+    0,
+  );
 
   return somarDiasUteis(previsaoOriginal, diasSuspensos, calendario);
 }

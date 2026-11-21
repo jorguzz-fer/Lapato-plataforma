@@ -27,7 +27,24 @@ async function bootstrap(): Promise<void> {
   app.flushLogs();
 
   const migrations = app.get(MigrationsService);
-  if (migrations.situacao() === 'desatualizado') {
+
+  /**
+   * A checagem e DISPARADA aqui, e nao herdada do ciclo de vida.
+   *
+   * `NestFactory.create()` monta o grafo de dependencias, mas nao roda
+   * `onModuleInit`: isso acontece em `app.init()`, que o `listen()` dispara
+   * la embaixo. Lendo `situacao()` logo depois do `create()`, este guarda
+   * enxergava sempre o estado inicial ("nao verificado") e caia no ramo de
+   * aviso - o bloqueio nunca acontecia, por mais desatualizado que o banco
+   * estivesse.
+   *
+   * Foi assim que a API subiu calada com cinco migrations atrasadas e quebrou
+   * na primeira coluna que faltava, em producao. `verificar()` e idempotente,
+   * entao o `onModuleInit` que vem depois nao repete a consulta.
+   */
+  const situacao = await migrations.verificar();
+
+  if (situacao === 'desatualizado') {
     if (env.MIGRACOES_PENDENTES === 'bloquear') {
       await app.close();
       throw new Error(
@@ -36,7 +53,12 @@ async function bootstrap(): Promise<void> {
       );
     }
     Logger.warn(migrations.descricao(), 'Bootstrap');
-  } else if (migrations.situacao() === 'indeterminado') {
+  } else if (situacao === 'indeterminado') {
+    /**
+     * Indeterminado nao bloqueia: banco fora do ar na subida e um problema
+     * diferente, que o healthcheck ja reporta, e derrubar o processo aqui
+     * trocaria uma indisponibilidade temporaria por um container em loop.
+     */
     Logger.warn(migrations.descricao(), 'Bootstrap');
   }
 

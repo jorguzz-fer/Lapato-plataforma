@@ -122,6 +122,70 @@ export interface NovaPendencia {
 /** Subabas da tela principal (M10 secao 51). */
 export type AbaSolicitacoes = 'abertas' | 'minhas' | 'vencidas' | 'concluidas' | 'todas';
 
+/**
+ * Uma linha das listas "para mim" e "pedi" da tela de chegada.
+ *
+ * Quarta revisao com o Hugo: a lista diz o que e, de que caso, desde quando,
+ * em que estagio e com quem esta - as mesmas colunas que ele desenhou no
+ * PowerPoint que levou para a reuniao.
+ *
+ * As datas sao `Date` porque e isso que a consulta devolve; viram string ISO
+ * so na serializacao da resposta. O formato do fio e descrito no front, em
+ * `apps/web/src/api.ts`.
+ */
+export interface DemandaMinha {
+  id: string;
+  identificador: string;
+  tipo: string;
+  nomeTipo: string | null;
+  descricao: string;
+  prioridade: string;
+  status: string;
+  etapaAtual: number;
+  totalEtapas: number;
+  ultimaEtapa: string | null;
+  setorResponsavel: string | null;
+  prazoEm: Date | null;
+  criadaEm: Date;
+  casoId: string | null;
+  caso: string | null;
+  paciente: string | null;
+  solicitante: string | null;
+  responsavel: string | null;
+}
+
+/** Pendencia enderecada a mim, com as colunas do documento da quinta revisao. */
+export interface PendenciaMinha {
+  id: string;
+  tipo: string;
+  descricao: string;
+  status: string;
+  nivelBloqueio: string;
+  criadaEm: Date;
+  solicitacaoId: string | null;
+  solicitacao: string | null;
+  solicitante: string | null;
+  casoId: string;
+  caso: string | null;
+  paciente: string | null;
+}
+
+/**
+ * O bloco "minhas demandas" da tela de chegada, inteiro.
+ *
+ * Tipado de verdade, e nao `unknown[]` com um `as` do outro lado. Antes, o M07
+ * redeclarava este formato por conta propria e o colava com um cast - entao um
+ * campo renomeado na consulta (`criadaEm` -> `criadoEm`) compilava normalmente
+ * e so aparecia como `undefined` na tela. Agora ha uma declaracao so, e a
+ * propria consulta precisa caber nela: o renome quebra a compilacao aqui,
+ * antes do deploy.
+ */
+export interface MinhasDemandas {
+  paraMim: DemandaMinha[];
+  pedi: DemandaMinha[];
+  pendencias: PendenciaMinha[];
+}
+
 const STATUS_ABERTOS: StatusSolicitacao[] = [
   'criada',
   'aguardando_analise',
@@ -992,11 +1056,7 @@ export class SolicitacoesService {
    * O estagio vem junto ("tá no estágio 3 de 4") porque sem ele a lista diz o
    * que falta mas nao diz quanto falta, e e isso que se responde ao telefone.
    */
-  async minhasDemandas(): Promise<{
-    paraMim: unknown[];
-    pedi: unknown[];
-    pendencias: unknown[];
-  }> {
+  async minhasDemandas(): Promise<MinhasDemandas> {
     const ctx = exigirContexto();
 
     return this.db.executar(async (tx) => {

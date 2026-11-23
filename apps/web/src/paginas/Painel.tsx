@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Alert from '@mui/material/Alert';
+import AlertTitle from '@mui/material/AlertTitle';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
@@ -26,6 +27,7 @@ import {
   type ItemDeAtencao,
   type PendenciaMinha,
 } from '../api';
+import { lerRespostaDoPainel, NOME_DO_BLOCO, type BlocoRecente } from './respostaDoPainel';
 
 /**
  * Tela de chegada.
@@ -659,17 +661,75 @@ function BiparLamina() {
   );
 }
 
+/**
+ * A API respondeu, mas e mais antiga que esta tela.
+ *
+ * Quem le isto e quem opera, nao quem administra: a mensagem diz que a falta
+ * nao e culpa de ninguem na bancada, quanto costuma durar e a quem avisar. A
+ * frase final ("a API precisa ser atualizada") e o diagnostico que, em
+ * 23/11/2026, levou varias rodadas para chegar - aqui ele ja vem pronto.
+ */
+function AvisoDeVersao({ ausentes }: { ausentes: BlocoRecente[] }) {
+  const blocos = new Intl.ListFormat('pt-BR', { style: 'long', type: 'conjunction' }).format(
+    ausentes.map((bloco) => `“${NOME_DO_BLOCO[bloco]}”`),
+  );
+
+  const verbo = ausentes.length === 1 ? 'não aparece' : 'não aparecem';
+
+  return (
+    <Alert severity="warning">
+      <AlertTitle>Parte do painel ainda não está disponível</AlertTitle>
+      {`O servidor está numa versão anterior a esta tela, então ${blocos} ${verbo} agora. ` +
+        'Costuma durar poucos minutos durante uma atualização; se continuar, avise quem ' +
+        'administra a instalação — a API precisa ser atualizada.'}
+    </Alert>
+  );
+}
+
 export function Painel({ nomeCompleto, permissoes }: { nomeCompleto: string; permissoes: string[] }) {
   const [dados, setDados] = useState<DadosPainel | null>(null);
+  const [ausentes, setAusentes] = useState<BlocoRecente[]>([]);
+  const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [tentativa, setTentativa] = useState(0);
   const agora = useMemo(() => new Date(), []);
 
+  /**
+   * A resposta passa por `lerRespostaDoPainel` antes de virar estado: e la que
+   * uma API mais antiga que a tela deixa de derrubar o sistema inteiro.
+   *
+   * O `catch` nao existia. Sem ele, uma falha da API deixava a tela no
+   * esqueleto de carregamento para sempre - sem erro, sem aviso, sem saida.
+   *
+   * `vigente` descarta a resposta de uma requisicao que ja foi substituida.
+   * Sem ele, duas requisicoes sobrepostas (o StrictMode dispara o efeito duas
+   * vezes em desenvolvimento; um duplo clique em "Tentar de novo" faz o mesmo
+   * em producao) deixavam a falha da mais velha cobrir os dados da mais nova -
+   * o erro tem precedencia na tela, entao dado valido ficava escondido.
+   */
   useEffect(() => {
+    let vigente = true;
+    setCarregando(true);
+    setErro(null);
     api
-      .get<DadosPainel>('/painel')
-      .then(setDados)
-      .finally(() => setCarregando(false));
-  }, []);
+      .get<unknown>('/painel')
+      .then((bruto) => {
+        if (!vigente) return;
+        const resposta = lerRespostaDoPainel(bruto);
+        setDados(resposta.dados);
+        setAusentes(resposta.ausentes);
+      })
+      .catch((e: unknown) => {
+        if (!vigente) return;
+        setErro(e instanceof ErroApi ? e.detalhe : e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (vigente) setCarregando(false);
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [tentativa]);
 
   /**
    * `capitalize` do CSS maiusculizaria cada palavra - "Quarta-Feira, 26 De
@@ -700,7 +760,19 @@ export function Painel({ nomeCompleto, permissoes }: { nomeCompleto: string; per
         {hoje}
       </Typography>
 
-      {carregando || !dados ? (
+      {erro ? (
+        <Alert
+          severity="error"
+          action={
+            <Button color="inherit" size="small" onClick={() => setTentativa((t) => t + 1)}>
+              Tentar de novo
+            </Button>
+          }
+        >
+          <AlertTitle>Não foi possível carregar o painel</AlertTitle>
+          {erro}
+        </Alert>
+      ) : carregando || !dados ? (
         <Stack spacing={3}>
           <Stack direction="row" spacing={1.5}>
             {[0, 1, 2, 3].map((i) => (
@@ -711,6 +783,8 @@ export function Painel({ nomeCompleto, permissoes }: { nomeCompleto: string; per
         </Stack>
       ) : (
         <Stack spacing={3}>
+          {ausentes.length > 0 && <AvisoDeVersao ausentes={ausentes} />}
+
           {permissoes.includes('laudo:editar') && <BiparLamina />}
 
           <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', gap: 1.5 }}>

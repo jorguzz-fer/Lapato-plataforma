@@ -80,6 +80,12 @@ export function GaleriaDoCaso({
   const entrada = useRef<HTMLInputElement>(null);
 
   const [emEdicao, setEmEdicao] = useState<ImagemDoCaso | null>(null);
+  /**
+   * A foto que acabou de subir, esperando a galeria recarregar para a caixa de
+   * legenda abrir já nela. Guardado como id, e não como objeto, porque a
+   * imagem ainda não existe na lista no momento em que o envio termina.
+   */
+  const [recemEnviadaId, setRecemEnviadaId] = useState<string | null>(null);
   const [legenda, setLegenda] = useState('');
   const [inativando, setInativando] = useState<ImagemDoCaso | null>(null);
   const [motivo, setMotivo] = useState('');
@@ -99,6 +105,15 @@ export function GaleriaDoCaso({
 
   useEffect(carregar, [carregar]);
 
+  /** Chegou na lista: abre a legenda nela e esquece a marca. */
+  useEffect(() => {
+    if (!recemEnviadaId) return;
+    const chegou = imagens.find((i) => i.id === recemEnviadaId);
+    if (!chegou) return;
+    setEmEdicao(chegou);
+    setRecemEnviadaId(null);
+  }, [imagens, recemEnviadaId]);
+
   async function enviar(arquivos: FileList | File[] | null) {
     if (!arquivos || arquivos.length === 0) return;
     setOcupado(true);
@@ -107,11 +122,24 @@ export function GaleriaDoCaso({
     try {
       // Uma por vez: o módulo permite lote (§20), e enviar em série mantém o
       // relato de erro por arquivo em vez de um "falhou" para as 40.
+      const enviadas: string[] = [];
       for (const arquivo of Array.from(arquivos)) {
         // O tipo vem da tela que envia (terceira revisão: "só anexa").
-        await enviarImagemDoCaso(casoId, arquivo, tipoPadrao, moduloContexto);
+        const criada = await enviarImagemDoCaso(casoId, arquivo, tipoPadrao, moduloContexto);
+        enviadas.push(criada.id);
       }
       carregar();
+
+      /**
+       * Quinta revisão: a legenda se escreve na hora. Uma foto só abre o campo
+       * já aberto, porque é aí que quem fotografou ainda sabe o que ela mostra.
+       * Um lote, não: interromper 40 envios com 40 caixas seria pior que a
+       * legenda que falta — quem mandou lote legenda pela miniatura depois.
+       */
+      if (enviadas.length === 1) {
+        setLegenda('');
+        setRecemEnviadaId(enviadas[0]!);
+      }
     } catch (err) {
       setErro(
         err instanceof ErroApi

@@ -193,6 +193,12 @@ const novoCasoSchema = z
           fixadorId: z.string().uuid().optional(),
           identificacaoExterna: z.string().optional(),
           quantidadeDeclarada: z.number().int().positive().optional(),
+          /**
+           * Citologia (quinta revisão): a lâmina chega pronta da coleta, então
+           * o que se declara é quantas vieram — "ao invés de quantidade
+           * declarada, número de lâminas".
+           */
+          laminasDeclaradas: z.number().int().positive().optional(),
         }),
       )
       .min(1, 'Informe ao menos um recipiente.'),
@@ -226,6 +232,8 @@ const recebimentoSchema = z.object({
         /** Documento do Hugo: fragmentos por pote (numero) ou "multiplos". */
         fragmentosRecebidos: z.number().int().nonnegative().max(999).nullable().optional(),
         fragmentosMultiplos: z.boolean().optional(),
+        /** Citologia: quantas lâminas chegaram (quinta revisão). */
+        laminasRecebidas: z.number().int().nonnegative().max(999).nullable().optional(),
         ressalva: z.enum(RESSALVAS_RECEBIMENTO).nullable().optional(),
         ressalvaDetalhe: z.string().max(300).nullable().optional(),
       }),
@@ -252,6 +260,23 @@ export class CasosController {
   async criar(@Body() corpo: unknown) {
     const { entradaEm, ...dados } = validarCorpo(novoCasoSchema, corpo);
     return this.casos.criar({ ...dados, ...(entradaEm ? { entradaEm: new Date(entradaEm) } : {}) });
+  }
+
+  /**
+   * Antes de `:id`: o Nest resolve na ordem de declaração, e depois dele
+   * qualquer segmento vira id — que o ParseUUIDPipe recusaria.
+   */
+  @Get('racas')
+  @ExigePermissao(PERMISSOES.CASO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Raças conhecidas da espécie, mais usadas primeiro',
+    description:
+      'Quinta revisão: "um dropdown, que vai sendo abastecido com as raças pelo uso. As opções ' +
+      'de raça devem estar relacionadas à espécie previamente escolhida." Quem digita uma raça ' +
+      'fora da lista não é barrado — ela entra e aparece na próxima vez.',
+  })
+  async racas(@Query('especieId') especieId?: string) {
+    return this.casos.listarRacas(especieId?.trim() || undefined);
   }
 
   @Post(':id/entrada')
@@ -377,6 +402,48 @@ export class CasosController {
   async receber(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
     const dados = validarCorpo(recebimentoSchema, corpo);
     return this.casos.receberMaterial(id, dados.conferencia);
+  }
+
+  @Post(':id/recebimento/pendencia-macroscopia')
+  @ExigePermissao(PERMISSOES.MATERIAL_RECEBER)
+  @ApiOperation({
+    summary: 'Gerar pendência de macroscopia, da tela de conferência',
+    description:
+      'Quinta revisão: "a amostra fica pendente para o técnico responsável pela checagem, ' +
+      'permitindo que a amostra não fique esquecida". Nasce com o tipo "Macroscopia" do ' +
+      'catálogo; sem destino nominal, fica com o setor da macroscopia.',
+  })
+  async pendenciaMacroscopia(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        amostraIds: z.array(z.string().uuid()).max(50).optional(),
+        responsavelId: z.string().uuid().optional(),
+        observacao: z.string().min(1, 'Escreva o que o técnico precisa conferir.').max(2000),
+      }),
+      corpo,
+    );
+    return this.casos.pendenciaDeMacroscopia(id, dados);
+  }
+
+  @Post(':id/recebimento/ressalva-cliente')
+  @ExigePermissao(PERMISSOES.MATERIAL_RECEBER)
+  @ApiOperation({
+    summary: 'Enviar a ressalva ao cliente, da tela de conferência',
+    description:
+      'Quinta revisão: "a pendência e fotos capturadas podem ser enviadas direto para o cliente ' +
+      '(clínica) para que as dúvidas possam ser resolvidas". Como no envio do laudo, o M05 ' +
+      'enfileira — quem escolhe canal e registra a entrega é o M26. A ressalva vira evento ' +
+      'externo do caso, visível no Portal.',
+  })
+  async ressalvaAoCliente(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({
+        recipienteId: z.string().uuid().optional(),
+        mensagem: z.string().min(1, 'Escreva a dúvida que o cliente precisa resolver.').max(2000),
+      }),
+      corpo,
+    );
+    return this.casos.enviarRessalvaAoCliente(id, dados);
   }
 
   @Get(':id')

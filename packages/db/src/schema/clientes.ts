@@ -1,5 +1,16 @@
 import { relations } from 'drizzle-orm';
-import { boolean, date, index, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  date,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import {
   colunasInativacao,
   colunasTempo,
@@ -272,6 +283,41 @@ export const paciente = pgTable(
     index('idx_paciente_microchip').on(t.tenantId, t.microchip),
     index('idx_paciente_tutor').on(t.tenantId, t.tutorId),
     index('idx_paciente_nome').on(t.tenantId, t.nome),
+  ],
+);
+
+/**
+ * Racas, por especie, aprendidas pelo uso.
+ *
+ * Quinta revisao (documento do Dr. Hugo): "em Raca, seria bom colocar um
+ * dropdown, que vai sendo abastecido com as racas pelo uso. As opcoes de raca
+ * devem estar relacionadas a especie previamente escolhida."
+ *
+ * Nao e uma tabela mestre curada pelo M01, e por isso nao mora no `termo`: ela
+ * cresce sozinha, a partir do que a recepcao digita. Quem cadastra continua
+ * podendo escrever uma raca que nao esta na lista - e ela entra na lista para
+ * a proxima vez. `usos` existe para a lista chegar ordenada pelo que aquele
+ * laboratorio de fato ve: num laboratorio de equinos, "Mangalarga" vem antes
+ * de "Arabe", sem ninguem configurar nada.
+ *
+ * `especieId` nulo cobre a raca digitada antes de alguem escolher a especie;
+ * ela fica disponivel para qualquer especie, que e melhor do que se perder.
+ */
+export const raca = pgTable(
+  'raca',
+  {
+    ...colunasTenant,
+    /** Termo da tabela mestre 'especie'; nulo = serve a qualquer especie. */
+    especieId: uuid('especie_id'),
+    nome: text('nome').notNull(),
+    /** Quantas vezes foi usada: ordena a lista pelo que o laboratorio ve. */
+    usos: integer('usos').notNull().default(0),
+    ...colunasTempo,
+    ...colunasInativacao,
+  },
+  (t) => [
+    unique('uq_raca_especie_nome').on(t.tenantId, t.especieId, t.nome),
+    index('idx_raca_especie').on(t.tenantId, t.especieId),
   ],
 );
 

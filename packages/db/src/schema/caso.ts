@@ -230,6 +230,15 @@ export const recipiente = pgTable(
     quantidadeDeclarada: integer('quantidade_declarada'),
     quantidadeRecebida: integer('quantidade_recebida'),
     /**
+     * Citologia (quinta revisao): "ao inves de numero de 'quantidade
+     * declarada', 'numero de laminas'". A lamina ja chega pronta da coleta,
+     * entao o que o laboratorio confere no recebimento e quantas vieram - e
+     * nao quantos fragmentos ha no pote, que e a pergunta da histopatologia.
+     * Nulo na histopatologia.
+     */
+    laminasDeclaradas: integer('laminas_declaradas'),
+    laminasRecebidas: integer('laminas_recebidas'),
+    /**
      * Documento do Hugo: "muitas vezes uma amostra possui mais de 1
      * fragmento". Contado na conferencia; `multiplos` quando nao da para
      * contar. E o que faz a macro saber o que esperar ao abrir o pote.

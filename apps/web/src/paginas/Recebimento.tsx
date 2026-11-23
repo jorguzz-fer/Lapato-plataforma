@@ -5,8 +5,14 @@ import AlertTitle from '@mui/material/AlertTitle';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
+import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import MenuItem from '@mui/material/MenuItem';
@@ -14,7 +20,12 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import CheckCircleOutline from '@mui/icons-material/CheckCircleOutlineOutlined';
 import { RESSALVAS_RECEBIMENTO, RESSALVA_RECEBIMENTO_LABEL } from '@lapato/shared';
-import { api, ErroApi, type Dossie as DadosDossie } from '../api';
+import {
+  api,
+  ErroApi,
+  type Dossie as DadosDossie,
+  type MembroEquipe,
+} from '../api';
 import { AjudaBiblioteca } from '../componentes/AjudaBiblioteca';
 import { GaleriaDoCaso } from './imagens/GaleriaDoCaso';
 
@@ -45,8 +56,11 @@ export function Recebimento({ permissoes }: { permissoes: string[] }) {
   const [fragmentos, setFragmentos] = useState<Record<string, string>>({});
   const [ressalva, setRessalva] = useState<Record<string, string>>({});
   const [ressalvaDetalhe, setRessalvaDetalhe] = useState<Record<string, string>>({});
+  /** Citologia (quinta revisão): a conferência aqui é de lâminas, não de fragmentos. */
+  const [laminas, setLaminas] = useState<Record<string, string>>({});
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const [dialogo, setDialogo] = useState<'pendencia' | 'ressalva' | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -58,6 +72,8 @@ export function Recebimento({ permissoes }: { permissoes: string[] }) {
   }, [id]);
 
   const recipientes = dados?.recipientes ?? [];
+  /** Citologia: sem macroscopia, o que se confere é quantas lâminas vieram. */
+  const citologia = dados ? !dados.servico.exigeMacroscopia : false;
 
   const todosPreenchidos = useMemo(
     () => recipientes.length > 0 && recipientes.every((r) => contagem[r.id]?.trim() !== undefined && contagem[r.id]?.trim() !== ''),
@@ -91,6 +107,9 @@ export function Recebimento({ permissoes }: { permissoes: string[] }) {
             ...(ressalva[r.id] ? { ressalva: ressalva[r.id] } : {}),
             ...(ressalva[r.id] && (ressalvaDetalhe[r.id] ?? '').trim()
               ? { ressalvaDetalhe: (ressalvaDetalhe[r.id] ?? '').trim() }
+              : {}),
+            ...(citologia && (laminas[r.id] ?? '').trim() !== ''
+              ? { laminasRecebidas: Number(laminas[r.id]) }
               : {}),
           };
         }),
@@ -274,22 +293,41 @@ export function Recebimento({ permissoes }: { permissoes: string[] }) {
                   spacing={1.5}
                   sx={{ width: '100%', flexBasis: '100%' }}
                 >
-                  <TextField
-                    select
-                    size="small"
-                    label="Fragmentos"
-                    value={fragmentos[r.id] ?? ''}
-                    onChange={(e) => setFragmentos((a) => ({ ...a, [r.id]: e.target.value }))}
-                    sx={{ minWidth: 150 }}
-                  >
-                    <MenuItem value="">—</MenuItem>
-                    <MenuItem value="multiplos">Múltiplos</MenuItem>
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                      <MenuItem key={n} value={String(n)}>
-                        {n}
-                      </MenuItem>
-                    ))}
-                  </TextField>
+                  {citologia ? (
+                    /* Na citologia a lâmina É o material: vieram duas e chegou
+                       uma, metade do caso não será lida. */
+                    <TextField
+                      size="small"
+                      type="number"
+                      label="Lâminas recebidas"
+                      value={laminas[r.id] ?? ''}
+                      onChange={(e) => setLaminas((a) => ({ ...a, [r.id]: e.target.value }))}
+                      sx={{ minWidth: 170 }}
+                      slotProps={{ htmlInput: { min: 0 } }}
+                      helperText={
+                        r.laminasDeclaradas !== null
+                          ? `Declaradas: ${r.laminasDeclaradas}`
+                          : 'Não declarado'
+                      }
+                    />
+                  ) : (
+                    <TextField
+                      select
+                      size="small"
+                      label="Fragmentos"
+                      value={fragmentos[r.id] ?? ''}
+                      onChange={(e) => setFragmentos((a) => ({ ...a, [r.id]: e.target.value }))}
+                      sx={{ minWidth: 150 }}
+                    >
+                      <MenuItem value="">—</MenuItem>
+                      <MenuItem value="multiplos">Múltiplos</MenuItem>
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                        <MenuItem key={n} value={String(n)}>
+                          {n}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  )}
                   <TextField
                     select
                     size="small"
@@ -341,6 +379,44 @@ export function Recebimento({ permissoes }: { permissoes: string[] }) {
         />
       </Card>
 
+      {/*
+        Quinta revisão: os dois caminhos de quem abre o pote e vê algo que não
+        bate — mandar para quem decide dentro de casa, ou perguntar ao cliente.
+        Ficam aqui, na conferência, porque é onde a dúvida aparece; deixar para
+        depois é como a amostra é esquecida.
+      */}
+      <Card sx={{ p: 2.5, mt: 2.5 }}>
+        <Typography variant="h4" sx={{ mb: 0.25 }}>
+          Em caso de discordância ou ressalva
+        </Typography>
+        <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 2 }}>
+          Registrar aqui não interrompe o recebimento — ele segue, e a dúvida fica endereçada.
+        </Typography>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+          <Button variant="outlined" onClick={() => setDialogo('pendencia')}>
+            Gerar pendência de macroscopia
+          </Button>
+          <Button variant="outlined" onClick={() => setDialogo('ressalva')}>
+            Enviar ressalva para o cliente
+          </Button>
+        </Stack>
+      </Card>
+
+      {dialogo === 'pendencia' && (
+        <DialogoPendenciaMacroscopia
+          casoId={id!}
+          amostras={dados.amostras}
+          aoFechar={() => setDialogo(null)}
+        />
+      )}
+      {dialogo === 'ressalva' && (
+        <DialogoRessalvaCliente
+          casoId={id!}
+          recipientes={recipientes}
+          aoFechar={() => setDialogo(null)}
+        />
+      )}
+
       {divergencias.length > 0 && (
         <Alert severity="warning" sx={{ mt: 2.5 }}>
           <AlertTitle>
@@ -374,5 +450,262 @@ export function Recebimento({ permissoes }: { permissoes: string[] }) {
         </Typography>
       )}
     </Box>
+  );
+}
+
+/**
+ * "Gerar pendencia macroscopia", da tela de conferencia.
+ *
+ * Quinta revisao: "a amostra fica pendente para o tecnico responsavel pela
+ * checagem, permitindo que a amostra nao fique esquecida". E o conferente que
+ * abre o pote, ve algo que nao bate com a requisicao e nao e ele quem decide -
+ * mas tambem nao pode deixar passar.
+ */
+function DialogoPendenciaMacroscopia({
+  casoId,
+  amostras,
+  aoFechar,
+}: {
+  casoId: string;
+  amostras: DadosDossie['amostras'];
+  aoFechar: () => void;
+}) {
+  const [observacao, setObservacao] = useState('');
+  const [amostraIds, setAmostraIds] = useState<string[]>([]);
+  const [equipe, setEquipe] = useState<MembroEquipe[]>([]);
+  const [responsavelId, setResponsavelId] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const [pronto, setPronto] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<MembroEquipe[]>('/usuarios/equipe')
+      .then(setEquipe)
+      .catch(() => setEquipe([]));
+  }, []);
+
+  async function criar() {
+    setOcupado(true);
+    setErro(null);
+    try {
+      await api.post(`/casos/${casoId}/recebimento/pendencia-macroscopia`, {
+        observacao: observacao.trim(),
+        ...(amostraIds.length > 0 ? { amostraIds } : {}),
+        ...(responsavelId ? { responsavelId } : {}),
+      });
+      setPronto(true);
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível criar a pendência.');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <Dialog open onClose={aoFechar} fullWidth maxWidth="sm">
+      <DialogTitle sx={{ fontSize: 17 }}>Pendência de macroscopia</DialogTitle>
+      <DialogContent>
+        {pronto ? (
+          <Alert severity="success" sx={{ mt: 1 }}>
+            Pendência criada. Ela aparece na tela inicial de quem vai conferir, e o recebimento
+            segue normalmente.
+          </Alert>
+        ) : (
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label="O que precisa ser conferido"
+              value={observacao}
+              onChange={(e) => setObservacao(e.target.value)}
+              multiline
+              minRows={2}
+              required
+              helperText='Escreva o que você viu — "o pote B tem dois fragmentos, a requisição diz um".'
+            />
+
+            {amostras.length > 0 && (
+              <Box>
+                <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'text.secondary' }}>
+                  AMOSTRAS
+                </Typography>
+                <Stack>
+                  {amostras.map((a) => (
+                    <FormControlLabel
+                      key={a.id}
+                      control={
+                        <Checkbox
+                          size="small"
+                          checked={amostraIds.includes(a.id)}
+                          onChange={(e) =>
+                            setAmostraIds((atual) =>
+                              e.target.checked
+                                ? [...atual, a.id]
+                                : atual.filter((x) => x !== a.id),
+                            )
+                          }
+                        />
+                      }
+                      label={
+                        <span>
+                          <Typography component="span" sx={{ ...MONO, fontSize: 13, fontWeight: 600 }}>
+                            {a.identificador}
+                          </Typography>
+                          {a.descricao && (
+                            <Typography
+                              component="span"
+                              sx={{ fontSize: 12.5, color: 'text.secondary', ml: 0.75 }}
+                            >
+                              {a.descricao}
+                            </Typography>
+                          )}
+                        </span>
+                      }
+                    />
+                  ))}
+                </Stack>
+                <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                  Nenhuma marcada: a pendência é do caso inteiro.
+                </Typography>
+              </Box>
+            )}
+
+            <TextField
+              select
+              label="Para quem"
+              value={responsavelId}
+              onChange={(e) => setResponsavelId(e.target.value)}
+              helperText="Sem nome, fica com o setor da macroscopia."
+            >
+              <MenuItem value="">Setor · macroscopia</MenuItem>
+              {equipe.map((m) => (
+                <MenuItem key={m.id} value={m.id}>
+                  {m.nome}
+                  {m.setor ? ` · ${m.setor}` : ''}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            {erro && <Alert severity="error">{erro}</Alert>}
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={aoFechar}>{pronto ? 'Fechar' : 'Cancelar'}</Button>
+        {!pronto && (
+          <Button
+            variant="contained"
+            onClick={() => void criar()}
+            disabled={ocupado || observacao.trim() === ''}
+          >
+            {ocupado ? 'Criando…' : 'Criar pendência'}
+          </Button>
+        )}
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/**
+ * "Enviar ressalva para cliente", da tela de conferencia.
+ *
+ * Quinta revisao: "a pendencia e fotos capturadas podem ser enviadas direto
+ * para o cliente (clinica) para que as duvidas possam ser resolvidas". Hoje
+ * isso e uma ligacao que ninguem registra; aqui vira evento do caso, visivel
+ * no Portal, mais uma notificacao enfileirada.
+ */
+function DialogoRessalvaCliente({
+  casoId,
+  recipientes,
+  aoFechar,
+}: {
+  casoId: string;
+  recipientes: DadosDossie['recipientes'];
+  aoFechar: () => void;
+}) {
+  const [mensagem, setMensagem] = useState('');
+  const [recipienteId, setRecipienteId] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const [destinatario, setDestinatario] = useState<string | null | undefined>(undefined);
+
+  async function enviar() {
+    setOcupado(true);
+    setErro(null);
+    try {
+      const r = await api.post<{ destinatario: string | null }>(
+        `/casos/${casoId}/recebimento/ressalva-cliente`,
+        { mensagem: mensagem.trim(), ...(recipienteId ? { recipienteId } : {}) },
+      );
+      setDestinatario(r.destinatario);
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível registrar a ressalva.');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <Dialog open onClose={aoFechar} fullWidth maxWidth="sm">
+      <DialogTitle sx={{ fontSize: 17 }}>Ressalva para o cliente</DialogTitle>
+      <DialogContent>
+        {destinatario !== undefined ? (
+          <Alert severity={destinatario ? 'success' : 'warning'} sx={{ mt: 1 }}>
+            {destinatario
+              ? `Ressalva registrada e enfileirada para ${destinatario}. Ela também aparece no Portal do cliente.`
+              : 'Ressalva registrada e visível no Portal do cliente. O cadastro dele não tem e-mail, ' +
+                'então não há para onde enviar — cadastre o endereço na ficha do cliente.'}
+          </Alert>
+        ) : (
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              select
+              label="Sobre qual pote"
+              value={recipienteId}
+              onChange={(e) => setRecipienteId(e.target.value)}
+              helperText="Opcional — sem pote, a ressalva é do material como um todo."
+            >
+              <MenuItem value="">O material como um todo</MenuItem>
+              {recipientes.map((r) => (
+                <MenuItem key={r.id} value={r.id}>
+                  {r.identificador}
+                  {r.identificacaoExterna ? ` · ${r.identificacaoExterna}` : ''}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              label="O que precisa ser esclarecido"
+              value={mensagem}
+              onChange={(e) => setMensagem(e.target.value)}
+              multiline
+              minRows={3}
+              required
+              helperText="O cliente lê isto no Portal, junto com as fotos do recebimento."
+            />
+
+            {/* Honestidade com quem clica, como no envio do laudo. */}
+            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+              A ressalva fica registrada com o seu nome e a data, e aparece no Portal do cliente na
+              hora. A entrega por e-mail sai pela fila de notificações, quando o canal estiver
+              configurado.
+            </Typography>
+
+            {erro && <Alert severity="error">{erro}</Alert>}
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={aoFechar}>{destinatario !== undefined ? 'Fechar' : 'Cancelar'}</Button>
+        {destinatario === undefined && (
+          <Button
+            variant="contained"
+            onClick={() => void enviar()}
+            disabled={ocupado || mensagem.trim() === ''}
+          >
+            {ocupado ? 'Registrando…' : 'Enviar'}
+          </Button>
+        )}
+      </DialogActions>
+    </Dialog>
   );
 }

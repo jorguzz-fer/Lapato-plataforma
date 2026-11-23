@@ -37,6 +37,7 @@ import {
   type PacienteEncontrado,
   type ClienteResumo,
   type Servico,
+  type RacaConhecida,
   type Termo,
   type VeterinarioResumo,
 } from '../api';
@@ -85,6 +86,8 @@ interface Recipiente {
   fixadorId: string;
   identificacaoExterna: string;
   quantidadeDeclarada: string;
+  /** Citologia: quantas lâminas vieram da coleta (quinta revisão). */
+  laminasDeclaradas: string;
 }
 
 const AMOSTRA_VAZIA: Amostra = {
@@ -106,12 +109,28 @@ function fixadorPadrao(lista: Termo[]): string {
   return '';
 }
 
+/**
+ * Citologia (quinta revisao): "fixador deixar como padrao: Nao fixada". A
+ * lamina chega seca da coleta - "Nao fixada" e um valor legitimo do campo, e
+ * nao a ausencia de resposta.
+ */
+function fixadorPadraoCitologia(lista: Termo[]): string {
+  return lista.find((t) => /n[aã]o\s*fixad/i.test(t.valor))?.id ?? '';
+}
+
 const RECIPIENTE_VAZIO: Recipiente = {
   tipoId: '',
   fixadorId: '',
   identificacaoExterna: '',
   quantidadeDeclarada: '1',
+  laminasDeclaradas: '1',
 };
+
+/** Foto esperando o caso existir, com a legenda escrita na hora (quinta revisão). */
+interface FotoEmFila {
+  arquivo: File;
+  legenda: string;
+}
 
 export function NovoCaso() {
   const navegar = useNavigate();
@@ -124,7 +143,7 @@ export function NovoCaso() {
   const [fixadores, setFixadores] = useState<Termo[]>([]);
   const [fixadorPadraoId, setFixadorPadraoId] = useState('');
   /** Fotos da requisição e dos potes, tiradas no cadastro; sobem logo depois de criar o caso. */
-  const [fotos, setFotos] = useState<File[]>([]);
+  const [fotos, setFotos] = useState<FotoEmFila[]>([]);
   const [cameraAberta, setCameraAberta] = useState(false);
   const [criadoId, setCriadoId] = useState<string | null>(null);
   const entradaFotos = useRef<HTMLInputElement>(null);
@@ -148,6 +167,7 @@ export function NovoCaso() {
   const [tutorTelefone, setTutorTelefone] = useState('');
   const [tutorEmail, setTutorEmail] = useState('');
   const [raca, setRaca] = useState('');
+  const [racas, setRacas] = useState<RacaConhecida[]>([]);
   const [idadeInformada, setIdadeInformada] = useState('');
   const [dataNascimento, setDataNascimento] = useState('');
   /**
@@ -231,6 +251,20 @@ export function NovoCaso() {
   }, []);
 
   /**
+   * As raças da espécie escolhida. Trocar a espécie troca a lista inteira:
+   * oferecer "Mangalarga Marchador" para um gato é pior do que não oferecer
+   * nada. O que já estava digitado fica — quem trocou a espécie por engano não
+   * perde o que escreveu.
+   */
+  useEffect(() => {
+    const busca = especieId ? `?especieId=${especieId}` : '';
+    api
+      .get<RacaConhecida[]>(`/casos/racas${busca}`)
+      .then(setRacas)
+      .catch(() => setRacas([]));
+  }, [especieId]);
+
+  /**
    * M03: o veterinario e pessoa unica com N vinculos. Filtrar por cliente usa o
    * vinculo - por isso a lista recarrega quando o cliente muda, e a selecao
    * anterior e descartada se nao pertencer ao novo cliente.
@@ -247,6 +281,32 @@ export function NovoCaso() {
   }, [cliente]);
 
   const servico = useMemo(() => servicos.find((s) => s.id === servicoId), [servicos, servicoId]);
+
+  /**
+   * Citologia (quinta revisão): "o registro de cito já é diferente do registro
+   * de histo: não tem margens; ao invés de tipo de frascos, número de frascos;
+   * fixador deixar como padrão Não fixada; ao invés de quantidade declarada,
+   * número de lâminas; não requer macro."
+   *
+   * A diferença toda cabe numa flag que o serviço já tinha: quem não passa
+   * pela macroscopia não tem margem para avaliar nem fragmento para contar —
+   * tem lâmina pronta, vinda da coleta.
+   */
+  const citologia = servico ? !servico.exigeMacroscopia : false;
+
+  /**
+   * Trocar para citologia troca o fixador padrão: "Não fixada" no lugar do
+   * formol. Só mexe no que ainda está no padrão — fixador escolhido à mão
+   * fica, porque quem escolheu sabia o que estava fazendo.
+   */
+  useEffect(() => {
+    const padrao = citologia ? fixadorPadraoCitologia(fixadores) : fixadorPadrao(fixadores);
+    if (!padrao) return;
+    const anterior = citologia ? fixadorPadrao(fixadores) : fixadorPadraoCitologia(fixadores);
+    setRecipientes((rs) =>
+      rs.map((r) => (!r.fixadorId || r.fixadorId === anterior ? { ...r, fixadorId: padrao } : r)),
+    );
+  }, [citologia, fixadores]);
 
   /** M07: as flags do serviço decidem o caminho. Dizer isso antes de salvar
       evita a surpresa de um caso que "sumiu" numa etapa inesperada. */
@@ -328,6 +388,10 @@ export function NovoCaso() {
           ...(Number(r.quantidadeDeclarada) > 0
             ? { quantidadeDeclarada: Number(r.quantidadeDeclarada) }
             : {}),
+          // Só na citologia: na histopatologia a lâmina ainda nem existe.
+          ...(citologia && Number(r.laminasDeclaradas) > 0
+            ? { laminasDeclaradas: Number(r.laminasDeclaradas) }
+            : {}),
         })),
       });
 
@@ -339,9 +403,16 @@ export function NovoCaso() {
       const falhas: string[] = [];
       for (const foto of fotos) {
         try {
-          await enviarImagemDoCaso(caso.id, foto, 'requisicao', 'M05_CADASTRO');
+          await enviarImagemDoCaso(
+            caso.id,
+            foto.arquivo,
+            'requisicao',
+            'M05_CADASTRO',
+            undefined,
+            foto.legenda,
+          );
         } catch (e) {
-          falhas.push(`${foto.name}: ${e instanceof Error ? e.message : 'não subiu'}`);
+          falhas.push(`${foto.arquivo.name}: ${e instanceof Error ? e.message : 'não subiu'}`);
         }
       }
       if (falhas.length > 0) {
@@ -623,11 +694,32 @@ export function NovoCaso() {
           {/* Documento do Hugo: raça e idade faltavam; a idade vem na maioria das
               requisições, a data de nascimento em algumas. */}
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField
-              label="Raça"
+            {/*
+              Quinta revisão: "um dropdown, que vai sendo abastecido com as
+              raças pelo uso. As opções de raça devem estar relacionadas à
+              espécie previamente escolhida." freeSolo porque raça que não está
+              na lista não pode ser um impedimento — ela entra na lista.
+            */}
+            <Autocomplete
+              freeSolo
+              options={racas.map((r) => r.nome)}
               value={raca}
-              onChange={(e) => setRaca(e.target.value)}
+              onChange={(_, valor) => setRaca(valor ?? '')}
+              onInputChange={(_, valor) => setRaca(valor)}
               sx={{ flex: 1.4 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Raça"
+                  helperText={
+                    especieId
+                      ? racas.length > 0
+                        ? 'Escolha ou escreva — raça nova entra na lista.'
+                        : 'Escreva a raça; ela passa a aparecer aqui.'
+                      : 'Escolha a espécie para ver as raças dela.'
+                  }
+                />
+              )}
             />
             <TextField
               label="Idade"
@@ -719,20 +811,23 @@ export function NovoCaso() {
                 onChange={(e) => alterarAmostra(i, 'descricao', e.target.value)}
                 sx={{ flex: 2 }}
               />
-              <TextField
-                select
-                label="Margem cirúrgica"
-                value={a.margemCirurgica}
-                onChange={(e) => alterarAmostra(i, 'margemCirurgica', e.target.value)}
-                sx={{ flex: 1, minWidth: 190 }}
-                helperText="Cobrada à parte; a macroscopia só avalia margem quando há."
-              >
-                {MARGEM_CIRURGICA.map((m) => (
-                  <MenuItem key={m} value={m}>
-                    {MARGEM_CIRURGICA_LABEL[m]}
-                  </MenuItem>
-                ))}
-              </TextField>
+              {/* Citologia não tem margem: não há peça para orientar. */}
+              {!citologia && (
+                <TextField
+                  select
+                  label="Margem cirúrgica"
+                  value={a.margemCirurgica}
+                  onChange={(e) => alterarAmostra(i, 'margemCirurgica', e.target.value)}
+                  sx={{ flex: 1, minWidth: 190 }}
+                  helperText="Cobrada à parte; a macroscopia só avalia margem quando há."
+                >
+                  {MARGEM_CIRURGICA.map((m) => (
+                    <MenuItem key={m} value={m}>
+                      {MARGEM_CIRURGICA_LABEL[m]}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
               <TextField
                 select
                 label="Lateralidade"
@@ -758,7 +853,11 @@ export function NovoCaso() {
 
         <Secao
           titulo="Recipientes"
-          descricao="O que chegou fisicamente. A quantidade aqui é a declarada — a conferência acontece no recebimento."
+          descricao={
+            citologia
+              ? 'As lâminas que chegaram da coleta. O número aqui é o declarado — a conferência acontece no recebimento.'
+              : 'O que chegou fisicamente. A quantidade aqui é a declarada — a conferência acontece no recebimento.'
+          }
           acao={
             <Button
               size="small"
@@ -813,13 +912,28 @@ export function NovoCaso() {
                 helperText="Como veio rotulado pelo solicitante"
               />
               <TextField
-                label="Qtd. declarada"
+                label={citologia ? 'Número de frascos' : 'Qtd. declarada'}
                 type="number"
                 value={r.quantidadeDeclarada}
                 onChange={(e) => alterarRecipiente(i, 'quantidadeDeclarada', e.target.value)}
-                sx={{ width: 130 }}
+                sx={{ width: citologia ? 160 : 130 }}
                 slotProps={{ htmlInput: { min: 1 } }}
               />
+
+              {/*
+                Citologia: a lâmina chega pronta, então o que se declara é
+                quantas vieram — é ela que a microscopia vai ler.
+              */}
+              {citologia && (
+                <TextField
+                  label="Número de lâminas"
+                  type="number"
+                  value={r.laminasDeclaradas}
+                  onChange={(e) => alterarRecipiente(i, 'laminasDeclaradas', e.target.value)}
+                  sx={{ width: 160 }}
+                  slotProps={{ htmlInput: { min: 1 } }}
+                />
+              )}
 
               <Remover
                 rotulo="Remover recipiente"
@@ -848,7 +962,10 @@ export function NovoCaso() {
                 multiple
                 hidden
                 onChange={(e) => {
-                  const novos = Array.from(e.target.files ?? []);
+                  const novos = Array.from(e.target.files ?? []).map((arquivo) => ({
+                    arquivo,
+                    legenda: '',
+                  }));
                   setFotos((a) => [...a, ...novos]);
                   e.target.value = '';
                 }}
@@ -861,21 +978,41 @@ export function NovoCaso() {
               Nenhuma foto ainda. JPEG, PNG, WebP ou HEIC.
             </Typography>
           ) : (
-            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+            <Stack spacing={1}>
               {fotos.map((f, i) => (
-                <Chip
-                  key={`${f.name}-${i}`}
-                  label={f.name}
-                  onDelete={() => setFotos((a) => a.filter((_, j) => j !== i))}
-                  variant="outlined"
-                />
+                <Stack
+                  key={`${f.arquivo.name}-${i}`}
+                  direction={{ xs: 'column', sm: 'row' }}
+                  spacing={1}
+                  sx={{ alignItems: { sm: 'center' } }}
+                >
+                  <Chip
+                    label={f.arquivo.name}
+                    onDelete={() => setFotos((a) => a.filter((_, j) => j !== i))}
+                    variant="outlined"
+                    sx={{ maxWidth: 260, flexShrink: 0 }}
+                  />
+                  {/* Quinta revisão: a legenda se escreve na hora da foto. */}
+                  <TextField
+                    size="small"
+                    label="Legenda"
+                    value={f.legenda}
+                    onChange={(e) =>
+                      setFotos((a) =>
+                        a.map((x, j) => (j === i ? { ...x, legenda: e.target.value } : x)),
+                      )
+                    }
+                    placeholder="Ex.: requisição assinada · pote C, tampa solta"
+                    sx={{ flex: 1 }}
+                  />
+                </Stack>
               ))}
             </Stack>
           )}
           <CapturaWebcam
             aberto={cameraAberta}
             aoFechar={() => setCameraAberta(false)}
-            aoCapturar={(arquivo) => setFotos((a) => [...a, arquivo])}
+            aoCapturar={(arquivo) => setFotos((a) => [...a, { arquivo, legenda: '' }])}
           />
         </Secao>
 

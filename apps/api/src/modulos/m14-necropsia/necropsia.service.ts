@@ -5,14 +5,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
   cadaver,
   causaMortis,
   caso,
   exameOrgao,
   formularioNecropsia,
+  laudo,
+  laudoVersao,
   lesaoNecroscopica,
+  localFisico,
   marcadorCorporal,
   necropsia,
   notificacaoPendente,
@@ -20,6 +23,7 @@ import {
   relacaoLesao,
   tenant,
   termo,
+  usuario,
   type Transacao,
 } from '@lapato/db';
 import {
@@ -38,6 +42,7 @@ import {
   type TipoMarcadorCorporal,
   type VistaMapaCorporal,
 } from '@lapato/shared';
+import { CopilotoFactory } from '../../core/ia/copiloto.provider.js';
 import { DbService } from '../../core/db/db.service.js';
 import { EventosService } from '../../core/eventos/eventos.service.js';
 import { GuardianService } from '../../core/guardian/guardian.service.js';
@@ -120,6 +125,7 @@ export class NecropsiaService {
     private readonly db: DbService,
     private readonly eventos: EventosService,
     private readonly guardian: GuardianService,
+    private readonly copiloto: CopilotoFactory,
   ) {}
 
   /**
@@ -178,6 +184,304 @@ export class NecropsiaService {
       });
 
       return { id: nova!.id };
+    });
+  }
+
+  /**
+   * A fila do "Realizar exame" (quinta revisao).
+   *
+   * "Ao clicar em realizar exame, aparece a listagem de animais que estao
+   * aguardando a realizacao da necropsia."
+   *
+   * A fila nasce do CORPO, e nao da necropsia: o animal entra nela quando chega
+   * a camara fria, antes de existir ficha de exame. Listar necropsias abertas
+   * mostraria so quem ja comecou - exatamente quem nao precisa mais da fila.
+   */
+  async fila(busca?: string) {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const termo = busca?.trim();
+      const filtros = [
+        eq(cadaver.tenantId, ctx.tenantId),
+        inArray(cadaver.status, ['recebido', 'armazenado', 'aguardando_necropsia', 'em_necropsia']),
+      ];
+      if (termo) {
+        const curinga = `%${termo}%`;
+        filtros.push(
+          sql`(${cadaver.identificador} ILIKE ${curinga} OR ${cadaver.nomeAnimal} ILIKE ${curinga} OR ${cadaver.origemResponsavel} ILIKE ${curinga})`,
+        );
+      }
+
+      const linhas = await tx
+        .select({
+          cadaverId: cadaver.id,
+          identificador: cadaver.identificador,
+          nome: cadaver.nomeAnimal,
+          especie: cadaver.especie,
+          raca: cadaver.raca,
+          sexo: cadaver.sexo,
+          responsavel: cadaver.origemResponsavel,
+          recebidoEm: cadaver.recebidoEm,
+          status: cadaver.status,
+          destinacao: cadaver.destinacao,
+          prazoGuardaAte: cadaver.prazoGuardaAte,
+          local: localFisico.codigo,
+          casoId: cadaver.casoId,
+          necropsiaId: necropsia.id,
+          modalidade: necropsia.modalidade,
+          exameEm: necropsia.exameEm,
+          concluidaEm: necropsia.concluidaEm,
+        })
+        .from(cadaver)
+        .leftJoin(localFisico, eq(localFisico.id, cadaver.localAtualId))
+        .leftJoin(necropsia, eq(necropsia.cadaverId, cadaver.id))
+        .where(and(...filtros))
+        .orderBy(asc(cadaver.recebidoEm), asc(cadaver.identificador))
+        .limit(100);
+
+      return linhas.map((l) => ({
+        ...l,
+        /**
+         * "Situacao" da tela: nao e o status do corpo nem o da necropsia, e o
+         * que falta fazer. Sem ficha ainda e "Aguardando exame"; com ficha
+         * aberta e "Em exame"; concluida e "Em laudo", porque dali em diante o
+         * trabalho e do M11.
+         */
+        situacao: l.concluidaEm ? 'em_laudo' : l.necropsiaId ? 'em_exame' : 'aguardando_exame',
+      }));
+    });
+  }
+
+  /**
+   * "Ciente": o patologista declara que leu o pedido do tutor.
+   *
+   * Nao e so um visto. O pedido ("carimbo da pata e tufo de pelos") so se
+   * cumpre com o corpo na mesa; depois do descarte nao ha segunda chance. O
+   * registro com nome e hora e o que permite responder ao tutor quem leu e
+   * quando - e o que torna visivel, na conferencia, o exame que comecou sem
+   * ninguem ter lido.
+   */
+  async darCiencia(necropsiaId: string): Promise<void> {
+    const ctx = exigirContexto();
+
+    await this.db.executar(async (tx) => {
+      const registro = await this.buscar(tx, necropsiaId);
+      if (!registro.observacaoTutor) {
+        throw new BadRequestException('Não há observação do tutor para dar ciência.');
+      }
+      // Idempotente: quem clica duas vezes nao reescreve quem leu primeiro.
+      if (registro.cienteEm) return;
+
+      await tx
+        .update(necropsia)
+        .set({ cienteEm: new Date(), cientePorId: ctx.usuarioId, atualizadoEm: new Date() })
+        .where(eq(necropsia.id, necropsiaId));
+
+      await this.eventos.publicar(tx, {
+        tipo: 'necropsia.ciente_observacao',
+        casoId: registro.casoId,
+        moduloOrigem: MODULOS.M14_NECROPSIA,
+        objetoTipo: 'necropsia',
+        objetoId: necropsiaId,
+        payload: { observacao: registro.observacaoTutor },
+      });
+    });
+  }
+
+  /** A observacao do tutor e a data do exame, corrigiveis pela tela. */
+  async salvarCabecalho(
+    necropsiaId: string,
+    dados: { observacaoTutor?: string | null; exameEm?: string | null },
+  ): Promise<void> {
+    await this.db.executar(async (tx) => {
+      const registro = await this.buscar(tx, necropsiaId);
+      const mudancas: Record<string, unknown> = { atualizadoEm: new Date() };
+
+      if (dados.observacaoTutor !== undefined) {
+        const texto = dados.observacaoTutor?.trim() || null;
+        mudancas.observacaoTutor = texto;
+        /**
+         * Observacao nova zera a ciencia: quem leu "carimbo da pata" nao leu
+         * "e tambem uma mecha da cauda". Manter o visto antigo faria o sistema
+         * afirmar que alguem leu um texto que nao existia.
+         */
+        if (texto !== registro.observacaoTutor) {
+          mudancas.cienteEm = null;
+          mudancas.cientePorId = null;
+        }
+      }
+
+      if (dados.exameEm !== undefined) {
+        const quando = dados.exameEm ? Date.parse(dados.exameEm) : null;
+        if (dados.exameEm && Number.isNaN(quando!)) {
+          throw new BadRequestException('Data do exame inválida.');
+        }
+        if (quando !== null && quando > Date.now()) {
+          throw new BadRequestException('A data do exame não pode estar no futuro.');
+        }
+        mudancas.exameEm = quando === null ? null : new Date(quando);
+      }
+
+      await tx.update(necropsia).set(mudancas).where(eq(necropsia.id, necropsiaId));
+    });
+  }
+
+  /**
+   * "INDICAR QUAIS AMOSTRAS FORAM COLETADAS" (quinta revisao).
+   *
+   * Marcado no orgao ja examinado: a coleta e decidida com a cavidade aberta, e
+   * guardar isso numa lista separada obrigaria a redigitar o nome do orgao.
+   */
+  async marcarColeta(
+    orgaoId: string,
+    dados: { coletada: boolean; observacao?: string | null },
+  ): Promise<void> {
+    const ctx = exigirContexto();
+
+    await this.db.executar(async (tx) => {
+      const [orgao] = await tx
+        .select({ id: exameOrgao.id, necropsiaId: exameOrgao.necropsiaId, orgao: exameOrgao.orgao, estado: exameOrgao.estado })
+        .from(exameOrgao)
+        .where(and(eq(exameOrgao.tenantId, ctx.tenantId), eq(exameOrgao.id, orgaoId)))
+        .limit(1);
+      if (!orgao) throw new NotFoundException('Órgão não encontrado.');
+
+      /**
+       * Secao 118 outra vez: orgao "nao examinado" com amostra coletada seria a
+       * mesma contradicao que descricao em orgao nao examinado - ninguem coleta
+       * fragmento de um orgao que nao abriu.
+       */
+      if (dados.coletada && orgao.estado === 'nao_examinado') {
+        throw new BadRequestException(
+          `"${orgao.orgao}" está como não examinado: não há de onde coletar amostra.`,
+        );
+      }
+
+      const registro = await this.buscar(tx, orgao.necropsiaId);
+      this.garantirEmAndamento(registro);
+
+      await tx
+        .update(exameOrgao)
+        .set({
+          amostraColetada: dados.coletada,
+          amostraObservacao: dados.coletada ? (dados.observacao?.trim() || null) : null,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(exameOrgao.id, orgaoId));
+    });
+  }
+
+  /**
+   * As sugestoes do Copiloto para a bancada da necropsia (M17).
+   *
+   * Quinta revisao: "e importante que o suporte de IA sempre considere os
+   * exames previos do animal, bem como o historico apontado, sugerindo sistemas
+   * indispensaveis para exame e suspeitas diagnosticas."
+   *
+   * Dois cuidados que o M17 impoe e que valem repetir aqui. O contexto leva o
+   * que a casa JA SABE - formulario, exames anteriores do mesmo paciente,
+   * orgaos ja examinados -, porque sugestao que ignora o historico e so um
+   * chute com aparencia de parecer. E o LAPATO segue sem IA: sem provedor, a
+   * resposta vem com `disponivel: false` e a tela mostra o indicador, sem
+   * travar o exame (secao 110).
+   */
+  async sugestoes(necropsiaId: string) {
+    const ctx = exigirContexto();
+
+    const contexto = await this.db.executar(async (tx) => {
+      const registro = await this.buscar(tx, necropsiaId);
+
+      const [paciente_] = await tx
+        .select({ id: paciente.id, nome: paciente.nome, especieId: paciente.especieId, raca: paciente.raca })
+        .from(caso)
+        .innerJoin(paciente, eq(paciente.id, caso.pacienteId))
+        .where(and(eq(caso.tenantId, ctx.tenantId), eq(caso.id, registro.casoId)))
+        .limit(1);
+
+      /**
+       * Os exames ANTERIORES do mesmo paciente, que e o pedido explicito do
+       * documento. Sao outros casos do mesmo animal, com o diagnostico que
+       * saiu - o sopro cardiaco de dois anos atras e o que faz o patologista
+       * abrir o coracao com outro olho.
+       */
+      const anteriores = paciente_
+        ? await tx
+            .select({
+              identificador: caso.identificador,
+              entradaEm: caso.entradaEm,
+              conclusao: laudoVersao.conclusao,
+            })
+            .from(caso)
+            .leftJoin(laudo, eq(laudo.casoId, caso.id))
+            /**
+             * A versao VIGENTE, e nao a ultima: `laudo.versao_atual` e o numero
+             * que vale hoje. Pegar a mais recente traria rascunho de retificacao
+             * ainda nao liberado, e sugestao nao se apoia em texto que ninguem
+             * assinou.
+             */
+            .leftJoin(
+              laudoVersao,
+              and(eq(laudoVersao.laudoId, laudo.id), eq(laudoVersao.versao, laudo.versaoAtual)),
+            )
+            .where(
+              and(
+                eq(caso.tenantId, ctx.tenantId),
+                eq(caso.pacienteId, paciente_.id),
+                sql`${caso.id} <> ${registro.casoId}`,
+              ),
+            )
+            .orderBy(desc(caso.entradaEm))
+            .limit(10)
+        : [];
+
+      const [formulario] = await tx
+        .select({ respostas: formularioNecropsia.respostas })
+        .from(formularioNecropsia)
+        .where(
+          and(
+            eq(formularioNecropsia.tenantId, ctx.tenantId),
+            eq(formularioNecropsia.necropsiaId, necropsiaId),
+            isNotNull(formularioNecropsia.respondidoEm),
+          ),
+        )
+        .orderBy(desc(formularioNecropsia.respondidoEm))
+        .limit(1);
+
+      const examinados = await tx
+        .select({ orgao: exameOrgao.orgao, sistema: exameOrgao.sistema, estado: exameOrgao.estado })
+        .from(exameOrgao)
+        .where(
+          and(eq(exameOrgao.tenantId, ctx.tenantId), eq(exameOrgao.necropsiaId, necropsiaId)),
+        );
+
+      return {
+        casoId: registro.casoId,
+        dados: {
+          especie: paciente_?.raca ?? null,
+          modalidade: registro.modalidade,
+          conservacao: registro.conservacao,
+          obitoEm: registro.obitoEm?.toISOString() ?? null,
+          circunstanciasMorte: registro.circunstanciasMorte,
+          perguntasSolicitante: registro.perguntasSolicitante,
+          limitacoes: registro.limitacoes ?? [],
+          respostasFormulario: formulario?.respostas ?? {},
+          examesAnteriores: anteriores.map((a) => ({
+            identificador: a.identificador,
+            quando: a.entradaEm?.toISOString() ?? null,
+            conclusao: a.conclusao,
+          })),
+          orgaosJaExaminados: examinados,
+        },
+      };
+    });
+
+    const provedor = this.copiloto.criar();
+    return provedor.sugerir({
+      modulo: MODULOS.M14_NECROPSIA,
+      etapa: 'exame_interno',
+      casoId: contexto.casoId,
+      dados: contexto.dados,
     });
   }
 
@@ -459,6 +763,18 @@ export class NecropsiaService {
     }
 
     if (Object.keys(mudancas).length === 0) return;
+
+    /**
+     * Pedido novo do tutor apaga a ciencia pelo mesmo motivo do cabecalho: o
+     * visto de quem leu vale para o texto que estava la, nao para o que chegou
+     * depois. Melhor o patologista ler de novo do que o sistema afirmar que
+     * alguem leu o que nao existia.
+     */
+    if (mudancas.observacaoTutor !== undefined) {
+      mudancas.cienteEm = null;
+      mudancas.cientePorId = null;
+    }
+
     await tx
       .update(necropsia)
       .set({ ...mudancas, atualizadoEm: new Date() })
@@ -590,6 +906,14 @@ export class NecropsiaService {
             estado: dados.estado,
             descricao: dados.descricao ?? null,
             pesoGramas: dados.pesoGramas ?? null,
+            /**
+             * Voltar o orgao para "nao examinado" apaga a coleta: a mesma
+             * contradicao da descricao acima, pela outra ponta. Se o pulmao
+             * deixou de ser examinado, a amostra de pulmao nao existe.
+             */
+            ...(dados.estado === 'nao_examinado'
+              ? { amostraColetada: false, amostraObservacao: null }
+              : {}),
             atualizadoEm: new Date(),
           },
         });
@@ -985,8 +1309,42 @@ export class NecropsiaService {
         )
         .orderBy(asc(marcadorCorporal.criadoEm));
 
+      /**
+       * O formulario respondido vai junto da bancada: a aba "Historico" mostra
+       * "Informacoes do formulario" e e a primeira coisa que o patologista le.
+       * Buscar numa segunda chamada deixaria a aba vazia no primeiro quadro,
+       * justamente a aba que se abre por padrao.
+       */
+      const [formulario] = await tx
+        .select({
+          respostas: formularioNecropsia.respostas,
+          respondidoEm: formularioNecropsia.respondidoEm,
+          respondidoPor: formularioNecropsia.respondidoPor,
+        })
+        .from(formularioNecropsia)
+        .where(
+          and(
+            eq(formularioNecropsia.tenantId, ctx.tenantId),
+            eq(formularioNecropsia.necropsiaId, registro.id),
+            isNotNull(formularioNecropsia.respondidoEm),
+          ),
+        )
+        .orderBy(desc(formularioNecropsia.respondidoEm))
+        .limit(1);
+
+      /** Quem deu ciencia do pedido do tutor, pelo nome. */
+      const [quemDeuCiencia] = registro.cientePorId
+        ? await tx
+            .select({ nome: usuario.nomeCompleto })
+            .from(usuario)
+            .where(eq(usuario.id, registro.cientePorId))
+            .limit(1)
+        : [];
+
       return {
         necropsia: registro,
+        formulario: formulario ?? null,
+        cientePor: quemDeuCiencia?.nome ?? null,
         orgaos,
         lesoes,
         relacoes,

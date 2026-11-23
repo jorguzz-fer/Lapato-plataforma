@@ -872,6 +872,9 @@ export interface OrgaoExaminado {
   estado: string;
   descricao: string | null;
   pesoGramas: number | null;
+  /** Quinta revisão: "indicar quais amostras foram coletadas". */
+  amostraColetada: boolean;
+  amostraObservacao: string | null;
 }
 
 export interface LesaoNecroscopica {
@@ -916,11 +919,22 @@ export interface BancadaNecropsia {
     responsavelDocumento: string | null;
     responsavelCidade: string | null;
     responsavelUf: string | null;
+    /** Quinta revisão: o pedido do tutor e a ciência do patologista. */
+    observacaoTutor: string | null;
+    cienteEm: string | null;
+    exameEm: string | null;
     exameExterno: Record<string, unknown>;
     limitacoes: string[];
     limitacoesObservacao: string | null;
     concluidaEm: string | null;
   };
+  /** O formulário respondido, para a aba Histórico. */
+  formulario: {
+    respostas: Record<string, unknown>;
+    respondidoEm: string | null;
+    respondidoPor: string | null;
+  } | null;
+  cientePor: string | null;
   orgaos: OrgaoExaminado[];
   lesoes: LesaoNecroscopica[];
   relacoes: Array<{
@@ -1431,6 +1445,44 @@ export interface AutocadastroCliente {
  * O que o tutor recebe ao abrir o link do formulario de necropsia. O valor vem
  * como texto (numeric do Postgres) e so para leitura: ele nao o edita.
  */
+/** Resposta do Copiloto (M17): cartões, ou o indicador de indisponível. */
+export interface SugestoesCopiloto {
+  cartoes: Array<{
+    id: string;
+    nivel: string;
+    titulo: string;
+    corpo: string;
+    fontes: string[];
+    inferencia: boolean;
+    textoSugerido?: string;
+    campoDestino?: string;
+  }>;
+  disponivel: boolean;
+  modelo?: string;
+}
+
+/** Uma linha da fila de "Realizar exame" (quinta revisão). */
+export interface NaFilaDeNecropsia {
+  cadaverId: string;
+  identificador: string;
+  nome: string | null;
+  especie: string;
+  raca: string | null;
+  sexo: string | null;
+  responsavel: string | null;
+  recebidoEm: string | null;
+  status: string;
+  destinacao: string | null;
+  prazoGuardaAte: string | null;
+  local: string | null;
+  casoId: string | null;
+  necropsiaId: string | null;
+  modalidade: string | null;
+  exameEm: string | null;
+  concluidaEm: string | null;
+  situacao: 'aguardando_exame' | 'em_exame' | 'em_laudo';
+}
+
 export interface FormularioNecropsiaPublico {
   instituicao: string;
   expiraEm: string | null;

@@ -211,6 +211,13 @@
       "when": 1795439606285,
       "tag": "0029_common_the_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1795440919282,
+      "tag": "0030_fancy_shadowcat",
+      "breakpoints": true
     }
   ]
 }

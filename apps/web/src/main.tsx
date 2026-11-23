@@ -25,6 +25,7 @@ import { FilaMacroscopia } from './paginas/FilaMacroscopia';
 import { Solicitacoes } from './paginas/Solicitacoes';
 import { OrdensDeServico } from './paginas/ordens/OrdensDeServico';
 import { Financeiro } from './paginas/ordens/Financeiro';
+import { FilaNecropsia } from './paginas/FilaNecropsia';
 import { Cadaveres } from './paginas/Cadaveres';
 import { Bioteca } from './paginas/Bioteca';
 import { Logistica } from './paginas/logistica/Logistica';
@@ -296,6 +297,15 @@ function App() {
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Usuários, Perfis e Permissões">
             <Usuarios permissoes={sessao.permissoes} />
+          </Shell>
+        }
+      />
+      {/* Quinta revisão: a fila de quem aguarda necropsia, fora de /casos. */}
+      <Route
+        path="/necropsia"
+        element={
+          <Shell sessao={sessao} aoSair={sair} modulo="Necropsia">
+            <FilaNecropsia />
           </Shell>
         }
       />

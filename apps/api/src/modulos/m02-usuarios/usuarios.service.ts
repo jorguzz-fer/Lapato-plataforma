@@ -127,11 +127,13 @@ export class UsuariosService {
    * da pessoa, porque voce sabe quem colocou a mao". Contas do Portal ficam de
    * fora: cliente nao executa etapa interna.
    */
-  async listarEquipe(): Promise<Array<{ id: string; nome: string; setor: string | null }>> {
+  async listarEquipe(): Promise<
+    Array<{ id: string; nome: string; setor: string | null; perfis: string[] }>
+  > {
     const ctx = exigirContexto();
 
-    return this.db.executar((tx) =>
-      tx
+    return this.db.executar(async (tx) => {
+      const pessoas = await tx
         .select({ id: usuario.id, nome: usuario.nomeCompleto, setor: setor.nome })
         .from(usuario)
         .leftJoin(setor, eq(setor.id, usuario.setorPrincipalId))
@@ -142,8 +144,31 @@ export class UsuariosService {
             isNull(usuario.clienteId),
           ),
         )
-        .orderBy(asc(usuario.nomeCompleto)),
-    );
+        .orderBy(asc(usuario.nomeCompleto));
+
+      /**
+       * Os perfis acompanham a pessoa porque o catalogo do M10 (quinta
+       * revisao) restringe DESTINO por perfil: "os tipos de solicitacao devem
+       * ser restritos por perfil... tanto quem pode solicitar quanto quem pode
+       * receber". Sem isso o formulario ofereceria a recepcao para uma
+       * solicitacao que so o patologista executa.
+       */
+      const vinculos = await tx
+        .select({ usuarioId: usuarioPerfil.usuarioId, chave: perfil.chave })
+        .from(usuarioPerfil)
+        .innerJoin(perfil, eq(perfil.id, usuarioPerfil.perfilId))
+        .where(eq(usuarioPerfil.tenantId, ctx.tenantId));
+
+      const porUsuario = new Map<string, string[]>();
+      for (const v of vinculos) {
+        if (!v.chave) continue;
+        const atual = porUsuario.get(v.usuarioId) ?? [];
+        atual.push(v.chave);
+        porUsuario.set(v.usuarioId, atual);
+      }
+
+      return pessoas.map((p) => ({ ...p, perfis: porUsuario.get(p.id) ?? [] }));
+    });
   }
 
   /** Perfis disponiveis para atribuicao (M02 secao 9). */

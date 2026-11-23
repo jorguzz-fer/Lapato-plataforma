@@ -447,19 +447,79 @@ export const TIPOS_SOLICITACAO: Array<{
   exigeAprovacao?: boolean;
   visivelPortal?: boolean;
   setorPadrao?: string;
-  etapas: Array<{ rotulo: string; setor?: string; textoPortal?: string }>;
+  /** Segundo nivel: qual corante, qual marcador (quinta revisao). */
+  subtipos?: string[];
+  etapas: Array<{ rotulo: string; setor?: string; textoPortal?: string; automatica?: boolean }>;
 }> = [
   {
     chave: 'coloracao_especial',
     nome: 'Coloração especial',
-    descricao: 'PAS, Ziehl-Neelsen, Grocott, Tricrômico, Perls.',
+    descricao: 'Escolha o corante no segundo campo.',
+    setorPadrao: 'histotecnica',
+    /**
+     * Documento do Hugo (quinta revisao), lista do formulario do patologista.
+     * "Outra" fecha a lista porque corante novo aparece antes de alguem
+     * lembrar de cadastra-lo.
+     */
+    subtipos: [
+      'PAS',
+      'Ziehl-Neelsen',
+      'Gram',
+      'Grocott',
+      'Faraco',
+      'Tricrômico de Masson',
+      'Azul de Toluidina',
+      'Rodanina',
+      'Fontana-Masson',
+      'Perls',
+      'Novo HE',
+      'Outra',
+    ],
+    /**
+     * Fluxo escrito no documento: "Solicitacao -> Separacao do bloco ->
+     * Processamento -> Envio ao Patologista". A primeira e automatica: ela
+     * acontece no ato de pedir.
+     */
+    etapas: [
+      { rotulo: 'Solicitação', setor: 'microscopia', automatica: true },
+      { rotulo: 'Separação do bloco', setor: 'histotecnica' },
+      { rotulo: 'Processamento', setor: 'histotecnica' },
+      { rotulo: 'Envio ao patologista', setor: 'microscopia' },
+    ],
+  },
+  {
+    chave: 'aprofundar_corte',
+    nome: 'Aprofundar corte',
+    descricao: 'Mesmo caminho da coloração: bloco, processamento e volta.',
     setorPadrao: 'histotecnica',
     etapas: [
-      { rotulo: 'Recebida pelo laboratório', setor: 'histotecnica' },
-      { rotulo: 'Bloco separado', setor: 'histotecnica' },
-      { rotulo: 'Enviado ao processamento', setor: 'histotecnica' },
-      { rotulo: 'Lâmina corada', setor: 'histotecnica' },
-      { rotulo: 'Enviada ao patologista', setor: 'microscopia' },
+      { rotulo: 'Solicitação', setor: 'microscopia', automatica: true },
+      { rotulo: 'Separação do bloco', setor: 'histotecnica' },
+      { rotulo: 'Processamento', setor: 'histotecnica' },
+      { rotulo: 'Envio ao patologista', setor: 'microscopia' },
+    ],
+  },
+  {
+    chave: 'problema_tecnico',
+    nome: 'Problema técnico',
+    descricao: 'Lâmina com dobra, bolha, corte espesso: refazer.',
+    setorPadrao: 'histotecnica',
+    etapas: [
+      { rotulo: 'Solicitação', setor: 'microscopia', automatica: true },
+      { rotulo: 'Separação do bloco', setor: 'histotecnica' },
+      { rotulo: 'Processamento', setor: 'histotecnica' },
+      { rotulo: 'Envio ao patologista', setor: 'microscopia' },
+    ],
+  },
+  {
+    chave: 'niveis_adicionais',
+    nome: 'Níveis adicionais',
+    setorPadrao: 'histotecnica',
+    etapas: [
+      { rotulo: 'Solicitação', setor: 'microscopia', automatica: true },
+      { rotulo: 'Separação do bloco', setor: 'histotecnica' },
+      { rotulo: 'Processamento', setor: 'histotecnica' },
+      { rotulo: 'Envio ao patologista', setor: 'microscopia' },
     ],
   },
   {
@@ -469,11 +529,11 @@ export const TIPOS_SOLICITACAO: Array<{
     exigeAprovacao: true,
     setorPadrao: 'histotecnica',
     etapas: [
-      { rotulo: 'Recebida pelo laboratório', setor: 'histotecnica' },
-      { rotulo: 'Bloco separado', setor: 'histotecnica' },
+      { rotulo: 'Solicitação', setor: 'microscopia', automatica: true },
+      { rotulo: 'Separação do bloco', setor: 'histotecnica' },
       { rotulo: 'Enviado ao laboratório de IHQ', setor: 'histotecnica' },
       { rotulo: 'Resultado recebido', setor: 'histotecnica' },
-      { rotulo: 'Enviado ao patologista', setor: 'microscopia' },
+      { rotulo: 'Envio ao patologista', setor: 'microscopia' },
     ],
   },
   {
@@ -481,13 +541,60 @@ export const TIPOS_SOLICITACAO: Array<{
     nome: 'Recorte da amostra',
     descricao: 'A amostragem não foi representativa: volta à bancada.',
     setorPadrao: 'macroscopia',
+    /** Documento: "Solicitacao -> Clivagem -> Processamento -> Envio ao Patologista". */
     etapas: [
-      { rotulo: 'Recebida pela macroscopia', setor: 'macroscopia' },
-      { rotulo: 'Material localizado', setor: 'macroscopia' },
-      { rotulo: 'Recortado e incluído', setor: 'macroscopia' },
-      { rotulo: 'Enviado ao processamento', setor: 'histotecnica' },
-      { rotulo: 'Lâmina enviada ao patologista', setor: 'microscopia' },
+      { rotulo: 'Solicitação', setor: 'microscopia', automatica: true },
+      { rotulo: 'Clivagem', setor: 'macroscopia' },
+      { rotulo: 'Processamento', setor: 'histotecnica' },
+      { rotulo: 'Envio ao patologista', setor: 'microscopia' },
     ],
+  },
+  {
+    chave: 'reamostragem',
+    nome: 'Reamostragem',
+    descricao: 'O material não representa a lesão: é preciso nova coleta.',
+    setorPadrao: 'recepcao',
+    etapas: [
+      { rotulo: 'Solicitação', setor: 'microscopia', automatica: true },
+      { rotulo: 'Cliente avisado', setor: 'recepcao' },
+      { rotulo: 'Novo material recebido', setor: 'recepcao' },
+      { rotulo: 'Envio ao patologista', setor: 'microscopia' },
+    ],
+  },
+  {
+    chave: 'revisao_interna',
+    nome: 'Revisão interna',
+    descricao: 'Segunda leitura por outro patologista da casa.',
+    setorPadrao: 'microscopia',
+    etapas: [
+      { rotulo: 'Solicitação', setor: 'microscopia', automatica: true },
+      { rotulo: 'Lâminas separadas', setor: 'histotecnica' },
+      { rotulo: 'Parecer registrado', setor: 'microscopia' },
+    ],
+  },
+  {
+    /**
+     * Demandas sem bancada: nascem e se encerram sem etapa intermediaria. Sem
+     * etapa, a solicitacao vai direto para "concluir execucao" - e o fluxo nao
+     * finge um caminho que nao existe.
+     */
+    chave: 'correcao_cadastral',
+    nome: 'Correção cadastral',
+    setorPadrao: 'recepcao',
+    etapas: [],
+  },
+  {
+    chave: 'informacao_clinica',
+    nome: 'Informação clínica',
+    descricao: 'Falta dado do paciente para interpretar o caso.',
+    setorPadrao: 'recepcao',
+    etapas: [],
+  },
+  {
+    chave: 'administrativa',
+    nome: 'Administrativa',
+    setorPadrao: 'recepcao',
+    etapas: [],
   },
   {
     chave: 'devolucao_bloco',
@@ -539,6 +646,29 @@ export const TIPOS_SOLICITACAO: Array<{
       { rotulo: 'Enviado ao solicitante', setor: 'recepcao', textoPortal: 'Documento enviado' },
     ],
   },
+];
+
+/**
+ * M10: catalogo inicial de tipos de PENDENCIA (quinta revisao).
+ *
+ * O documento do Hugo lista estes e escreve logo abaixo: "essas opcoes devem
+ * ser editaveis". Antes, o tipo era texto livre no formulario - o que impedia
+ * filtrar, contar e saber se "margem" e "identificacao de margens" sao a mesma
+ * coisa.
+ */
+export const TIPOS_PENDENCIA: Array<{
+  chave: string;
+  nome: string;
+  bloqueiaPadrao?: 'nao' | 'parcial' | 'total';
+}> = [
+  { chave: 'cadastral', nome: 'Cadastral' },
+  { chave: 'clinica', nome: 'Clínica' },
+  /** Sem saber qual margem e qual, o laudo nao pode afirmar comprometimento. */
+  { chave: 'identificacao_margens', nome: 'Identificação de margens', bloqueiaPadrao: 'parcial' },
+  { chave: 'execucao_tecnica', nome: 'Execução técnica' },
+  { chave: 'autorizacao', nome: 'Autorização', bloqueiaPadrao: 'total' },
+  { chave: 'macroscopia', nome: 'Macroscopia' },
+  { chave: 'outra', nome: 'Outra' },
 ];
 
 /** Setores criados na unidade sede, na ordem do fluxo. */
@@ -890,17 +1020,36 @@ export async function criarBaseInstitucional(
       })
       .returning();
 
-    await tx.insert(s.etapaTipoSolicitacao).values(
-      def.etapas.map((etapa, i) => ({
-        tenantId,
-        tipoId: tipo!.id,
-        ordem: i + 1,
-        rotulo: etapa.rotulo,
-        setor: etapa.setor ?? null,
-        textoPortal: etapa.textoPortal ?? null,
-      })),
-    );
+    if (def.etapas.length > 0) {
+      await tx.insert(s.etapaTipoSolicitacao).values(
+        def.etapas.map((etapa, i) => ({
+          tenantId,
+          tipoId: tipo!.id,
+          ordem: i + 1,
+          rotulo: etapa.rotulo,
+          setor: etapa.setor ?? null,
+          textoPortal: etapa.textoPortal ?? null,
+          automatica: etapa.automatica ?? false,
+        })),
+      );
+    }
+
+    if (def.subtipos?.length) {
+      await tx.insert(s.subtipoSolicitacao).values(
+        def.subtipos.map((nome, i) => ({ tenantId, tipoId: tipo!.id, nome, ordem: i })),
+      );
+    }
   }
+
+  await tx.insert(s.tipoPendencia).values(
+    TIPOS_PENDENCIA.map((def, i) => ({
+      tenantId,
+      chave: def.chave,
+      nome: def.nome,
+      bloqueiaPadrao: def.bloqueiaPadrao ?? 'nao',
+      ordem: i,
+    })),
+  );
 
   // --- M01: modelos de etiqueta ------------------------------------------
   await tx.insert(s.modeloEtiqueta).values([

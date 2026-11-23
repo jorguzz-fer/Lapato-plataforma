@@ -338,7 +338,7 @@ function App() {
         path="/solicitacoes"
         element={
           <Shell sessao={sessao} aoSair={sair} modulo="Solicitações e Pendências">
-            <Solicitacoes permissoes={sessao.permissoes} />
+            <Solicitacoes permissoes={sessao.permissoes} euId={sessao.usuarioId} />
           </Shell>
         }
       />

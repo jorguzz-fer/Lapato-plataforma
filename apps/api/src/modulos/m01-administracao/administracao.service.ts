@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   diaNaoUtil,
   etapaTipoSolicitacao,
@@ -8,8 +8,10 @@ import {
   modeloMacroscopia,
   servico,
   setor,
+  subtipoSolicitacao,
   tabelaMestre,
   termo,
+  tipoPendencia,
   tipoSolicitacao,
   unidade,
   type Transacao,
@@ -55,11 +57,33 @@ export interface DadosTipoSolicitacao {
   setorPadrao?: string | null;
   ordem?: number;
   /**
+   * Quinta revisao: "os tipos de solicitacao devem ser restritos por perfil...
+   * tanto quem pode solicitar quanto quem pode receber". Chaves de perfil;
+   * lista vazia significa "qualquer um", que e como todo tipo nasce.
+   */
+  perfisPermitidos?: string[];
+  perfisDestino?: string[];
+  /**
    * Fluxo completo, em ordem. Vem inteiro de proposito: a tela edita a lista
    * como lista ("remover etapa", "mover para cima"), e salvar peca por peca
    * abriria espaco para ordens com buraco ou duplicada.
    */
-  etapas?: Array<{ rotulo: string; setor?: string | null; textoPortal?: string | null }>;
+  etapas?: Array<{
+    rotulo: string;
+    setor?: string | null;
+    textoPortal?: string | null;
+    /** Cumprida pelo ato de solicitar - a primeira etapa de todo fluxo novo. */
+    automatica?: boolean;
+  }>;
+  /** Segundo nivel: os corantes da coloracao, os marcadores da IHQ. */
+  subtipos?: string[];
+}
+
+export interface DadosTipoPendencia {
+  chave: string;
+  nome: string;
+  bloqueiaPadrao?: 'nao' | 'parcial' | 'total';
+  ordem?: number;
 }
 
 export interface DadosTermo {
@@ -492,6 +516,21 @@ export class AdministracaoService {
         )
         .orderBy(asc(etapaTipoSolicitacao.ordem));
 
+      const subtipos = await tx
+        .select()
+        .from(subtipoSolicitacao)
+        .where(
+          and(
+            eq(subtipoSolicitacao.tenantId, ctx.tenantId),
+            isNull(subtipoSolicitacao.inativadoEm),
+            inArray(
+              subtipoSolicitacao.tipoId,
+              tipos.map((t) => t.id),
+            ),
+          ),
+        )
+        .orderBy(asc(subtipoSolicitacao.ordem), asc(subtipoSolicitacao.nome));
+
       return tipos.map((t) => ({
         id: t.id,
         chave: t.chave,
@@ -500,6 +539,8 @@ export class AdministracaoService {
         exigeAprovacao: t.exigeAprovacao,
         visivelPortal: t.visivelPortal,
         setorPadrao: t.setorPadrao,
+        perfisPermitidos: t.perfisPermitidos,
+        perfisDestino: t.perfisDestino,
         ordem: t.ordem,
         inativadoEm: t.inativadoEm,
         etapas: etapas
@@ -509,9 +550,97 @@ export class AdministracaoService {
             rotulo: e.rotulo,
             setor: e.setor,
             textoPortal: e.textoPortal,
+            automatica: e.automatica,
           })),
+        subtipos: subtipos
+          .filter((sub) => sub.tipoId === t.id)
+          .map((sub) => ({ id: sub.id, nome: sub.nome, ordem: sub.ordem })),
       }));
     });
+  }
+
+  // --- tipos de pendencia (quinta revisao) ----------------------------------
+
+  /**
+   * Documento do Dr. Hugo: a lista de tipos de pendencia vem escrita e, logo
+   * depois, "essas opcoes devem ser editaveis". Antes disso o tipo era texto
+   * livre no formulario - o que impedia filtrar e contar.
+   */
+  async listarTiposPendencia(): Promise<unknown[]> {
+    const ctx = exigirContexto();
+
+    return this.db.executar((tx) =>
+      tx
+        .select()
+        .from(tipoPendencia)
+        .where(eq(tipoPendencia.tenantId, ctx.tenantId))
+        .orderBy(asc(tipoPendencia.ordem), asc(tipoPendencia.nome)),
+    );
+  }
+
+  async criarTipoPendencia(dados: DadosTipoPendencia): Promise<{ id: string }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const [novo] = await tx
+        .insert(tipoPendencia)
+        .values({
+          tenantId: ctx.tenantId,
+          chave: dados.chave.trim(),
+          nome: dados.nome.trim(),
+          bloqueiaPadrao: dados.bloqueiaPadrao ?? 'nao',
+          ordem: dados.ordem ?? 0,
+        })
+        .returning({ id: tipoPendencia.id });
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'tipo_pendencia',
+        entidadeId: novo!.id,
+        acao: 'criacao',
+        valorNovo: { ...dados },
+      });
+
+      return { id: novo!.id };
+    });
+  }
+
+  async editarTipoPendencia(id: string, dados: Partial<DadosTipoPendencia>): Promise<void> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const [atual] = await tx
+        .select()
+        .from(tipoPendencia)
+        .where(and(eq(tipoPendencia.tenantId, ctx.tenantId), eq(tipoPendencia.id, id)))
+        .limit(1);
+      if (!atual) throw new NotFoundException('Tipo de pendência não encontrado.');
+
+      const mudancas: Record<string, unknown> = {};
+      if (dados.nome !== undefined) mudancas.nome = dados.nome.trim();
+      if (dados.bloqueiaPadrao !== undefined) mudancas.bloqueiaPadrao = dados.bloqueiaPadrao;
+      if (dados.ordem !== undefined) mudancas.ordem = dados.ordem;
+
+      if (Object.keys(mudancas).length > 0) {
+        await tx
+          .update(tipoPendencia)
+          .set({ ...mudancas, atualizadoEm: new Date() })
+          .where(eq(tipoPendencia.id, id));
+      }
+
+      const antes = {
+        nome: atual.nome,
+        bloqueiaPadrao: atual.bloqueiaPadrao,
+        ordem: atual.ordem,
+      };
+      await this.auditoria.registrarAlteracao(tx, 'tipo_pendencia', id, antes, {
+        ...antes,
+        ...mudancas,
+      });
+    });
+  }
+
+  async alternarTipoPendencia(id: string, ativar: boolean): Promise<void> {
+    await this.alternarAtivacao(tipoPendencia, 'tipo_pendencia', id, ativar, 'Tipo de pendência');
   }
 
   async criarTipoSolicitacao(dados: DadosTipoSolicitacao): Promise<{ id: string }> {
@@ -528,11 +657,14 @@ export class AdministracaoService {
           exigeAprovacao: dados.exigeAprovacao ?? false,
           visivelPortal: dados.visivelPortal ?? false,
           setorPadrao: dados.setorPadrao?.trim() || null,
+          perfisPermitidos: dados.perfisPermitidos ?? [],
+          perfisDestino: dados.perfisDestino ?? [],
           ordem: dados.ordem ?? 0,
         })
         .returning({ id: tipoSolicitacao.id });
 
       await this.gravarEtapas(tx, novo!.id, dados.etapas ?? []);
+      await this.gravarSubtipos(tx, novo!.id, dados.subtipos ?? []);
 
       await this.auditoria.registrar(tx, {
         entidade: 'tipo_solicitacao',
@@ -562,6 +694,8 @@ export class AdministracaoService {
       if (dados.exigeAprovacao !== undefined) mudancas.exigeAprovacao = dados.exigeAprovacao;
       if (dados.visivelPortal !== undefined) mudancas.visivelPortal = dados.visivelPortal;
       if (dados.setorPadrao !== undefined) mudancas.setorPadrao = dados.setorPadrao?.trim() || null;
+      if (dados.perfisPermitidos !== undefined) mudancas.perfisPermitidos = dados.perfisPermitidos;
+      if (dados.perfisDestino !== undefined) mudancas.perfisDestino = dados.perfisDestino;
       if (dados.ordem !== undefined) mudancas.ordem = dados.ordem;
       /**
        * A chave nao se edita: ela e a referencia estavel do tipo (o M08 cria o
@@ -577,6 +711,7 @@ export class AdministracaoService {
       }
 
       if (dados.etapas) await this.gravarEtapas(tx, id, dados.etapas);
+      if (dados.subtipos) await this.gravarSubtipos(tx, id, dados.subtipos);
 
       const antes = {
         nome: atual.nome,
@@ -584,6 +719,8 @@ export class AdministracaoService {
         exigeAprovacao: atual.exigeAprovacao,
         visivelPortal: atual.visivelPortal,
         setorPadrao: atual.setorPadrao,
+        perfisPermitidos: atual.perfisPermitidos,
+        perfisDestino: atual.perfisDestino,
         ordem: atual.ordem,
       };
       await this.auditoria.registrarAlteracao(tx, 'tipo_solicitacao', id, antes, {
@@ -615,7 +752,12 @@ export class AdministracaoService {
   private async gravarEtapas(
     tx: Transacao,
     tipoId: string,
-    etapas: Array<{ rotulo: string; setor?: string | null; textoPortal?: string | null }>,
+    etapas: Array<{
+      rotulo: string;
+      setor?: string | null;
+      textoPortal?: string | null;
+      automatica?: boolean;
+    }>,
   ): Promise<void> {
     const ctx = exigirContexto();
 
@@ -638,8 +780,52 @@ export class AdministracaoService {
         rotulo: etapa.rotulo.trim(),
         setor: etapa.setor?.trim() || null,
         textoPortal: etapa.textoPortal?.trim() || null,
+        automatica: etapa.automatica ?? false,
       })),
     );
+  }
+
+  /**
+   * Substitui os subtipos do tipo.
+   *
+   * Diferente das etapas, aqui NAO se apaga: `subtipo_solicitacao.id` fica
+   * gravado nas solicitacoes ja abertas. O que sai da lista e inativado (M01
+   * nunca exclui) e o que volta e reativado - o laboratorio que remove
+   * "Rodanina" hoje e a traz de volta em marco nao quer dois registros com o
+   * mesmo nome, nem perder o vinculo dos pedidos antigos.
+   */
+  private async gravarSubtipos(tx: Transacao, tipoId: string, nomes: string[]): Promise<void> {
+    const ctx = exigirContexto();
+    const desejados = nomes.map((n) => n.trim()).filter(Boolean);
+
+    const existentes = await tx
+      .select()
+      .from(subtipoSolicitacao)
+      .where(
+        and(eq(subtipoSolicitacao.tenantId, ctx.tenantId), eq(subtipoSolicitacao.tipoId, tipoId)),
+      );
+
+    for (const [i, nome] of desejados.entries()) {
+      const atual = existentes.find((e) => e.nome === nome);
+      if (atual) {
+        await tx
+          .update(subtipoSolicitacao)
+          .set({ ordem: i, inativadoEm: null, inativadoPor: null, atualizadoEm: new Date() })
+          .where(eq(subtipoSolicitacao.id, atual.id));
+      } else {
+        await tx
+          .insert(subtipoSolicitacao)
+          .values({ tenantId: ctx.tenantId, tipoId, nome, ordem: i });
+      }
+    }
+
+    for (const sobrando of existentes.filter((e) => !desejados.includes(e.nome))) {
+      if (sobrando.inativadoEm) continue;
+      await tx
+        .update(subtipoSolicitacao)
+        .set({ inativadoEm: new Date(), inativadoPor: ctx.usuarioId, atualizadoEm: new Date() })
+        .where(eq(subtipoSolicitacao.id, sobrando.id));
+    }
   }
 
   // --- unidades e setores (secoes 7-8) --------------------------------------
@@ -1002,7 +1188,8 @@ export class AdministracaoService {
       | typeof localFisico
       | typeof modeloEtiqueta
       | typeof modeloMacroscopia
-      | typeof tipoSolicitacao,
+      | typeof tipoSolicitacao
+      | typeof tipoPendencia,
     id: string,
     rotulo: string,
   ) {
@@ -1025,7 +1212,8 @@ export class AdministracaoService {
       | typeof setor
       | typeof localFisico
       | typeof modeloMacroscopia
-      | typeof tipoSolicitacao,
+      | typeof tipoSolicitacao
+      | typeof tipoPendencia,
     entidade: string,
     id: string,
     ativar: boolean,

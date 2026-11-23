@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { and, count, eq, gte, inArray, notInArray, sql } from 'drizzle-orm';
-import { caso, estadoCaso, tenant } from '@lapato/db';
+import { and, asc, count, eq, gte, inArray, isNotNull, lt, notInArray, sql } from 'drizzle-orm';
+import { caso, cliente, estadoCaso, paciente, tenant, usuario } from '@lapato/db';
 import {
   ETAPAS_EM_ANDAMENTO,
   ETAPAS_ENCERRADAS,
@@ -63,6 +63,34 @@ export interface DemandaMinha {
   responsavel: string | null;
 }
 
+/** Pendencia enderecada a mim, com as colunas do documento da quinta revisao. */
+export interface PendenciaMinha {
+  id: string;
+  tipo: string;
+  descricao: string;
+  status: string;
+  nivelBloqueio: string;
+  criadaEm: string;
+  solicitacaoId: string | null;
+  solicitacao: string | null;
+  solicitante: string | null;
+  casoId: string;
+  caso: string | null;
+  paciente: string | null;
+}
+
+/** Caso com prazo estourado - o bloco Prioridades da tela inicial. */
+export interface CasoPrioritario {
+  casoId: string;
+  identificador: string;
+  paciente: string | null;
+  cliente: string | null;
+  etapa: Etapa;
+  responsavel: string | null;
+  previsaoLiberacao: string | null;
+  diasAtraso: number;
+}
+
 export interface Painel {
   geradoEm: string;
   fuso: string;
@@ -80,7 +108,17 @@ export interface Painel {
    * ("12 casos fora do prazo"); isto diz o que e meu agora, com nome e
    * registro - a diferenca que a quarta revisao pediu.
    */
-  minhasDemandas: { paraMim: DemandaMinha[]; pedi: DemandaMinha[] };
+  minhasDemandas: {
+    paraMim: DemandaMinha[];
+    pedi: DemandaMinha[];
+    pendencias: PendenciaMinha[];
+  };
+  /**
+   * Quinta revisao: "deve haver um campo de prioridades, com a lista de casos
+   * que estao com prazo estourado". A faixa de atencao conta quantos sao; isto
+   * diz QUAIS sao, do mais atrasado para o menos, com registro e paciente.
+   */
+  prioridades: CasoPrioritario[];
   funil: { etapa: Etapa; rotulo: string; total: number }[];
   serie: { dia: string; entradas: number; liberacoes: number }[];
 }
@@ -298,7 +336,7 @@ export class PainelService {
      * coisa que aparece sao as nossas pendencias e prioridades". Quem nao ve
      * solicitacao recebe as listas vazias e a tela nem desenha os cartoes.
      */
-    let minhasDemandas: Painel['minhasDemandas'] = { paraMim: [], pedi: [] };
+    let minhasDemandas: Painel['minhasDemandas'] = { paraMim: [], pedi: [], pendencias: [] };
 
     if (pode(PERMISSOES.SOLICITACAO_VISUALIZAR)) {
       minhasDemandas = (await this.solicitacoes.minhasDemandas()) as Painel['minhasDemandas'];
@@ -377,6 +415,8 @@ export class PainelService {
       });
     }
 
+    const prioridades = await this.prioridades(agora);
+
     return {
       geradoEm: agora.toISOString(),
       fuso,
@@ -392,9 +432,63 @@ export class PainelService {
       },
       atencao,
       minhasDemandas,
+      prioridades,
       funil: this.montarFunil(doFluxo.porEtapa),
       serie: this.montarSerie(agora, fuso, doFluxo.entradasPorDia, doFluxo.liberacoesPorDia),
     };
+  }
+
+  /**
+   * Prioridades: os casos com prazo estourado, do mais atrasado ao menos.
+   *
+   * Quinta revisao: "deve haver um campo de prioridades, com a lista de casos
+   * que estao com prazo estourado". O criterio e o mesmo do M07 para o alerta
+   * vermelho - previsao de liberacao no passado, com o caso ainda em
+   * andamento. Encerrado nao atrasa mais: ja saiu.
+   *
+   * Entra a instituicao toda, nao apenas os meus: o documento pede a lista
+   * para quem abre a tela decidir a ordem do dia, e quem nao enxerga caso nem
+   * chega aqui (a rota do painel exige a permissao).
+   */
+  private async prioridades(agora: Date): Promise<CasoPrioritario[]> {
+    const ctx = exigirContexto();
+
+    const linhas = await this.db.executar((tx) =>
+      tx
+        .select({
+          casoId: caso.id,
+          identificador: caso.identificador,
+          paciente: paciente.nome,
+          cliente: cliente.nomeFantasia,
+          etapa: estadoCaso.etapa,
+          responsavel: usuario.nomeCompleto,
+          previsaoLiberacao: estadoCaso.previsaoLiberacao,
+        })
+        .from(estadoCaso)
+        .innerJoin(caso, eq(caso.id, estadoCaso.casoId))
+        .leftJoin(paciente, eq(paciente.id, caso.pacienteId))
+        .leftJoin(cliente, eq(cliente.id, caso.clienteId))
+        .leftJoin(usuario, eq(usuario.id, estadoCaso.responsavelId))
+        .where(
+          and(
+            eq(estadoCaso.tenantId, ctx.tenantId),
+            notInArray(estadoCaso.etapa, ETAPAS_ENCERRADAS),
+            isNotNull(estadoCaso.previsaoLiberacao),
+            lt(estadoCaso.previsaoLiberacao, agora),
+          ),
+        )
+        .orderBy(asc(estadoCaso.previsaoLiberacao))
+        .limit(30),
+    );
+
+    const umDia = 24 * 60 * 60 * 1000;
+    return linhas.map((l) => ({
+      ...l,
+      previsaoLiberacao: l.previsaoLiberacao ? l.previsaoLiberacao.toISOString() : null,
+      diasAtraso: l.previsaoLiberacao
+        ? Math.max(1, Math.ceil((agora.getTime() - l.previsaoLiberacao.getTime()) / umDia))
+        : 0,
+    }));
   }
 
   /** Item com total zero nao entra: a faixa e "o que exige atencao", nao um relatorio. */

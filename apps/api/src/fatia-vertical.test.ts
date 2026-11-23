@@ -7046,3 +7046,219 @@ describe('quarta revisão (Hugo): assinar, enviar escolhendo os e-mails, reenvia
     expect([403, 404]).toContain(recusado.status);
   });
 });
+
+describe('quinta revisão (Hugo): pendências e solicitações por amostra', () => {
+  /**
+   * O documento desenha o formulário do patologista: ele digita o registro, o
+   * sistema mostra as amostras daquele caso, e ele escolhe "apenas 1 dos 3 ou
+   * todos"; escolhe o corante num segundo campo; e manda a demanda para uma
+   * pessoa - inclusive para ele mesmo, quando é um lembrete.
+   */
+  let casoId: string;
+  let amostras: Array<{ id: string; identificador: string }>;
+  let coloracao: {
+    id: string;
+    nome: string;
+    etapas: Array<{ ordem: number; rotulo: string; automatica: boolean }>;
+    subtipos: Array<{ id: string; nome: string }>;
+  };
+
+  test('o catálogo nasce com os tipos e o fluxo que o documento escreve', async () => {
+    await entrar('patologista@lapato.local');
+
+    const tipos = await req('GET', '/solicitacoes/tipos');
+    expect(tipos.status).toBe(200);
+
+    coloracao = tipos.body.find((t: { chave: string }) => t.chave === 'coloracao_especial');
+    expect(coloracao, 'coloração especial precisa estar no catálogo').toBeTruthy();
+
+    // "Solicitação → Separação do bloco → Processamento → Envio ao Patologista"
+    expect(coloracao.etapas.map((e) => e.rotulo)).toEqual([
+      'Solicitação',
+      'Separação do bloco',
+      'Processamento',
+      'Envio ao patologista',
+    ]);
+    // A primeira é cumprida pelo ato de pedir.
+    expect(coloracao.etapas[0]!.automatica).toBe(true);
+    expect(coloracao.etapas.slice(1).every((e) => !e.automatica)).toBe(true);
+
+    // Segundo nível: "coloração especial" não é um pedido, são doze.
+    expect(coloracao.subtipos.map((s) => s.nome)).toContain('PAS');
+    expect(coloracao.subtipos.length).toBeGreaterThan(5);
+
+    // O recorte tem Clivagem no lugar da separação do bloco.
+    const recorte = tipos.body.find((t: { chave: string }) => t.chave === 'recorte');
+    expect(recorte.etapas.map((e: { rotulo: string }) => e.rotulo)).toContain('Clivagem');
+
+    // E os tipos de pendência deixaram de ser texto livre no formulário.
+    const tiposPendencia = await req('GET', '/solicitacoes/tipos-pendencia');
+    expect(tiposPendencia.status).toBe(200);
+    const margens = tiposPendencia.body.find(
+      (t: { chave: string }) => t.chave === 'identificacao_margens',
+    );
+    expect(margens.bloqueiaPadrao).toBe('parcial');
+    expect(
+      tiposPendencia.body.find((t: { chave: string }) => t.chave === 'autorizacao').bloqueiaPadrao,
+    ).toBe('total');
+  });
+
+  test('um caso com três amostras; o pedido vira uma solicitação por amostra', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const caso = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0]!.id,
+      paciente: { nome: `Três fragmentos ${Date.now().toString().slice(-5)}` },
+      amostras: [
+        { descricao: 'Nódulo cutâneo' },
+        { descricao: 'Linfonodo regional' },
+        { descricao: 'Margem profunda' },
+      ],
+      recipientes: [{ quantidadeDeclarada: 3 }],
+    });
+    expect(caso.status, JSON.stringify(caso.body)).toBe(201);
+    casoId = caso.body.id;
+
+    await entrar('patologista@lapato.local');
+
+    // "Digita DB28901, aparece DB28901 A, B e C."
+    const lista = await req('GET', `/solicitacoes/casos/${casoId}/amostras`);
+    expect(lista.status).toBe(200);
+    expect(lista.body).toHaveLength(3);
+    amostras = lista.body;
+
+    const pas = coloracao.subtipos.find((s) => s.nome === 'PAS')!;
+
+    // Duas das três: cada uma anda no seu passo na bancada.
+    const pedido = await req('POST', '/solicitacoes', {
+      casoId,
+      tipoId: coloracao.id,
+      tipo: 'coloracao_especial',
+      subtipoId: pas.id,
+      amostraIds: [amostras[0]!.id, amostras[2]!.id],
+      descricao: 'PAS para pesquisa de fungos',
+    });
+    expect(pedido.status, JSON.stringify(pedido.body)).toBe(201);
+    expect(pedido.body.criadas).toBe(2);
+
+    const minhas = await req('GET', '/solicitacoes?aba=minhas');
+    const doCaso = minhas.body.filter((s: { casoId: string }) => s.casoId === casoId);
+    expect(doCaso).toHaveLength(2);
+
+    // O identificador da amostra entra na descrição: quem executa lê a lista
+    // sem abrir cada pedido para saber de qual bloco se trata.
+    expect(doCaso.map((s: { descricao: string }) => s.descricao).join(' ')).toContain(
+      amostras[0]!.identificador,
+    );
+
+    // E a etapa "Solicitação" já está registrada, sem ninguém ter clicado.
+    const trilha = await req('GET', `/solicitacoes/${doCaso[0]!.id}/trilha`);
+    expect(trilha.status).toBe(200);
+    expect(trilha.body.etapaAtual).toBe(1);
+    expect(trilha.body.andamento).toHaveLength(1);
+    expect(trilha.body.andamento[0].rotulo).toBe('Solicitação');
+    expect(trilha.body.andamento[0].por).toBeTruthy();
+  });
+
+  test('amostra de outro caso é recusada', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const outro = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0]!.id,
+      paciente: { nome: `Outro caso ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Fragmento' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(outro.status).toBe(201);
+
+    await entrar('patologista@lapato.local');
+    const recusado = await req('POST', '/solicitacoes', {
+      casoId: outro.body.id,
+      tipoId: coloracao.id,
+      tipo: 'coloracao_especial',
+      subtipoId: coloracao.subtipos[0]!.id,
+      amostraIds: [amostras[0]!.id],
+      descricao: 'Trocando o caso de propósito',
+    });
+    expect(recusado.status).toBe(400);
+  });
+
+  test('o patologista cria pendência para ele próprio e ela aparece na tela inicial', async () => {
+    await entrar('patologista@lapato.local');
+    const sessao = await req('GET', '/auth/eu');
+    const euId = sessao.body.usuarioId;
+    expect(euId).toBeTruthy();
+
+    const tipos = await req('GET', '/solicitacoes/tipos-pendencia');
+    const margens = tipos.body.find((t: { chave: string }) => t.chave === 'identificacao_margens');
+
+    const criada = await req('POST', '/solicitacoes/pendencias', {
+      casoId,
+      tipoId: margens.id,
+      descricao: 'Confirmar qual margem é a profunda antes de laudar',
+      responsavelId: euId,
+      amostraIds: [amostras[1]!.id],
+    });
+    expect(criada.status, JSON.stringify(criada.body)).toBe(201);
+    expect(criada.body.criadas).toBe(1);
+
+    // O bloqueio padrão do tipo vale quando o formulário não manda outro.
+    const abertas = await req('GET', '/solicitacoes/pendencias');
+    const minha = abertas.body.find((p: { id: string }) => p.id === criada.body.id);
+    expect(minha.nivelBloqueio).toBe('parcial');
+    // O tipo vai pelo nome do catálogo, não por uma chave crua na tela.
+    expect(minha.tipo).toBe('Identificação de margens');
+    // A amostra entra na descrição: a pendência é daquele fragmento.
+    expect(minha.descricao).toContain(amostras[1]!.identificador);
+
+    // "Sempre que cada um de nós entrar no sistema, a primeira coisa que
+    // aparece são as nossas pendências e prioridades."
+    const painel = await req('GET', '/painel');
+    expect(painel.status).toBe(200);
+    const naTela = painel.body.minhasDemandas.pendencias.find(
+      (p: { id: string }) => p.id === criada.body.id,
+    );
+    expect(naTela, 'a pendência endereçada a mim precisa abrir a tela inicial').toBeTruthy();
+    // As colunas do documento: o caso, a data e quem pediu — e o botão Laudar,
+    // que precisa do casoId.
+    expect(naTela.casoId).toBe(casoId);
+    expect(naTela.criadaEm).toBeTruthy();
+    expect(naTela.solicitante).toBeTruthy();
+    expect(Array.isArray(painel.body.prioridades)).toBe(true);
+  });
+
+  test('destino inativo é recusado; perfil sem permissão não abre o tipo', async () => {
+    await entrar('admin@lapato.local');
+    const chave = `restrito_teste_${Date.now().toString().slice(-6)}`;
+    const restrito = await req('POST', '/administracao/tipos-solicitacao', {
+      chave,
+      nome: 'Só o diretor pede (teste)',
+      perfisPermitidos: ['diretor_tecnico'],
+      etapas: [{ rotulo: 'Solicitação', automatica: true }],
+    });
+    expect(restrito.status, JSON.stringify(restrito.body)).toBe(201);
+
+    await entrar('patologista@lapato.local');
+    const recusado = await req('POST', '/solicitacoes', {
+      casoId,
+      tipoId: restrito.body.id,
+      tipo: chave,
+      descricao: 'Tentando abrir um tipo que não é do meu perfil',
+    });
+    expect(recusado.status).toBe(403);
+
+    // E o destino tem de existir: pendência endereçada a ninguém é pendência
+    // perdida.
+    const semDestino = await req('POST', '/solicitacoes/pendencias', {
+      casoId,
+      tipo: 'Outra',
+      descricao: 'Destino que não existe',
+      responsavelId: '00000000-0000-4000-8000-000000000000',
+    });
+    expect(semDestino.status).toBe(404);
+  });
+});

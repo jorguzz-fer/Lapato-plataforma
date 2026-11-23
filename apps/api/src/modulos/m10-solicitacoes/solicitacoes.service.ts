@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   aliasedTable,
   and,
@@ -14,16 +19,21 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import {
+  amostra,
   andamentoSolicitacao,
   caso,
   etapaTipoSolicitacao,
   mensagemSolicitacao,
   paciente,
   pendencia,
+  perfil,
   setor,
   solicitacao,
+  subtipoSolicitacao,
+  tipoPendencia,
   tipoSolicitacao,
   usuario,
+  usuarioPerfil,
   type Transacao,
 } from '@lapato/db';
 import {
@@ -49,6 +59,8 @@ export interface NovaSolicitacao {
    * solicitacoes nascidas dentro do sistema (o recorte do M08) entram.
    */
   tipoId?: string;
+  /** Segundo nivel do catalogo: qual corante, qual marcador. */
+  subtipoId?: string;
   tipo: string;
   categoria?: string;
   descricao: string;
@@ -75,11 +87,20 @@ export interface NovaSolicitacao {
   visibilidadePortal?: string;
   /** Texto que o cliente le no lugar da descricao interna (traducao contextual). */
   textoPortal?: string;
+  /**
+   * Amostras a que o pedido se refere (quinta revisao): "digita DB28901,
+   * aparece DB28901 A, B e C; o usuario escolhe qual - pode escolher apenas 1
+   * dos 3 ou todos". Cada amostra escolhida vira uma solicitacao propria,
+   * porque cada uma tem o seu caminho na bancada. Vazio = o caso inteiro.
+   */
+  amostraIds?: string[];
 }
 
 export interface NovaPendencia {
   casoId: string;
   solicitacaoId?: string;
+  /** Tipo do catalogo (quinta revisao); o texto livre segue aceito no `tipo`. */
+  tipoId?: string;
   tipo: string;
   descricao: string;
   status?: StatusPendencia;
@@ -87,7 +108,15 @@ export interface NovaPendencia {
   etapaBloqueada?: Etapa;
   suspendePrazo?: boolean;
   setorResponsavel?: string;
+  /**
+   * Destino nominal. Quinta revisao: "o patologista podera criar pendencias
+   * para ele proprio" - e e o mesmo campo que faz isso, apontando para quem
+   * criou.
+   */
+  responsavelId?: string;
   visivelPortal?: boolean;
+  /** Amostras a que a pendencia se refere; vazio = o caso inteiro. */
+  amostraIds?: string[];
 }
 
 /** Subabas da tela principal (M10 secao 51). */
@@ -140,8 +169,62 @@ export class SolicitacoesService {
 
   // --- solicitacoes ---------------------------------------------------------
 
-  async criar(dados: NovaSolicitacao): Promise<{ id: string; identificador: string }> {
-    return this.db.executar((tx) => this.criarEmTransacao(tx, dados));
+  /**
+   * Cria a solicitacao - uma por amostra escolhida.
+   *
+   * Quinta revisao: "digita DB28901, aparece DB28901 A, B e C; o usuario
+   * escolhe qual - pode escolher apenas 1 dos 3 ou todos". Tres amostras
+   * escolhidas viram tres solicitacoes, e nao uma com tres alvos, porque cada
+   * uma anda no seu passo na bancada: o bloco A pode voltar hoje e o C sexta.
+   */
+  async criar(
+    dados: NovaSolicitacao,
+  ): Promise<{ id: string; identificador: string; criadas: number }> {
+    const amostras = dados.amostraIds ?? [];
+
+    return this.db.executar(async (tx) => {
+      if (amostras.length === 0) {
+        const unica = await this.criarEmTransacao(tx, dados);
+        return { ...unica, criadas: 1 };
+      }
+
+      const feitas: Array<{ id: string; identificador: string }> = [];
+      for (const amostraId of amostras) {
+        const rotulo = await this.rotuloDaAmostra(tx, amostraId, dados.casoId);
+        feitas.push(
+          await this.criarEmTransacao(tx, {
+            ...dados,
+            objetoTipo: 'amostra',
+            objetoId: amostraId,
+            // O identificador da amostra entra na descricao: quem executa le a
+            // lista sem abrir cada pedido para saber de qual bloco se trata.
+            descricao: `${rotulo} — ${dados.descricao}`,
+          }),
+        );
+      }
+      return { ...feitas[0]!, criadas: feitas.length };
+    });
+  }
+
+  /** Confere que a amostra e do caso e devolve o identificador dela. */
+  private async rotuloDaAmostra(
+    tx: Transacao,
+    amostraId: string,
+    casoId: string | undefined,
+  ): Promise<string> {
+    const ctx = exigirContexto();
+
+    const [linha] = await tx
+      .select({ identificador: amostra.identificador, casoId: amostra.casoId })
+      .from(amostra)
+      .where(and(eq(amostra.tenantId, ctx.tenantId), eq(amostra.id, amostraId)))
+      .limit(1);
+
+    if (!linha) throw new NotFoundException('Amostra não encontrada.');
+    if (casoId && linha.casoId !== casoId) {
+      throw new BadRequestException('A amostra não pertence a este caso.');
+    }
+    return linha.identificador;
   }
 
   /**
@@ -163,6 +246,42 @@ export class SolicitacoesService {
        * e como o M08 cria o recorte.
        */
       const tipo = dados.tipoId ? await this.exigirTipo(tx, dados.tipoId) : null;
+
+      /**
+       * Quinta revisao: "o ideal e que possamos ajustar o que cada login
+       * podera solicitar". A restricao e por perfil e mora no tipo; lista
+       * vazia continua significando "qualquer um".
+       */
+      if (tipo && tipo.perfisPermitidos.length > 0) {
+        const meus = await this.perfisDoUsuario(tx, ctx.usuarioId);
+        if (!tipo.perfisPermitidos.some((chave) => meus.has(chave))) {
+          throw new ForbiddenException(
+            `O seu perfil não pode abrir solicitações do tipo "${tipo.nome}".`,
+          );
+        }
+      }
+
+      const subtipo = dados.subtipoId
+        ? await this.exigirSubtipo(tx, dados.subtipoId, tipo?.id)
+        : null;
+
+      /**
+       * E o outro lado da mesma regra: "tanto quem pode solicitar quanto quem
+       * pode receber". Checado no servidor tambem, e nao so escondido do
+       * seletor, porque uma solicitacao endereçada a quem nao executa aquele
+       * tipo e uma solicitacao parada.
+       */
+      if (dados.responsavelId) {
+        await this.exigirDestinatario(tx, dados.responsavelId);
+        if (tipo && tipo.perfisDestino.length > 0) {
+          const dele = await this.perfisDoUsuario(tx, dados.responsavelId);
+          if (!tipo.perfisDestino.some((chave) => dele.has(chave))) {
+            throw new BadRequestException(
+              `Solicitações do tipo "${tipo.nome}" não vão para o perfil do destinatário escolhido.`,
+            );
+          }
+        }
+      }
 
       const identificador = await this.numeracao.proximaSolicitacao(
         tx,
@@ -187,6 +306,9 @@ export class SolicitacoesService {
           identificador,
           casoId: dados.casoId ?? null,
           tipoId: tipo?.id ?? null,
+          subtipoId: subtipo?.id ?? null,
+          // Congelado: renomear o catalogo nao reescreve o pedido.
+          subtipo: subtipo?.nome ?? null,
           tipo: tipo?.chave ?? dados.tipo,
           categoria: dados.categoria ?? null,
           origem: dados.origem ?? 'interna',
@@ -207,6 +329,34 @@ export class SolicitacoesService {
         })
         .returning({ id: solicitacao.id });
 
+      /**
+       * A primeira etapa do fluxo e a propria solicitacao (documento do Hugo:
+       * "Solicitacao -> Separacao do bloco -> ..."). Ela ja aconteceu quando
+       * este metodo rodou, entao fica registrada agora, com a hora e o nome de
+       * quem pediu - ninguem precisa clicar em "avancar" para dizer que pediu.
+       */
+      let etapaAtual = 0;
+      if (tipo) {
+        const etapas = await this.etapasDoTipo(tx, tipo.id);
+        for (const etapa of etapas) {
+          if (!etapa.automatica) break;
+          await tx.insert(andamentoSolicitacao).values({
+            tenantId: ctx.tenantId,
+            solicitacaoId: nova!.id,
+            ordem: etapa.ordem,
+            rotulo: etapa.rotulo,
+            registradoPorId: ctx.usuarioId,
+          });
+          etapaAtual = etapa.ordem;
+        }
+        if (etapaAtual > 0) {
+          await tx
+            .update(solicitacao)
+            .set({ etapaAtual })
+            .where(eq(solicitacao.id, nova!.id));
+        }
+      }
+
       await this.eventos.publicar(tx, {
         tipo: 'solicitacao.criada',
         casoId: dados.casoId ?? null,
@@ -217,6 +367,7 @@ export class SolicitacoesService {
           identificador,
           tipo: tipo?.chave ?? dados.tipo,
           nomeTipo: tipo?.nome ?? dados.tipo,
+          subtipo: subtipo?.nome ?? null,
           prioridade: dados.prioridade ?? 'rotina',
         },
       });
@@ -399,61 +550,124 @@ export class SolicitacoesService {
    * parcial/total (por etapa, quando houver) e suspensao de prazo. A decisao
    * sobre o estado global do caso e do motor de fluxo, nunca daqui.
    */
-  async criarPendencia(dados: NovaPendencia): Promise<{ id: string }> {
+  async criarPendencia(dados: NovaPendencia): Promise<{ id: string; criadas: number }> {
     const ctx = exigirContexto();
 
     return this.db.executar(async (tx) => {
-      const nivel = dados.nivelBloqueio ?? 'nao';
+      /**
+       * Tipo do catalogo (quinta revisao). O catalogo traz o nome que vai para
+       * a tela e o bloqueio que o laboratorio decidiu como padrao para aquele
+       * tipo - "Autorizacao" trava o caso, "Cadastral" nao. Quem cria ainda
+       * pode mudar o nivel no formulario; o padrao e so o default.
+       */
+      let rotulo = dados.tipo.trim();
+      let nivel = dados.nivelBloqueio ?? 'nao';
+      let tipoCatalogoId: string | null = null;
 
-      const [nova] = await tx
-        .insert(pendencia)
-        .values({
-          tenantId: ctx.tenantId,
+      if (dados.tipoId) {
+        const tipo = await this.exigirTipoPendencia(tx, dados.tipoId);
+        tipoCatalogoId = tipo.id;
+        rotulo = tipo.nome;
+        if (!dados.nivelBloqueio) nivel = tipo.bloqueiaPadrao;
+      }
+
+      if (!rotulo) throw new BadRequestException('Informe o tipo da pendência.');
+
+      /**
+       * Destino nominal (quinta revisao): "o patologista podera criar
+       * pendencias para ele proprio ou enviar para outro usuario". Quando
+       * aponta para uma pessoa, conferimos que ela existe e esta ativa - uma
+       * pendencia endereçada a quem saiu do laboratorio e uma pendencia
+       * perdida.
+       */
+      const responsavelId = dados.responsavelId
+        ? await this.exigirDestinatario(tx, dados.responsavelId)
+        : null;
+
+      /**
+       * Uma pendencia por amostra escolhida. O documento mostra o mesmo gesto
+       * da solicitacao: digita o registro, aparecem as amostras, escolhe-se
+       * uma, algumas ou todas. Cada amostra tem o seu desfecho, entao cada uma
+       * tem a sua pendencia - resolver a da amostra A nao resolve a da C.
+       * Nenhuma amostra escolhida = a pendencia e do caso inteiro.
+       */
+      const alvos: Array<{ amostraId: string | null; rotuloAmostra: string | null }> = [];
+      // Serializado de proposito: uma transacao atende uma consulta por vez.
+      for (const amostraId of dados.amostraIds ?? []) {
+        alvos.push({
+          amostraId,
+          rotuloAmostra: await this.rotuloDaAmostra(tx, amostraId, dados.casoId),
+        });
+      }
+      if (alvos.length === 0) alvos.push({ amostraId: null, rotuloAmostra: null });
+
+      const ids: string[] = [];
+
+      for (const alvo of alvos) {
+        const descricao = alvo.rotuloAmostra
+          ? `${alvo.rotuloAmostra}: ${dados.descricao}`
+          : dados.descricao;
+
+        const [nova] = await tx
+          .insert(pendencia)
+          .values({
+            tenantId: ctx.tenantId,
+            casoId: dados.casoId,
+            solicitacaoId: dados.solicitacaoId ?? null,
+            tipoId: tipoCatalogoId,
+            tipo: rotulo,
+            descricao,
+            status: dados.status ?? 'aberta',
+            nivelBloqueio: nivel,
+            etapaBloqueada: dados.etapaBloqueada ?? null,
+            objetoTipo: alvo.amostraId ? 'amostra' : null,
+            objetoId: alvo.amostraId,
+            suspendePrazo: dados.suspendePrazo ?? false,
+            responsavelId,
+            setorResponsavel: dados.setorResponsavel ?? null,
+            visivelPortal: dados.visivelPortal ?? false,
+            criadaPorId: ctx.usuarioId,
+          })
+          .returning({ id: pendencia.id });
+
+        await this.eventos.publicar(tx, {
+          tipo: 'pendencia.criada',
           casoId: dados.casoId,
-          solicitacaoId: dados.solicitacaoId ?? null,
-          tipo: dados.tipo,
-          descricao: dados.descricao,
-          status: dados.status ?? 'aberta',
-          nivelBloqueio: nivel,
-          etapaBloqueada: dados.etapaBloqueada ?? null,
-          suspendePrazo: dados.suspendePrazo ?? false,
-          setorResponsavel: dados.setorResponsavel ?? null,
-          visivelPortal: dados.visivelPortal ?? false,
-          criadaPorId: ctx.usuarioId,
-        })
-        .returning({ id: pendencia.id });
-
-      await this.eventos.publicar(tx, {
-        tipo: 'pendencia.criada',
-        casoId: dados.casoId,
-        moduloOrigem: MODULOS.M10_SOLICITACOES,
-        objetoTipo: 'pendencia',
-        objetoId: nova!.id,
-        // Secao 45: nem toda pendencia e visivel ao cliente.
-        visibilidade: dados.visivelPortal ? 'externo' : 'interno',
-        payload: { tipo: dados.tipo, nivelBloqueio: nivel },
-      });
-
-      if (nivel !== 'nao') {
-        await this.fluxo.bloquear(tx, dados.casoId, {
-          nivel,
-          origem: MODULOS.M10_SOLICITACOES,
-          origemId: nova!.id,
-          motivo: dados.descricao,
-          etapaBloqueada: dados.etapaBloqueada,
-          condicaoLiberacao: 'Resolver a pendência.',
+          moduloOrigem: MODULOS.M10_SOLICITACOES,
+          objetoTipo: 'pendencia',
+          objetoId: nova!.id,
+          // Secao 45: nem toda pendencia e visivel ao cliente.
+          visibilidade: dados.visivelPortal ? 'externo' : 'interno',
+          payload: {
+            tipo: rotulo,
+            nivelBloqueio: nivel,
+            ...(alvo.rotuloAmostra ? { amostra: alvo.rotuloAmostra } : {}),
+          },
         });
+
+        if (nivel !== 'nao') {
+          await this.fluxo.bloquear(tx, dados.casoId, {
+            nivel,
+            origem: MODULOS.M10_SOLICITACOES,
+            origemId: nova!.id,
+            motivo: descricao,
+            etapaBloqueada: dados.etapaBloqueada,
+            condicaoLiberacao: 'Resolver a pendência.',
+          });
+        }
+
+        if (dados.suspendePrazo) {
+          await this.fluxo.suspenderPrazo(tx, dados.casoId, {
+            motivo: descricao,
+            origem: MODULOS.M10_SOLICITACOES,
+            origemId: nova!.id,
+          });
+        }
+
+        ids.push(nova!.id);
       }
 
-      if (dados.suspendePrazo) {
-        await this.fluxo.suspenderPrazo(tx, dados.casoId, {
-          motivo: dados.descricao,
-          origem: MODULOS.M10_SOLICITACOES,
-          origemId: nova!.id,
-        });
-      }
-
-      return { id: nova!.id };
+      return { id: ids[0]!, criadas: ids.length };
     });
   }
 
@@ -778,7 +992,11 @@ export class SolicitacoesService {
    * O estagio vem junto ("tá no estágio 3 de 4") porque sem ele a lista diz o
    * que falta mas nao diz quanto falta, e e isso que se responde ao telefone.
    */
-  async minhasDemandas(): Promise<{ paraMim: unknown[]; pedi: unknown[] }> {
+  async minhasDemandas(): Promise<{
+    paraMim: unknown[];
+    pedi: unknown[];
+    pendencias: unknown[];
+  }> {
     const ctx = exigirContexto();
 
     return this.db.executar(async (tx) => {
@@ -855,7 +1073,47 @@ export class SolicitacoesService {
       const paraMim = await consulta(meuDestino);
       const pedi = await consulta(eq(solicitacao.solicitantePorId, ctx.usuarioId));
 
-      return { paraMim, pedi };
+      /**
+       * Pendencias enderecadas a mim - inclusive as que eu mesmo criei para
+       * mim, que e o uso que a quinta revisao descreve: "o patologista podera
+       * criar pendencias para ele proprio".
+       *
+       * As colunas sao as do documento (identificador, a solicitacao que a
+       * gerou, a data e quem pediu) mais o caso, porque o botao "Laudar" da
+       * tela precisa saber para onde ir.
+       */
+      const solicitanteP = aliasedTable(usuario, 'solicitante_pendencia');
+      const pendencias = await tx
+        .select({
+          id: pendencia.id,
+          tipo: pendencia.tipo,
+          descricao: pendencia.descricao,
+          status: pendencia.status,
+          nivelBloqueio: pendencia.nivelBloqueio,
+          criadaEm: pendencia.criadoEm,
+          solicitacaoId: pendencia.solicitacaoId,
+          solicitacao: solicitacao.identificador,
+          solicitante: solicitanteP.nomeCompleto,
+          casoId: pendencia.casoId,
+          caso: caso.identificador,
+          paciente: paciente.nome,
+        })
+        .from(pendencia)
+        .innerJoin(caso, eq(caso.id, pendencia.casoId))
+        .leftJoin(paciente, eq(paciente.id, caso.pacienteId))
+        .leftJoin(solicitacao, eq(solicitacao.id, pendencia.solicitacaoId))
+        .leftJoin(solicitanteP, eq(solicitanteP.id, pendencia.criadaPorId))
+        .where(
+          and(
+            eq(pendencia.tenantId, ctx.tenantId),
+            inArray(pendencia.status, PENDENCIA_ABERTA),
+            eq(pendencia.responsavelId, ctx.usuarioId),
+          ),
+        )
+        .orderBy(asc(pendencia.criadoEm))
+        .limit(50);
+
+      return { paraMim, pedi, pendencias };
     });
   }
 
@@ -883,6 +1141,8 @@ export class SolicitacoesService {
           exigeAprovacao: tipoSolicitacao.exigeAprovacao,
           visivelPortal: tipoSolicitacao.visivelPortal,
           setorPadrao: tipoSolicitacao.setorPadrao,
+          perfisPermitidos: tipoSolicitacao.perfisPermitidos,
+          perfisDestino: tipoSolicitacao.perfisDestino,
           ordem: tipoSolicitacao.ordem,
         })
         .from(tipoSolicitacao)
@@ -898,6 +1158,7 @@ export class SolicitacoesService {
           rotulo: etapaTipoSolicitacao.rotulo,
           setor: etapaTipoSolicitacao.setor,
           textoPortal: etapaTipoSolicitacao.textoPortal,
+          automatica: etapaTipoSolicitacao.automatica,
         })
         .from(etapaTipoSolicitacao)
         .where(
@@ -911,7 +1172,37 @@ export class SolicitacoesService {
         )
         .orderBy(asc(etapaTipoSolicitacao.ordem));
 
-      return tipos.map((t) => ({ ...t, etapas: etapas.filter((e) => e.tipoId === t.id) }));
+      /**
+       * Segundo nivel do catalogo (quinta revisao): "coloracao especial" nao
+       * e um pedido, e doze - PAS, Ziehl-Neelsen, Gram... O subtipo e o que o
+       * formulario pergunta em seguida ao tipo, e o que vai no rotulo da
+       * demanda em vez de "coloracao especial" sem mais.
+       */
+      const subtipos = await tx
+        .select({
+          id: subtipoSolicitacao.id,
+          tipoId: subtipoSolicitacao.tipoId,
+          nome: subtipoSolicitacao.nome,
+          ordem: subtipoSolicitacao.ordem,
+        })
+        .from(subtipoSolicitacao)
+        .where(
+          and(
+            eq(subtipoSolicitacao.tenantId, ctx.tenantId),
+            isNull(subtipoSolicitacao.inativadoEm),
+            inArray(
+              subtipoSolicitacao.tipoId,
+              tipos.map((t) => t.id),
+            ),
+          ),
+        )
+        .orderBy(asc(subtipoSolicitacao.ordem), asc(subtipoSolicitacao.nome));
+
+      return tipos.map((t) => ({
+        ...t,
+        etapas: etapas.filter((e) => e.tipoId === t.id),
+        subtipos: subtipos.filter((sub) => sub.tipoId === t.id),
+      }));
     });
   }
 
@@ -1071,7 +1362,119 @@ export class SolicitacoesService {
     });
   }
 
+  /** Tipos de pendencia ativos do catalogo (quinta revisao). */
+  async listarTiposPendencia(): Promise<unknown[]> {
+    const ctx = exigirContexto();
+
+    return this.db.executar((tx) =>
+      tx
+        .select({
+          id: tipoPendencia.id,
+          chave: tipoPendencia.chave,
+          nome: tipoPendencia.nome,
+          bloqueiaPadrao: tipoPendencia.bloqueiaPadrao,
+          ordem: tipoPendencia.ordem,
+        })
+        .from(tipoPendencia)
+        .where(and(eq(tipoPendencia.tenantId, ctx.tenantId), isNull(tipoPendencia.inativadoEm)))
+        .orderBy(asc(tipoPendencia.ordem), asc(tipoPendencia.nome)),
+    );
+  }
+
+  /**
+   * Amostras do caso, para o formulario escolher o alvo do pedido.
+   *
+   * Quinta revisao: "digita DB28901, aparece DB28901 A, B e C". A letra e a
+   * descricao bastam - quem pede coloracao sabe de qual fragmento esta
+   * falando pela regiao, nao pelo uuid.
+   */
+  async amostrasDoCaso(
+    casoId: string,
+  ): Promise<Array<{ id: string; identificador: string; descricao: string | null }>> {
+    const ctx = exigirContexto();
+
+    return this.db.executar((tx) =>
+      tx
+        .select({
+          id: amostra.id,
+          identificador: amostra.identificador,
+          descricao: amostra.descricao,
+        })
+        .from(amostra)
+        .where(and(eq(amostra.tenantId, ctx.tenantId), eq(amostra.casoId, casoId)))
+        .orderBy(asc(amostra.identificador)),
+    );
+  }
+
   // --- internos -------------------------------------------------------------
+
+  /** Chaves dos perfis de um usuario, para a restricao por perfil do catalogo. */
+  private async perfisDoUsuario(tx: Transacao, usuarioId: string): Promise<Set<string>> {
+    const linhas = await tx
+      .select({ chave: perfil.chave })
+      .from(usuarioPerfil)
+      .innerJoin(perfil, eq(perfil.id, usuarioPerfil.perfilId))
+      .where(eq(usuarioPerfil.usuarioId, usuarioId));
+    return new Set(linhas.map((l) => l.chave).filter((c): c is string => !!c));
+  }
+
+  private async exigirTipoPendencia(tx: Transacao, tipoId: string) {
+    const ctx = exigirContexto();
+
+    const [linha] = await tx
+      .select()
+      .from(tipoPendencia)
+      .where(and(eq(tipoPendencia.tenantId, ctx.tenantId), eq(tipoPendencia.id, tipoId)))
+      .limit(1);
+
+    if (!linha) throw new NotFoundException('Tipo de pendência não encontrado.');
+    if (linha.inativadoEm) {
+      throw new BadRequestException(`O tipo "${linha.nome}" está inativo.`);
+    }
+    return linha;
+  }
+
+  /**
+   * Destino nominal: usuario interno e ativo. Mandar pendencia para quem saiu
+   * do laboratorio e o mesmo que nao mandar para ninguem - so que com a
+   * aparencia de resolvido.
+   */
+  private async exigirDestinatario(tx: Transacao, usuarioId: string): Promise<string> {
+    const ctx = exigirContexto();
+
+    const [linha] = await tx
+      .select({ id: usuario.id, inativadoEm: usuario.inativadoEm })
+      .from(usuario)
+      .where(and(eq(usuario.tenantId, ctx.tenantId), eq(usuario.id, usuarioId)))
+      .limit(1);
+
+    if (!linha) throw new NotFoundException('Destinatário não encontrado.');
+    if (linha.inativadoEm) {
+      throw new BadRequestException('O destinatário escolhido está inativo.');
+    }
+    return linha.id;
+  }
+
+  private async exigirSubtipo(tx: Transacao, subtipoId: string, tipoId: string | undefined) {
+    const ctx = exigirContexto();
+
+    const [linha] = await tx
+      .select()
+      .from(subtipoSolicitacao)
+      .where(
+        and(eq(subtipoSolicitacao.tenantId, ctx.tenantId), eq(subtipoSolicitacao.id, subtipoId)),
+      )
+      .limit(1);
+
+    if (!linha) throw new NotFoundException('Subtipo de solicitação não encontrado.');
+    if (linha.inativadoEm) {
+      throw new BadRequestException(`O subtipo "${linha.nome}" está inativo.`);
+    }
+    if (tipoId && linha.tipoId !== tipoId) {
+      throw new BadRequestException('Este subtipo pertence a outro tipo de solicitação.');
+    }
+    return linha;
+  }
 
   /** Tipo ativo do catalogo; inativo recusa solicitacao nova (M01 secao 21). */
   private async exigirTipo(tx: Transacao, tipoId: string) {
@@ -1101,6 +1504,7 @@ export class SolicitacoesService {
         rotulo: etapaTipoSolicitacao.rotulo,
         setor: etapaTipoSolicitacao.setor,
         textoPortal: etapaTipoSolicitacao.textoPortal,
+        automatica: etapaTipoSolicitacao.automatica,
       })
       .from(etapaTipoSolicitacao)
       .where(

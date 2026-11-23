@@ -9,6 +9,7 @@ import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
+import Divider from '@mui/material/Divider';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import MenuItem from '@mui/material/MenuItem';
 import Skeleton from '@mui/material/Skeleton';
@@ -120,7 +121,18 @@ export function Administracao({ permissoes }: { permissoes: string[] }) {
       {aba === 'servicos' && <AbaServicos podeEditar={podeConfig} />}
       {aba === 'tabelas' && <AbaTabelas podeEditar={podeTabelas} />}
       {aba === 'modelos' && <AbaModelosMacroscopia podeEditar={podeTabelas} />}
-      {aba === 'solicitacoes' && <AbaTiposSolicitacao podeEditar={podeTabelas} />}
+      {aba === 'solicitacoes' && (
+        <Stack spacing={3}>
+          <AbaTiposSolicitacao podeEditar={podeTabelas} />
+          <Divider />
+          <Box>
+            <Typography variant="h4" sx={{ mb: 0.5 }}>
+              Tipos de pendência
+            </Typography>
+            <AbaTiposPendencia podeEditar={podeTabelas} />
+          </Box>
+        </Stack>
+      )}
       {aba === 'unidades' && <AbaUnidades podeEditar={podeUnidades} />}
       {aba === 'locais' && <AbaLocais podeEditar={podeUnidades} />}
       {aba === 'etiquetas' && <AbaEtiquetas podeEditar={podeConfig} />}
@@ -838,12 +850,36 @@ interface TipoSolicitacaoAdmin {
   exigeAprovacao: boolean;
   visivelPortal: boolean;
   setorPadrao: string | null;
+  /** Quinta revisão: quem pode abrir e quem pode receber, por perfil. */
+  perfisPermitidos: string[];
+  perfisDestino: string[];
   ordem: number;
   inativadoEm: string | null;
-  etapas: { ordem: number; rotulo: string; setor: string | null; textoPortal: string | null }[];
+  etapas: {
+    ordem: number;
+    rotulo: string;
+    setor: string | null;
+    textoPortal: string | null;
+    automatica: boolean;
+  }[];
+  subtipos: { id: string; nome: string; ordem: number }[];
 }
 
-type EtapaEmEdicao = { rotulo: string; setor: string; textoPortal: string };
+interface TipoPendenciaAdmin {
+  id: string;
+  chave: string;
+  nome: string;
+  bloqueiaPadrao: string;
+  ordem: number;
+  inativadoEm: string | null;
+}
+
+type EtapaEmEdicao = {
+  rotulo: string;
+  setor: string;
+  textoPortal: string;
+  automatica: boolean;
+};
 
 /**
  * Tipos de solicitacao e o fluxo de cada um.
@@ -922,8 +958,26 @@ function AbaTiposSolicitacao({ podeEditar }: { podeEditar: boolean }) {
                 <Typography sx={{ fontSize: 12.5, color: 'text.secondary', mt: 0.5 }}>
                   {t.etapas.length === 0
                     ? 'Sem etapas — a solicitação nasce e se conclui direto.'
-                    : t.etapas.map((e) => e.rotulo).join(' → ')}
+                    : t.etapas
+                        .map((e) => `${e.rotulo}${e.automatica ? ' (automática)' : ''}`)
+                        .join(' → ')}
                 </Typography>
+                {t.subtipos.length > 0 && (
+                  <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                    {t.subtipos.length} opções: {t.subtipos.map((sub) => sub.nome).join(', ')}
+                  </Typography>
+                )}
+                {(t.perfisPermitidos.length > 0 || t.perfisDestino.length > 0) && (
+                  <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                    {t.perfisPermitidos.length > 0
+                      ? `Solicitam: ${t.perfisPermitidos.join(', ')}`
+                      : 'Solicitam: qualquer perfil'}
+                    {' · '}
+                    {t.perfisDestino.length > 0
+                      ? `Recebem: ${t.perfisDestino.join(', ')}`
+                      : 'Recebem: qualquer perfil'}
+                  </Typography>
+                )}
               </Box>
               {podeEditar && (
                 <Stack direction="row" spacing={1} sx={{ flexShrink: 0, alignItems: 'center' }}>
@@ -976,12 +1030,25 @@ function DialogoTipoSolicitacao({
       rotulo: e.rotulo,
       setor: e.setor ?? '',
       textoPortal: e.textoPortal ?? '',
+      automatica: e.automatica,
     })),
   );
+  /** Uma por linha: é como se lê e se edita uma lista de doze corantes. */
+  const [subtipos, setSubtipos] = useState((tipo?.subtipos ?? []).map((s) => s.nome).join('\n'));
+  const [perfisPermitidos, setPerfisPermitidos] = useState<string[]>(tipo?.perfisPermitidos ?? []);
+  const [perfisDestino, setPerfisDestino] = useState<string[]>(tipo?.perfisDestino ?? []);
+  const [perfis, setPerfis] = useState<{ id: string; chave: string | null; nome: string }[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
-  function mudarEtapa(indice: number, campo: keyof EtapaEmEdicao, valor: string) {
+  useEffect(() => {
+    api
+      .get<{ id: string; chave: string | null; nome: string }[]>('/usuarios/perfis')
+      .then(setPerfis)
+      .catch(() => setPerfis([]));
+  }, []);
+
+  function mudarEtapa(indice: number, campo: 'rotulo' | 'setor' | 'textoPortal', valor: string) {
     setEtapas((atual) =>
       atual.map((e, i) => (i === indice ? { ...e, [campo]: valor } : e)),
     );
@@ -1007,13 +1074,20 @@ function DialogoTipoSolicitacao({
         setorPadrao: setorPadrao.trim() || null,
         exigeAprovacao,
         visivelPortal,
+        perfisPermitidos,
+        perfisDestino,
         etapas: etapas
           .filter((e) => e.rotulo.trim())
           .map((e) => ({
             rotulo: e.rotulo.trim(),
             setor: e.setor.trim() || null,
             textoPortal: e.textoPortal.trim() || null,
+            automatica: e.automatica,
           })),
+        subtipos: subtipos
+          .split('\n')
+          .map((linha) => linha.trim())
+          .filter(Boolean),
       };
       if (tipo) await api.post(`/administracao/tipos-solicitacao/${tipo.id}`, corpo);
       else await api.post('/administracao/tipos-solicitacao', { ...corpo, chave: chave.trim() });
@@ -1090,6 +1164,43 @@ function DialogoTipoSolicitacao({
             />
           </Stack>
 
+          {/*
+            Quinta revisão: "os tipos de solicitação devem ser restritos por
+            perfil... tanto quem pode solicitar quanto quem pode receber".
+            Nenhum marcado = qualquer um, que é como todo tipo nasce.
+          */}
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <EscolhaDePerfis
+              titulo="QUEM PODE SOLICITAR"
+              perfis={perfis}
+              marcados={perfisPermitidos}
+              aoMudar={setPerfisPermitidos}
+            />
+            <EscolhaDePerfis
+              titulo="QUEM PODE RECEBER"
+              perfis={perfis}
+              marcados={perfisDestino}
+              aoMudar={setPerfisDestino}
+            />
+          </Stack>
+
+          {/*
+            Segundo nível. "Coloração especial" não é um pedido: é PAS,
+            Ziehl-Neelsen, Gram… Uma linha por opção — tirar uma da lista a
+            inativa, não a apaga, porque os pedidos antigos apontam para ela.
+          */}
+          <TextField
+            label="Opções deste tipo (uma por linha)"
+            value={subtipos}
+            onChange={(e) => setSubtipos(e.target.value)}
+            multiline
+            minRows={3}
+            helperText={
+              'Vira o segundo campo do formulário. Ex.: PAS, Ziehl-Neelsen, Gram… ' +
+              'Vazio: o tipo não pergunta nada além da descrição.'
+            }
+          />
+
           <Box>
             <Stack
               direction="row"
@@ -1102,7 +1213,10 @@ function DialogoTipoSolicitacao({
                 size="small"
                 startIcon={<AddOutlined />}
                 onClick={() =>
-                  setEtapas((atual) => [...atual, { rotulo: '', setor: '', textoPortal: '' }])
+                  setEtapas((atual) => [
+                    ...atual,
+                    { rotulo: '', setor: '', textoPortal: '', automatica: false },
+                  ])
                 }
               >
                 Etapa
@@ -1145,6 +1259,24 @@ function DialogoTipoSolicitacao({
                     sx={{ flex: 1.5 }}
                     placeholder={visivelPortal ? 'Material sendo localizado' : '—'}
                   />
+                  <FormControlLabel
+                    sx={{ flexShrink: 0, mr: 0, mt: 0.5 }}
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={etapa.automatica}
+                        onChange={(e) =>
+                          setEtapas((atual) =>
+                            atual.map((x, j) =>
+                              j === i ? { ...x, automatica: e.target.checked } : x,
+                            ),
+                          )
+                        }
+                      />
+                    }
+                    label="Automática"
+                    slotProps={{ typography: { sx: { fontSize: 12 } } }}
+                  />
                   <Stack sx={{ flexShrink: 0 }}>
                     <Button size="small" sx={{ minWidth: 32, px: 0 }} onClick={() => mover(i, -1)}>
                       ↑
@@ -1165,13 +1297,258 @@ function DialogoTipoSolicitacao({
               ))}
             </Stack>
 
-            {tipo && etapas.length > 0 && (
+            {etapas.length > 0 && (
               <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mt: 1 }}>
-                Mexer no fluxo vale para as solicitações abertas também: elas seguem pela ordem, e o
-                que já foi registrado guarda o nome que a etapa tinha na hora do clique.
+                "Automática" é a etapa cumprida pelo próprio ato de pedir — a "Solicitação" que abre
+                os fluxos de bancada. Ela entra na trilha na hora da criação, com a data e o nome de
+                quem pediu, e ninguém precisa clicar em "avançar" para registrá-la.
+                {tipo &&
+                  ' Mexer no fluxo vale para as solicitações abertas também: elas seguem pela ordem,' +
+                    ' e o que já foi registrado guarda o nome que a etapa tinha na hora do clique.'}
               </Typography>
             )}
           </Box>
+
+          {erro && <Alert severity="error">{erro}</Alert>}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={aoFechar} disabled={ocupado}>
+          Cancelar
+        </Button>
+        <Button
+          variant="contained"
+          onClick={() => void salvar()}
+          disabled={ocupado || !nome.trim() || (!tipo && !chave.trim())}
+        >
+          {tipo ? 'Salvar' : 'Criar'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/**
+ * Perfis que podem solicitar ou receber um tipo.
+ *
+ * Nenhum marcado significa "qualquer perfil" - e nao "nenhum". E a leitura
+ * oposta da intuicao, por isso esta escrita no rodape: um tipo que nasce sem
+ * marcacao tem de continuar aparecendo para todo mundo.
+ */
+function EscolhaDePerfis({
+  titulo,
+  perfis,
+  marcados,
+  aoMudar,
+}: {
+  titulo: string;
+  perfis: { id: string; chave: string | null; nome: string }[];
+  marcados: string[];
+  aoMudar: (chaves: string[]) => void;
+}) {
+  return (
+    <Box sx={{ flex: 1 }}>
+      <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'text.secondary', mb: 0.25 }}>
+        {titulo}
+      </Typography>
+      <Stack direction="row" sx={{ gap: 0.5, flexWrap: 'wrap' }}>
+        {perfis
+          .filter((p) => p.chave)
+          .map((p) => {
+            const chave = p.chave!;
+            const marcado = marcados.includes(chave);
+            return (
+              <Chip
+                key={p.id}
+                size="small"
+                label={p.nome}
+                color={marcado ? 'primary' : 'default'}
+                variant={marcado ? 'filled' : 'outlined'}
+                onClick={() =>
+                  aoMudar(marcado ? marcados.filter((c) => c !== chave) : [...marcados, chave])
+                }
+              />
+            );
+          })}
+      </Stack>
+      <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mt: 0.5 }}>
+        {marcados.length === 0 ? 'Nenhum marcado: qualquer perfil.' : `${marcados.length} marcados.`}
+      </Typography>
+    </Box>
+  );
+}
+
+const BLOQUEIO_LABEL: Record<string, string> = {
+  nao: 'Não bloqueia',
+  parcial: 'Bloqueia parcialmente',
+  total: 'Bloqueia o caso',
+};
+
+/**
+ * Tipos de pendencia.
+ *
+ * Quinta revisao: o documento lista Cadastral, Clinica, Identificacao de
+ * margens, Execucao tecnica, Autorizacao, Macroscopia e Outra - e diz em
+ * seguida "essas opcoes devem ser editaveis". O bloqueio padrao de cada tipo
+ * e o que o formulario sugere: "Autorizacao" trava o caso, "Cadastral" nao.
+ */
+function AbaTiposPendencia({ podeEditar }: { podeEditar: boolean }) {
+  const [tipos, setTipos] = useState<TipoPendenciaAdmin[] | null>(null);
+  const [editando, setEditando] = useState<TipoPendenciaAdmin | 'novo' | null>(null);
+
+  const recarregar = useCallback(() => {
+    api
+      .get<TipoPendenciaAdmin[]>('/administracao/tipos-pendencia')
+      .then(setTipos)
+      .catch(() => setTipos([]));
+  }, []);
+  useEffect(recarregar, [recarregar]);
+
+  return (
+    <Stack spacing={1.5}>
+      <Stack
+        direction="row"
+        spacing={1.5}
+        sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}
+      >
+        <Typography sx={{ fontSize: 13, color: 'text.secondary', maxWidth: 680 }}>
+          O tipo é o que permite filtrar e contar pendência — "quantas vezes paramos por falta de
+          identificação de margem neste mês". O bloqueio padrão é uma sugestão: quem cria a
+          pendência ainda escolhe no formulário.
+        </Typography>
+        {podeEditar && (
+          <Button
+            size="small"
+            variant="contained"
+            startIcon={<AddOutlined />}
+            onClick={() => setEditando('novo')}
+          >
+            Novo tipo
+          </Button>
+        )}
+      </Stack>
+
+      {!tipos && <Skeleton variant="rounded" height={140} />}
+      {tipos && tipos.length === 0 && (
+        <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+          Nenhum tipo cadastrado ainda.
+        </Typography>
+      )}
+
+      <Stack spacing={1}>
+        {(tipos ?? []).map((t) => (
+          <Card key={t.id} sx={{ p: 1.5 }}>
+            <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{t.nome}</Typography>
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  color={t.bloqueiaPadrao === 'total' ? 'error' : 'default'}
+                  label={BLOQUEIO_LABEL[t.bloqueiaPadrao] ?? t.bloqueiaPadrao}
+                />
+                {t.inativadoEm && <Chip size="small" label="Inativo" />}
+              </Stack>
+              {podeEditar && (
+                <Stack direction="row" spacing={1} sx={{ flexShrink: 0, alignItems: 'center' }}>
+                  <Button size="small" onClick={() => setEditando(t)}>
+                    Editar
+                  </Button>
+                  <BotaoAtivacao
+                    inativo={t.inativadoEm !== null}
+                    caminho={`/administracao/tipos-pendencia/${t.id}`}
+                    aoMudar={recarregar}
+                  />
+                </Stack>
+              )}
+            </Stack>
+          </Card>
+        ))}
+      </Stack>
+
+      {editando && (
+        <DialogoTipoPendencia
+          tipo={editando === 'novo' ? undefined : editando}
+          aoFechar={() => setEditando(null)}
+          aoSalvar={() => {
+            setEditando(null);
+            recarregar();
+          }}
+        />
+      )}
+    </Stack>
+  );
+}
+
+function DialogoTipoPendencia({
+  tipo,
+  aoFechar,
+  aoSalvar,
+}: {
+  tipo?: TipoPendenciaAdmin;
+  aoFechar: () => void;
+  aoSalvar: () => void;
+}) {
+  const [chave, setChave] = useState('');
+  const [nome, setNome] = useState(tipo?.nome ?? '');
+  const [bloqueiaPadrao, setBloqueiaPadrao] = useState(tipo?.bloqueiaPadrao ?? 'nao');
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+
+  async function salvar() {
+    setOcupado(true);
+    setErro(null);
+    try {
+      const corpo = { nome: nome.trim(), bloqueiaPadrao };
+      if (tipo) await api.post(`/administracao/tipos-pendencia/${tipo.id}`, corpo);
+      else await api.post('/administracao/tipos-pendencia', { ...corpo, chave: chave.trim() });
+      aoSalvar();
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível salvar o tipo.');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <Dialog open onClose={aoFechar} fullWidth maxWidth="sm">
+      <DialogTitle>{tipo ? `Editar ${tipo.nome}` : 'Novo tipo de pendência'}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <TextField
+              label="Nome"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              required
+              autoFocus
+              sx={{ flex: 1.5 }}
+              helperText="O que aparece no formulário. Ex.: Identificação de margens"
+            />
+            <TextField
+              label="Chave"
+              value={tipo ? tipo.chave : chave}
+              onChange={(e) => setChave(e.target.value)}
+              disabled={!!tipo}
+              required
+              sx={{ flex: 1 }}
+              helperText={
+                tipo ? 'Não muda: é a referência do tipo.' : 'Minúsculas e _ — ex.: autorizacao'
+              }
+            />
+          </Stack>
+
+          <TextField
+            select
+            label="Bloqueio padrão"
+            value={bloqueiaPadrao}
+            onChange={(e) => setBloqueiaPadrao(e.target.value)}
+            helperText="Sugestão para o formulário — quem cria a pendência ainda pode mudar."
+          >
+            <MenuItem value="nao">Não bloqueia</MenuItem>
+            <MenuItem value="parcial">Bloqueia parcialmente</MenuItem>
+            <MenuItem value="total">Bloqueia o caso</MenuItem>
+          </TextField>
 
           {erro && <Alert severity="error">{erro}</Alert>}
         </Stack>

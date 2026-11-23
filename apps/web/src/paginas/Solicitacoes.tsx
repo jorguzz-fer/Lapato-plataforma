@@ -28,10 +28,12 @@ import {
   api,
   ErroApi,
   type CasoNaFila,
+  type AmostraDoCaso,
   type MembroEquipe,
   type MensagemSolicitacao,
   type PendenciaResumo,
   type SolicitacaoResumo,
+  type TipoPendencia,
   type TipoSolicitacao,
   type TrilhaSolicitacao,
 } from '../api';
@@ -129,9 +131,11 @@ type Aba = 'abertas' | 'minhas' | 'pendencias' | 'vencidas' | 'concluidas';
 
 interface Props {
   permissoes: string[];
+  /** Quem está logado — o atalho "Para mim" da pendência. */
+  euId: string;
 }
 
-export function Solicitacoes({ permissoes }: Props) {
+export function Solicitacoes({ permissoes, euId }: Props) {
   const [aba, setAba] = useState<Aba>('abertas');
   const [solicitacoes, setSolicitacoes] = useState<SolicitacaoResumo[]>([]);
   const [pendencias, setPendencias] = useState<PendenciaResumo[]>([]);
@@ -142,6 +146,7 @@ export function Solicitacoes({ permissoes }: Props) {
   const [dialogoSolicitacao, setDialogoSolicitacao] = useState(false);
   const [dialogoPendencia, setDialogoPendencia] = useState(false);
   const [tipos, setTipos] = useState<TipoSolicitacao[]>([]);
+  const [tiposPendencia, setTiposPendencia] = useState<TipoPendencia[]>([]);
   const [equipe, setEquipe] = useState<MembroEquipe[]>([]);
 
   const podeCriar = permissoes.includes('solicitacao:criar');
@@ -172,6 +177,10 @@ export function Solicitacoes({ permissoes }: Props) {
    */
   useEffect(() => {
     api.get<TipoSolicitacao[]>('/solicitacoes/tipos').then(setTipos).catch(() => setTipos([]));
+    api
+      .get<TipoPendencia[]>('/solicitacoes/tipos-pendencia')
+      .then(setTiposPendencia)
+      .catch(() => setTiposPendencia([]));
     if (podeCriar) {
       api.get<MembroEquipe[]>('/usuarios/equipe').then(setEquipe).catch(() => setEquipe([]));
     }
@@ -278,6 +287,9 @@ export function Solicitacoes({ permissoes }: Props) {
       <DialogoNovaPendencia
         aberto={dialogoPendencia}
         casos={casos}
+        tiposPendencia={tiposPendencia}
+        equipe={equipe}
+        euId={euId}
         aoFechar={() => setDialogoPendencia(false)}
         aoCriar={() => {
           setDialogoPendencia(false);
@@ -782,7 +794,10 @@ function DialogoNovaSolicitacao({
 }) {
   const [casoId, setCasoId] = useState('');
   const [tipoId, setTipoId] = useState('');
+  const [subtipoId, setSubtipoId] = useState('');
   const [responsavelId, setResponsavelId] = useState('');
+  const [amostras, setAmostras] = useState<AmostraDoCaso[]>([]);
+  const [amostraIds, setAmostraIds] = useState<string[]>([]);
   const [descricao, setDescricao] = useState('');
   const [justificativa, setJustificativa] = useState('');
   const [prioridade, setPrioridade] = useState('rotina');
@@ -805,6 +820,42 @@ function DialogoNovaSolicitacao({
     if (tipo) setExigeAprovacao(tipo.exigeAprovacao);
   }, [tipo]);
 
+  /** Trocar o tipo zera o corante: PAS não é subtipo de "aprofundar corte". */
+  useEffect(() => {
+    setSubtipoId('');
+  }, [tipoId]);
+
+  /**
+   * Quinta revisão: "digita DB28901, aparece DB28901 A, B e C; o usuário
+   * escolhe qual — pode escolher apenas 1 dos 3 ou todos". As amostras só
+   * fazem sentido depois de escolher o caso.
+   */
+  useEffect(() => {
+    setAmostraIds([]);
+    if (!casoId) {
+      setAmostras([]);
+      return;
+    }
+    api
+      .get<AmostraDoCaso[]>(`/solicitacoes/casos/${casoId}/amostras`)
+      .then(setAmostras)
+      .catch(() => setAmostras([]));
+  }, [casoId]);
+
+  /**
+   * Destino restrito ao perfil, quando o tipo diz para quem vai. O servidor
+   * recusa de todo modo; esconder aqui é o que evita o erro acontecer.
+   */
+  const destinos =
+    tipo && tipo.perfisDestino.length > 0
+      ? equipe.filter((m) => m.perfis.some((chave) => tipo.perfisDestino.includes(chave)))
+      : equipe;
+
+  /** Destino escolhido que o novo tipo não aceita mais não pode ficar preso. */
+  useEffect(() => {
+    if (responsavelId && !destinos.some((m) => m.id === responsavelId)) setResponsavelId('');
+  }, [destinos, responsavelId]);
+
   async function criar() {
     setOcupado(true);
     setErro(null);
@@ -812,7 +863,9 @@ function DialogoNovaSolicitacao({
       await api.post('/solicitacoes', {
         ...(casoId ? { casoId } : {}),
         ...(tipo ? { tipoId: tipo.id, tipo: tipo.chave } : { tipo: 'outra' }),
+        ...(subtipoId ? { subtipoId } : {}),
         ...(responsavelId ? { responsavelId } : {}),
+        ...(amostraIds.length > 0 ? { amostraIds } : {}),
         descricao: descricao.trim(),
         ...(justificativa.trim() ? { justificativa: justificativa.trim() } : {}),
         prioridade,
@@ -821,6 +874,7 @@ function DialogoNovaSolicitacao({
       setDescricao('');
       setJustificativa('');
       setResponsavelId('');
+      setAmostraIds([]);
       aoCriar();
     } catch (err) {
       setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível criar a solicitação.');
@@ -868,6 +922,28 @@ function DialogoNovaSolicitacao({
             ))}
           </TextField>
 
+          {/*
+            Segundo nível do catálogo. "Coloração especial" não é um pedido: é
+            PAS, Ziehl-Neelsen, Gram… — e é o corante que vai no rótulo da
+            demanda, não a categoria.
+          */}
+          {tipo && tipo.subtipos.length > 0 && (
+            <TextField
+              select
+              label={`${tipo.nome} — qual`}
+              value={subtipoId}
+              onChange={(e) => setSubtipoId(e.target.value)}
+              required
+              helperText="Aparece no nome da demanda e na trilha."
+            >
+              {tipo.subtipos.map((sub) => (
+                <MenuItem key={sub.id} value={sub.id}>
+                  {sub.nome}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
+
           {/* O fluxo do tipo, antes de pedir: quem solicita vê por onde isso passa. */}
           {tipo && tipo.etapas.length > 0 && (
             <Box>
@@ -875,9 +951,23 @@ function DialogoNovaSolicitacao({
                 FLUXO DESTE TIPO
               </Typography>
               <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
-                {tipo.etapas.map((e) => e.rotulo).join(' → ')}
+                {tipo.etapas.map((e) => `${e.rotulo}${e.automatica ? ' (automática)' : ''}`).join(' → ')}
               </Typography>
             </Box>
+          )}
+
+          {/*
+            As amostras do caso. Cada uma escolhida vira uma solicitação
+            própria: o bloco A pode voltar hoje e o C na sexta, e uma demanda
+            só para os três esconderia isso.
+          */}
+          {amostras.length > 0 && (
+            <SeletorDeAmostras
+              amostras={amostras}
+              escolhidas={amostraIds}
+              aoMudar={setAmostraIds}
+              rodape="Nenhuma marcada: o pedido é do caso inteiro."
+            />
           )}
 
           <TextField
@@ -894,7 +984,7 @@ function DialogoNovaSolicitacao({
             <MenuItem value="">
               Setor{tipo?.setorPadrao ? ` · ${tipo.setorPadrao}` : ''}
             </MenuItem>
-            {equipe.map((m) => (
+            {destinos.map((m) => (
               <MenuItem key={m.id} value={m.id}>
                 {m.nome}
                 {m.setor ? ` · ${m.setor}` : ''}
@@ -955,9 +1045,17 @@ function DialogoNovaSolicitacao({
         <Button
           variant="contained"
           onClick={() => void criar()}
-          disabled={ocupado || descricao.trim() === ''}
+          disabled={
+            ocupado ||
+            descricao.trim() === '' ||
+            (tipo !== null && tipo.subtipos.length > 0 && subtipoId === '')
+          }
         >
-          {ocupado ? 'Criando…' : 'Criar'}
+          {ocupado
+            ? 'Criando…'
+            : amostraIds.length > 1
+              ? `Criar ${amostraIds.length} solicitações`
+              : 'Criar'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -967,16 +1065,26 @@ function DialogoNovaSolicitacao({
 function DialogoNovaPendencia({
   aberto,
   casos,
+  tiposPendencia,
+  equipe,
+  euId,
   aoFechar,
   aoCriar,
 }: {
   aberto: boolean;
   casos: CasoNaFila[];
+  tiposPendencia: TipoPendencia[];
+  equipe: MembroEquipe[];
+  /** Para o atalho "Para mim" — o uso que a quinta revisão descreve. */
+  euId: string | null;
   aoFechar: () => void;
   aoCriar: () => void;
 }) {
   const [casoId, setCasoId] = useState('');
-  const [tipo, setTipo] = useState('cadastral');
+  const [tipoId, setTipoId] = useState('');
+  const [responsavelId, setResponsavelId] = useState('');
+  const [amostras, setAmostras] = useState<AmostraDoCaso[]>([]);
+  const [amostraIds, setAmostraIds] = useState<string[]>([]);
   const [descricao, setDescricao] = useState('');
   const [status, setStatus] = useState('aberta');
   const [nivelBloqueio, setNivelBloqueio] = useState('nao');
@@ -985,13 +1093,42 @@ function DialogoNovaPendencia({
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
+  useEffect(() => {
+    if (!tipoId && tiposPendencia.length > 0) setTipoId(tiposPendencia[0]!.id);
+  }, [tipoId, tiposPendencia]);
+
+  const tipoEscolhido = tiposPendencia.find((t) => t.id === tipoId) ?? null;
+
+  /**
+   * O catálogo traz o bloqueio que o laboratório decidiu como padrão para
+   * aquele tipo — "Autorização" trava o caso, "Cadastral" não. Quem cria
+   * ainda muda no campo abaixo; o padrão só evita a escolha repetida.
+   */
+  useEffect(() => {
+    if (tipoEscolhido) setNivelBloqueio(tipoEscolhido.bloqueiaPadrao);
+  }, [tipoEscolhido]);
+
+  useEffect(() => {
+    setAmostraIds([]);
+    if (!casoId) {
+      setAmostras([]);
+      return;
+    }
+    api
+      .get<AmostraDoCaso[]>(`/solicitacoes/casos/${casoId}/amostras`)
+      .then(setAmostras)
+      .catch(() => setAmostras([]));
+  }, [casoId]);
+
   async function criar() {
     setOcupado(true);
     setErro(null);
     try {
       await api.post('/solicitacoes/pendencias', {
         casoId,
-        tipo,
+        ...(tipoEscolhido ? { tipoId: tipoEscolhido.id, tipo: tipoEscolhido.nome } : {}),
+        ...(responsavelId ? { responsavelId } : {}),
+        ...(amostraIds.length > 0 ? { amostraIds } : {}),
         descricao: descricao.trim(),
         status,
         nivelBloqueio,
@@ -999,9 +1136,10 @@ function DialogoNovaPendencia({
         suspendePrazo,
       });
       setDescricao('');
-      setNivelBloqueio('nao');
       setEtapaBloqueada('');
       setSuspendePrazo(false);
+      setResponsavelId('');
+      setAmostraIds([]);
       aoCriar();
     } catch (err) {
       setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível criar a pendência.');
@@ -1029,13 +1167,61 @@ function DialogoNovaPendencia({
             ))}
           </TextField>
 
-          <TextField select label="Tipo" value={tipo} onChange={(e) => setTipo(e.target.value)}>
-            {TIPOS_PENDENCIA.map((t) => (
-              <MenuItem key={t.valor} value={t.valor}>
-                {t.rotulo}
+          <TextField
+            select
+            label="Tipo"
+            value={tipoId}
+            onChange={(e) => setTipoId(e.target.value)}
+            disabled={tiposPendencia.length === 0}
+            helperText={
+              tiposPendencia.length === 0
+                ? 'Nenhum tipo cadastrado — configure em Configurações › Solicitações.'
+                : ' '
+            }
+          >
+            {tiposPendencia.map((t) => (
+              <MenuItem key={t.id} value={t.id}>
+                {t.nome}
               </MenuItem>
             ))}
           </TextField>
+
+          {/*
+            Destino nominal. Quinta revisão: "o patologista poderá criar
+            pendências para ele próprio ou enviar para outro usuário" — e o
+            atalho "Para mim" é o caso mais comum, o lembrete que não se perde.
+          */}
+          <TextField
+            select
+            label="Para quem"
+            value={responsavelId}
+            onChange={(e) => setResponsavelId(e.target.value)}
+            helperText={
+              responsavelId
+                ? 'Aparece na tela inicial dessa pessoa.'
+                : 'Sem nome, a pendência fica na lista geral do laboratório.'
+            }
+          >
+            <MenuItem value="">Ninguém em especial</MenuItem>
+            {euId && <MenuItem value={euId}>Para mim</MenuItem>}
+            {equipe
+              .filter((m) => m.id !== euId)
+              .map((m) => (
+                <MenuItem key={m.id} value={m.id}>
+                  {m.nome}
+                  {m.setor ? ` · ${m.setor}` : ''}
+                </MenuItem>
+              ))}
+          </TextField>
+
+          {amostras.length > 0 && (
+            <SeletorDeAmostras
+              amostras={amostras}
+              escolhidas={amostraIds}
+              aoMudar={setAmostraIds}
+              rodape="Nenhuma marcada: a pendência é do caso inteiro."
+            />
+          )}
 
           <TextField
             label="Descrição"
@@ -1118,9 +1304,13 @@ function DialogoNovaPendencia({
         <Button
           variant="contained"
           onClick={() => void criar()}
-          disabled={ocupado || descricao.trim() === '' || casoId === ''}
+          disabled={ocupado || descricao.trim() === '' || casoId === '' || tipoId === ''}
         >
-          {ocupado ? 'Criando…' : 'Criar'}
+          {ocupado
+            ? 'Criando…'
+            : amostraIds.length > 1
+              ? `Criar ${amostraIds.length} pendências`
+              : 'Criar'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -1230,6 +1420,88 @@ function Vazio({ texto }: { texto: string }) {
     <Box sx={{ py: 7, textAlign: 'center' }}>
       <InboxOutlined sx={{ fontSize: 40, color: 'text.disabled', mb: 1 }} />
       <Typography sx={{ fontSize: 13.5, color: 'text.secondary' }}>{texto}</Typography>
+    </Box>
+  );
+}
+
+/**
+ * As amostras do caso, para marcar o alvo do pedido.
+ *
+ * Quinta revisao: "digita DB28901, aparece DB28901 A, B e C; o usuario escolhe
+ * qual - pode escolher apenas 1 dos 3 ou todos". "Todas" existe porque tres
+ * cliques para o caso de tres fragmentos e o que faz a pessoa desistir e pedir
+ * pelo WhatsApp - que e o problema que o modulo inteiro ataca.
+ */
+function SeletorDeAmostras({
+  amostras,
+  escolhidas,
+  aoMudar,
+  rodape,
+}: {
+  amostras: AmostraDoCaso[];
+  escolhidas: string[];
+  aoMudar: (ids: string[]) => void;
+  rodape: string;
+}) {
+  const todas = escolhidas.length === amostras.length;
+
+  return (
+    <Box>
+      <Stack direction="row" sx={{ alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'text.secondary' }}>
+          AMOSTRAS
+        </Typography>
+        <Button
+          size="small"
+          onClick={() => aoMudar(todas ? [] : amostras.map((a) => a.id))}
+          sx={{ fontSize: 12, minWidth: 0 }}
+        >
+          {todas ? 'Limpar' : 'Todas'}
+        </Button>
+      </Stack>
+      <Stack>
+        {amostras.map((a) => (
+          <FormControlLabel
+            key={a.id}
+            control={
+              <Checkbox
+                size="small"
+                checked={escolhidas.includes(a.id)}
+                onChange={(e) =>
+                  aoMudar(
+                    e.target.checked
+                      ? [...escolhidas, a.id]
+                      : escolhidas.filter((id) => id !== a.id),
+                  )
+                }
+              />
+            }
+            label={
+              <span>
+                <Typography
+                  component="span"
+                  sx={{
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}
+                >
+                  {a.identificador}
+                </Typography>
+                {a.descricao && (
+                  <Typography
+                    component="span"
+                    sx={{ fontSize: 12.5, color: 'text.secondary', ml: 0.75 }}
+                  >
+                    {a.descricao}
+                  </Typography>
+                )}
+              </span>
+            }
+          />
+        ))}
+      </Stack>
+      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{rodape}</Typography>
     </Box>
   );
 }

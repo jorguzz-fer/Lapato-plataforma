@@ -52,6 +52,43 @@ export class EventosService {
     return linha!.id;
   }
 
+  /**
+   * Publica um evento numa rota publica, onde nao existe sessao.
+   *
+   * O autocadastro do cliente e o formulario de necropsia sao atos de quem esta
+   * fora da instituicao: ha tenant, mas nao ha usuario. `usuario_id` nulo e
+   * previsto no schema justamente para isso, e o `payload` diz quem respondeu.
+   *
+   * Existe como metodo, e nao como insert solto no modulo, porque evento e
+   * outbox andam em par: separa-los e como se publica um evento que ninguem
+   * entrega.
+   */
+  async publicarSemSessao(
+    tx: Transacao,
+    tenantId: string,
+    evento: NovoEvento,
+  ): Promise<string> {
+    const [linha] = await tx
+      .insert(eventoDominio)
+      .values({
+        tenantId,
+        tipo: evento.tipo,
+        casoId: evento.casoId ?? null,
+        moduloOrigem: evento.moduloOrigem,
+        usuarioId: null,
+        objetoTipo: evento.objetoTipo ?? null,
+        objetoId: evento.objetoId ?? null,
+        visibilidade: (evento.visibilidade ?? 'interno') as VisibilidadeEvento,
+        payload: evento.payload ?? {},
+        ocorridoEm: evento.ocorridoEm ?? new Date(),
+      })
+      .returning({ id: eventoDominio.id });
+
+    await tx.insert(outboxEvento).values({ tenantId, eventoId: linha!.id });
+
+    return linha!.id;
+  }
+
   /** Publica varios eventos de uma vez, preservando a ordem informada. */
   async publicarVarios(tx: Transacao, eventos: NovoEvento[]): Promise<string[]> {
     const ids: string[] = [];

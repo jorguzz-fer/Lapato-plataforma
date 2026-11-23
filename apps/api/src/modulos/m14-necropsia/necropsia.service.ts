@@ -1,20 +1,32 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { randomBytes, createHash } from 'node:crypto';
+import {
+  BadRequestException,
+  GoneException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import {
   cadaver,
   causaMortis,
   caso,
   exameOrgao,
+  formularioNecropsia,
   lesaoNecroscopica,
   marcadorCorporal,
   necropsia,
+  notificacaoPendente,
+  paciente,
   relacaoLesao,
+  tenant,
+  termo,
   type Transacao,
 } from '@lapato/db';
 import {
   CLASSIFICACOES_CAUSAIS,
   ESCALA_MAPA_CORPORAL,
   MODULOS,
+  PERGUNTAS_FORMULARIO_NECROPSIA,
   type CavidadeNecropsia,
   type ClassificacaoLesao,
   type ConservacaoNecropsia,
@@ -40,6 +52,14 @@ export interface DadosAbertura {
   obitoEm?: string | null;
   circunstanciasMorte?: string | null;
   perguntasSolicitante?: string | null;
+  // --- Quinta revisao: o cadastro do caso de necropsia --------------------
+  /** Com devolucao | Sem devolucao - o combinado, antes de o corpo chegar. */
+  devolucaoCorpo?: boolean | null;
+  /** Valor combinado com o tutor; o tutor NAO edita este campo. */
+  valorCombinado?: number | null;
+  responsavelDocumento?: string | null;
+  responsavelCidade?: string | null;
+  responsavelUf?: string | null;
 }
 
 export interface DadosLesao {
@@ -139,6 +159,11 @@ export class NecropsiaService {
           obitoEm: dados.obitoEm ? new Date(dados.obitoEm) : null,
           circunstanciasMorte: dados.circunstanciasMorte ?? null,
           perguntasSolicitante: dados.perguntasSolicitante ?? null,
+          devolucaoCorpo: dados.devolucaoCorpo ?? null,
+          valorCombinado: dados.valorCombinado?.toString() ?? null,
+          responsavelDocumento: dados.responsavelDocumento?.trim() || null,
+          responsavelCidade: dados.responsavelCidade?.trim() || null,
+          responsavelUf: dados.responsavelUf?.trim().toUpperCase() || null,
           iniciadaPorId: ctx.usuarioId,
         })
         .returning({ id: necropsia.id });
@@ -154,6 +179,329 @@ export class NecropsiaService {
 
       return { id: nova!.id };
     });
+  }
+
+  // --- formulario ao tutor (quinta revisao) --------------------------------
+
+  /**
+   * Gera o link do formulario e o enfileira para o tutor.
+   *
+   * Quinta revisao: "ao clicar em Enviar formulario, o formulario de
+   * solicitacao e autorizacao de necropsia e enviado via whatsapp e/ou email
+   * para o tutor, finalizar o preenchimento".
+   *
+   * Mesmo desenho do convite de autocadastro do M03, e pelos mesmos motivos: o
+   * token tem 32 bytes, so o HASH e guardado, a validade e curta e o uso e
+   * unico. O link vai por WhatsApp - passa por aparelho de terceiro e fica no
+   * historico da conversa -, entao guardar o token em claro seria guardar a
+   * chave junto da porta.
+   *
+   * Como o M11 e o M05, o M14 NAO envia: ele enfileira. Quem escolhe canal,
+   * monta a mensagem e registra a entrega e o M26.
+   */
+  async enviarFormulario(
+    necropsiaId: string,
+    dados: { canal: 'whatsapp' | 'email' | 'ambos'; telefone?: string | null; email?: string | null },
+  ): Promise<{ caminho: string; expiraEm: Date }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const alvo = await this.buscar(tx, necropsiaId);
+
+      const [instituicao] = await this.db.raw
+        .select({ slug: tenant.slug })
+        .from(tenant)
+        .where(eq(tenant.id, ctx.tenantId))
+        .limit(1);
+      if (!instituicao) throw new NotFoundException('Instituição não encontrada.');
+
+      // Um link vivo por necropsia: gerar de novo encerra os anteriores.
+      await tx
+        .update(formularioNecropsia)
+        .set({ expiraEm: new Date(), atualizadoEm: new Date() })
+        .where(
+          and(
+            eq(formularioNecropsia.tenantId, ctx.tenantId),
+            eq(formularioNecropsia.necropsiaId, necropsiaId),
+            isNull(formularioNecropsia.respondidoEm),
+          ),
+        );
+
+      const tokenBruto = randomBytes(32).toString('base64url');
+      const expiraEm = new Date(Date.now() + 7 * 24 * 3_600_000);
+
+      await tx.insert(formularioNecropsia).values({
+        tenantId: ctx.tenantId,
+        necropsiaId,
+        tokenHash: hashDoToken(tokenBruto),
+        expiraEm,
+        canalEnvio: dados.canal,
+        enviadoEm: new Date(),
+        enviadoPorId: ctx.usuarioId,
+      });
+
+      const caminho = `/formulario-necropsia/${instituicao.slug}/${tokenBruto}`;
+
+      /**
+       * A fila do M26 leva o link. Dois registros quando o canal e "ambos":
+       * WhatsApp e e-mail sao entregas distintas e falham por motivos
+       * distintos - uma linha so esconderia qual das duas nao chegou.
+       */
+      for (const canal of dados.canal === 'ambos' ? ['whatsapp', 'email'] : [dados.canal]) {
+        await tx.insert(notificacaoPendente).values({
+          tenantId: ctx.tenantId,
+          casoId: alvo.casoId,
+          canal,
+          destinatarioTipo: 'tutor',
+          destinatarioEndereco:
+            canal === 'whatsapp' ? (dados.telefone ?? null) : (dados.email ?? null),
+          assunto: 'Formulário de solicitação e autorização de necropsia',
+          corpo: `Preencha o formulário em ${caminho}`,
+        });
+      }
+
+      await this.eventos.publicar(tx, {
+        tipo: 'necropsia.formulario_enviado',
+        casoId: alvo.casoId,
+        moduloOrigem: MODULOS.M14_NECROPSIA,
+        objetoTipo: 'necropsia',
+        objetoId: necropsiaId,
+        payload: { canal: dados.canal, expiraEm: expiraEm.toISOString() },
+      });
+
+      return { caminho, expiraEm };
+    });
+  }
+
+  /**
+   * O formulario preenchido pelo proprio tecnico, sem link.
+   *
+   * Quinta revisao: "ao clicar em Preencher formulario, o formulario e aberto e
+   * o proprio tecnico ira preenche-lo" - o tutor que esta na recepcao, ou que
+   * ditou por telefone. Fica marcado como `tecnico` porque quem respondeu
+   * muda o peso do que esta escrito: relato colhido de terceiro nao e
+   * declaracao assinada pelo tutor.
+   */
+  async preencherFormulario(
+    necropsiaId: string,
+    respostas: Record<string, unknown>,
+  ): Promise<{ id: string }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const alvo = await this.buscar(tx, necropsiaId);
+
+      const [novo] = await tx
+        .insert(formularioNecropsia)
+        .values({
+          tenantId: ctx.tenantId,
+          necropsiaId,
+          respostas,
+          respondidoEm: new Date(),
+          respondidoPor: 'tecnico',
+        })
+        .returning({ id: formularioNecropsia.id });
+
+      await this.aplicarRespostas(tx, necropsiaId, respostas);
+
+      await this.eventos.publicar(tx, {
+        tipo: 'necropsia.formulario_respondido',
+        casoId: alvo.casoId,
+        moduloOrigem: MODULOS.M14_NECROPSIA,
+        objetoTipo: 'necropsia',
+        objetoId: necropsiaId,
+        payload: { por: 'tecnico', campos: Object.keys(respostas) },
+      });
+
+      return { id: novo!.id };
+    });
+  }
+
+  /** O que o tutor ve ao abrir o link. O valor vai junto, mas travado. */
+  async lerFormularioPublico(tenantSlug: string, tokenBruto: string) {
+    const { tenantId, formulario } = await this.resolverFormulario(tenantSlug, tokenBruto);
+
+    return this.db.executarComTenant(tenantId, async (tx) => {
+      const [instituicao] = await this.db.raw
+        .select({ nome: tenant.nomeFantasia })
+        .from(tenant)
+        .where(eq(tenant.id, tenantId))
+        .limit(1);
+
+      const [dados] = await tx
+        .select({
+          modalidade: necropsia.modalidade,
+          responsavelSolicitacao: necropsia.responsavelSolicitacao,
+          contatoResponsavel: necropsia.contatoResponsavel,
+          responsavelDocumento: necropsia.responsavelDocumento,
+          responsavelCidade: necropsia.responsavelCidade,
+          responsavelUf: necropsia.responsavelUf,
+          devolucaoCorpo: necropsia.devolucaoCorpo,
+          valorCombinado: necropsia.valorCombinado,
+          obitoEm: necropsia.obitoEm,
+          circunstanciasMorte: necropsia.circunstanciasMorte,
+          perguntasSolicitante: necropsia.perguntasSolicitante,
+          paciente: paciente.nome,
+          especie: termo.valor,
+        })
+        .from(necropsia)
+        .innerJoin(caso, eq(caso.id, necropsia.casoId))
+        .leftJoin(paciente, eq(paciente.id, caso.pacienteId))
+        .leftJoin(termo, eq(termo.id, paciente.especieId))
+        .where(eq(necropsia.id, formulario.necropsiaId))
+        .limit(1);
+
+      if (!dados) throw new NotFoundException('Formulário não encontrado.');
+
+      return {
+        instituicao: instituicao?.nome ?? '',
+        expiraEm: formulario.expiraEm,
+        /**
+         * O valor vai para a tela, mas como LEITURA: "todos os dados
+         * inseridos, a excecao do valor, podem ser editados pelo tutor". Ele
+         * precisa ver o que esta autorizando - esconder o preco de quem assina
+         * a autorizacao seria pior do que deixa-lo editar.
+         */
+        valorCombinado: dados.valorCombinado,
+        dados: {
+          paciente: dados.paciente,
+          especie: dados.especie,
+          modalidade: dados.modalidade,
+          responsavelSolicitacao: dados.responsavelSolicitacao,
+          contatoResponsavel: dados.contatoResponsavel,
+          responsavelDocumento: dados.responsavelDocumento,
+          responsavelCidade: dados.responsavelCidade,
+          responsavelUf: dados.responsavelUf,
+          devolucaoCorpo: dados.devolucaoCorpo,
+          obitoEm: dados.obitoEm,
+          circunstanciasMorte: dados.circunstanciasMorte,
+          perguntasSolicitante: dados.perguntasSolicitante,
+        },
+      };
+    });
+  }
+
+  /**
+   * O tutor envia o formulario. Uso unico: respondido, o link morre.
+   *
+   * O `valorCombinado` NAO entra, nem que venha no corpo: e a unica trava do
+   * formulario, e ela e de negocio - o preco foi acordado com o laboratorio.
+   */
+  async responderFormularioPublico(
+    tenantSlug: string,
+    tokenBruto: string,
+    respostas: Record<string, unknown>,
+  ): Promise<{ ok: true }> {
+    const { tenantId, formulario } = await this.resolverFormulario(tenantSlug, tokenBruto);
+
+    const { valorCombinado: _ignorado, ...limpas } = respostas as Record<string, unknown> & {
+      valorCombinado?: unknown;
+    };
+
+    return this.db.executarComTenant(tenantId, async (tx) => {
+      await tx
+        .update(formularioNecropsia)
+        .set({
+          respostas: limpas,
+          respondidoEm: new Date(),
+          respondidoPor: 'tutor',
+          atualizadoEm: new Date(),
+        })
+        .where(eq(formularioNecropsia.id, formulario.id));
+
+      await this.aplicarRespostas(tx, formulario.necropsiaId, limpas);
+
+      /**
+       * Nao ha usuario de sessao nesta rota, e e por isso que o evento vai por
+       * `publicarSemSessao`: a linha do tempo precisa registrar que o tutor
+       * respondeu, e `usuario_id` nulo e exatamente como se diz "nao foi
+       * ninguem da casa".
+       */
+      await this.eventos.publicarSemSessao(tx, tenantId, {
+        tipo: 'necropsia.formulario_respondido',
+        casoId: formulario.casoId,
+        moduloOrigem: MODULOS.M14_NECROPSIA,
+        objetoTipo: 'necropsia',
+        objetoId: formulario.necropsiaId,
+        visibilidade: 'externo',
+        payload: { por: 'tutor', campos: Object.keys(limpas) },
+      });
+
+      return { ok: true as const };
+    });
+  }
+
+  /**
+   * As respostas que tem casa propria na necropsia saem do jsonb e vao para a
+   * coluna: a tela do exame le `obitoEm` e `circunstanciasMorte` como campos, e
+   * o Guardian confere o obito. O resto fica no mapa, que e o questionario.
+   */
+  private async aplicarRespostas(
+    tx: Transacao,
+    necropsiaId: string,
+    respostas: Record<string, unknown>,
+  ): Promise<void> {
+    const mudancas: Record<string, unknown> = {};
+
+    for (const pergunta of PERGUNTAS_FORMULARIO_NECROPSIA) {
+      if (!pergunta.destino) continue;
+      const bruto = respostas[pergunta.chave];
+      if (typeof bruto !== 'string' || !bruto.trim()) continue;
+
+      if (pergunta.destino === 'obitoEm') {
+        // Data invalida nao derruba o resto do formulario: a resposta fica no
+        // mapa e a coluna permanece vazia, que e o estado honesto.
+        const quando = Date.parse(bruto);
+        if (!Number.isNaN(quando)) mudancas.obitoEm = new Date(quando);
+        continue;
+      }
+      mudancas[pergunta.destino] = bruto.trim();
+    }
+
+    if (Object.keys(mudancas).length === 0) return;
+    await tx
+      .update(necropsia)
+      .set({ ...mudancas, atualizadoEm: new Date() })
+      .where(eq(necropsia.id, necropsiaId));
+  }
+
+  private async resolverFormulario(tenantSlug: string, tokenBruto: string) {
+    const [instituicao] = await this.db.raw
+      .select({ id: tenant.id })
+      .from(tenant)
+      .where(and(eq(tenant.slug, tenantSlug), isNull(tenant.inativadoEm)))
+      .limit(1);
+    if (!instituicao || !tokenBruto || tokenBruto.length < 20) {
+      throw new NotFoundException('Formulário não encontrado.');
+    }
+
+    const formulario = await this.db.executarComTenant(instituicao.id, async (tx) => {
+      const [f] = await tx
+        .select({
+          id: formularioNecropsia.id,
+          necropsiaId: formularioNecropsia.necropsiaId,
+          expiraEm: formularioNecropsia.expiraEm,
+          respondidoEm: formularioNecropsia.respondidoEm,
+          casoId: necropsia.casoId,
+        })
+        .from(formularioNecropsia)
+        .innerJoin(necropsia, eq(necropsia.id, formularioNecropsia.necropsiaId))
+        .where(
+          and(
+            eq(formularioNecropsia.tenantId, instituicao.id),
+            eq(formularioNecropsia.tokenHash, hashDoToken(tokenBruto)),
+          ),
+        )
+        .limit(1);
+      return f ?? null;
+    });
+
+    if (!formulario) throw new NotFoundException('Formulário não encontrado.');
+    if (formulario.respondidoEm) throw new GoneException('Este formulário já foi enviado.');
+    if (!formulario.expiraEm || formulario.expiraEm.getTime() < Date.now()) {
+      throw new NotFoundException('Formulário não encontrado.');
+    }
+    return { tenantId: instituicao.id, formulario };
   }
 
   /** Exame externo (secao 57) e limitacoes (secao 119), em bloco. */
@@ -746,4 +1094,13 @@ export class NecropsiaService {
     if (!registro) throw new NotFoundException('Cadáver não encontrado.');
     return registro;
   }
+}
+
+/**
+ * O token nunca e guardado em claro: no banco fica so o hash. Vazar a tabela
+ * nao vaza nenhum link vivo - e o mesmo criterio do convite de autocadastro do
+ * cliente (M03) e da validacao publica de laudo (M11).
+ */
+function hashDoToken(tokenBruto: string): string {
+  return createHash('sha256').update(tokenBruto).digest('hex');
 }

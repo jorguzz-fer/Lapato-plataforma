@@ -2441,6 +2441,169 @@ describe('necropsia (M14)', () => {
   });
 });
 
+describe('formulário de necropsia ao tutor (M14, quinta revisão)', () => {
+  /**
+   * Quinta revisao: o cadastro do caso de necropsia fecha o combinado (tipo,
+   * valor, devolucao do corpo, responsavel legal) e o formulario de
+   * solicitacao e autorizacao vai ao tutor por link de uso unico - "todos os
+   * dados inseridos, a excecao do valor, podem ser editados pelo tutor".
+   *
+   * O teste cobre o que custa caro se quebrar: o link e de uso unico, o valor
+   * nao se altera por ele, e as respostas que tem casa propria na necropsia
+   * (obito, relato, duvida) chegam as colunas que a tela do exame le.
+   */
+  let casoId: string;
+  let necropsiaId: string;
+  let caminho: string;
+
+  test('a abertura guarda o combinado com o tutor', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Mel ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Cadáver' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+    casoId = criado.body.id;
+
+    await entrar('patologista@lapato.local');
+    const abertura = await req('POST', `/necropsia/casos/${casoId}`, {
+      modalidade: 'forense',
+      responsavelSolicitacao: 'Marina Rocha (tutora)',
+      contatoResponsavel: 'marina@exemplo.test',
+      devolucaoCorpo: true,
+      valorCombinado: 1250.5,
+      responsavelDocumento: '123.456.789-00',
+      responsavelCidade: 'Fortaleza',
+      // Minusculo de proposito: o servico normaliza.
+      responsavelUf: 'ce',
+    });
+    expect(abertura.status, JSON.stringify(abertura.body)).toBe(201);
+    necropsiaId = abertura.body.id;
+
+    const banca = await req('GET', `/necropsia/casos/${casoId}`);
+    expect(banca.body.necropsia.devolucaoCorpo).toBe(true);
+    expect(Number(banca.body.necropsia.valorCombinado)).toBe(1250.5);
+    expect(banca.body.necropsia.responsavelUf).toBe('CE');
+  });
+
+  test('o técnico preenche o formulário e as respostas viram campos do exame', async () => {
+    const obito = new Date(Date.now() - 36 * 3_600_000).toISOString();
+    const preenchido = await req('POST', `/necropsia/${necropsiaId}/formulario/preencher`, {
+      respostas: {
+        obitoEm: obito,
+        localObito: 'Em casa, durante a noite',
+        relatoCronologico: 'Parou de comer na quinta, prostrada na sexta, morreu no sábado.',
+        principalDuvida: 'Foi intoxicação?',
+        doencaPrevia: 'Nenhuma conhecida',
+      },
+    });
+    expect(preenchido.status, JSON.stringify(preenchido.body)).toBe(201);
+
+    const banca = await req('GET', `/necropsia/casos/${casoId}`);
+    expect(new Date(banca.body.necropsia.obitoEm).toISOString()).toBe(obito);
+    expect(banca.body.necropsia.circunstanciasMorte).toContain('Parou de comer');
+    expect(banca.body.necropsia.perguntasSolicitante).toBe('Foi intoxicação?');
+
+    // O relato preenchido pelo laboratorio aparece na linha do tempo do caso.
+    const dossie = await req('GET', `/casos/${casoId}`);
+    const tipos = dossie.body.linhaDoTempo.map((e: { tipo: string }) => e.tipo);
+    expect(tipos).toContain('necropsia.formulario_respondido');
+  });
+
+  test('o link vai ao tutor, abre sem sessão e se consome no envio', async () => {
+    const envio = await req('POST', `/necropsia/${necropsiaId}/formulario/enviar`, {
+      canal: 'ambos',
+      telefone: '85 98888-0000',
+      email: 'marina@exemplo.test',
+    });
+    expect(envio.status, JSON.stringify(envio.body)).toBe(201);
+    expect(envio.body.caminho).toMatch(/^\/formulario-necropsia\/[a-z0-9-]+\/[A-Za-z0-9_-]{40,}$/);
+    caminho = envio.body.caminho;
+
+    const [, , tenantSlug, token] = caminho.split('/');
+
+    // Sem sessao nenhuma: o tutor abre pelo celular.
+    const aberto = await fetch(`${servidor}${BASE}/formulario-necropsia/${tenantSlug}/${token}`);
+    expect(aberto.status).toBe(200);
+    const visto = await aberto.json();
+    expect(visto.dados.responsavelSolicitacao).toBe('Marina Rocha (tutora)');
+    expect(Number(visto.valorCombinado)).toBe(1250.5);
+    // Nada de clinico atravessa: o tutor ve o combinado e o que ele mesmo contou.
+    expect(Object.keys(visto.dados)).not.toContain('conclusao');
+
+    const enviado = await fetch(`${servidor}${BASE}/formulario-necropsia/${tenantSlug}/${token}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        respostas: {
+          responsavelSolicitacao: 'Marina Rocha Lima',
+          principalDuvida: 'Pode ter sido o veneno do vizinho?',
+          // O tutor tenta mexer no valor: o servico descarta.
+          valorCombinado: 1,
+        },
+      }),
+    });
+    expect(enviado.status, await enviado.text()).toBe(201);
+
+    // Uso unico: o mesmo link nao abre nem envia de novo.
+    expect(
+      (await fetch(`${servidor}${BASE}/formulario-necropsia/${tenantSlug}/${token}`)).status,
+    ).toBe(410);
+
+    // Token errado e slug errado respondem igual, sem enumerar.
+    expect(
+      (await fetch(`${servidor}${BASE}/formulario-necropsia/${tenantSlug}/${token.slice(0, -2)}xx`))
+        .status,
+    ).toBe(404);
+    expect(
+      (await fetch(`${servidor}${BASE}/formulario-necropsia/nao-existe/${token}`)).status,
+    ).toBe(404);
+
+    // O que o tutor respondeu chegou; o valor combinado nao mudou.
+    await entrar('patologista@lapato.local');
+    const banca = await req('GET', `/necropsia/casos/${casoId}`);
+    expect(banca.body.necropsia.perguntasSolicitante).toBe('Pode ter sido o veneno do vizinho?');
+    expect(Number(banca.body.necropsia.valorCombinado)).toBe(1250.5);
+  });
+
+  test('gerar outro link encerra o anterior', async () => {
+    const primeiro = await req('POST', `/necropsia/${necropsiaId}/formulario/enviar`, {
+      canal: 'email',
+      email: 'marina@exemplo.test',
+    });
+    const [, , slug, tokenAntigo] = primeiro.body.caminho.split('/');
+
+    const segundo = await req('POST', `/necropsia/${necropsiaId}/formulario/enviar`, {
+      canal: 'email',
+      email: 'marina@exemplo.test',
+    });
+    const [, , , tokenNovo] = segundo.body.caminho.split('/');
+    expect(tokenNovo).not.toBe(tokenAntigo);
+
+    expect(
+      (await fetch(`${servidor}${BASE}/formulario-necropsia/${slug}/${tokenAntigo}`)).status,
+      'o link antigo expira na hora em que se gera outro',
+    ).toBe(404);
+    expect(
+      (await fetch(`${servidor}${BASE}/formulario-necropsia/${slug}/${tokenNovo}`)).status,
+    ).toBe(200);
+  });
+
+  test('a recepção não envia formulário de necropsia', async () => {
+    await entrar('recepcao@lapato.local');
+    const negado = await req('POST', `/necropsia/${necropsiaId}/formulario/enviar`, {
+      canal: 'email',
+      email: 'marina@exemplo.test',
+    });
+    expect([401, 403]).toContain(negado.status);
+  });
+});
+
 describe('controle de cadáveres (M15)', () => {
   /**
    * O modulo responde, a qualquer momento (secao 4): quem esta sob
@@ -7587,6 +7750,8 @@ describe('quinta revisão (Hugo): série LN e a câmara fria que divide lacuna',
   let bandeja: string;
   let primeiro: string;
   let segundo: string;
+  let primeiroLN: string;
+  let segundoLN: string;
 
   test('a câmara fria nasce com a grade 3×3 e o freezer com a dele', async () => {
     await entrar('tecnico@lapato.local');
@@ -7634,6 +7799,8 @@ describe('quinta revisão (Hugo): série LN e a câmara fria que divide lacuna',
     });
     expect(dois.status).toBe(201);
     segundo = dois.body.id;
+    primeiroLN = um.body.identificador;
+    segundoLN = dois.body.identificador;
 
     // Série: o segundo é o número seguinte.
     const n = (id: string) => Number(id.replace('LN', ''));
@@ -7649,9 +7816,15 @@ describe('quinta revisão (Hugo): série LN e a câmara fria que divide lacuna',
   test('dois corpos pequenos dividem a mesma bandeja, e o mapa conta os dois', async () => {
     await entrar('tecnico@lapato.local');
 
+    /**
+     * Quem ja estava na bandeja antes deste teste nao interessa - a bandeja e
+     * a mesma em todas as execucoes, e o banco local guarda o que a execucao
+     * anterior deixou. O que se afirma e o DELTA: o corpo que entra passa a
+     * dividir a posicao com quem ja estava, e com mais ninguem.
+     */
     const a = await req('POST', `/cadaveres/${primeiro}/armazenamento`, { localId: bandeja });
     expect(a.status, JSON.stringify(a.body)).toBe(201);
-    expect(a.body.companheiros).toEqual([]);
+    const antes: string[] = a.body.companheiros;
 
     /**
      * Antes desta revisão isto era recusado — e o efeito prático era pior que a
@@ -7660,7 +7833,9 @@ describe('quinta revisão (Hugo): série LN e a câmara fria que divide lacuna',
      */
     const b = await req('POST', `/cadaveres/${segundo}/armazenamento`, { localId: bandeja });
     expect(b.status, JSON.stringify(b.body)).toBe(201);
-    expect(b.body.companheiros).toHaveLength(1);
+    const companheiros: string[] = b.body.companheiros;
+    expect(companheiros).toHaveLength(antes.length + 1);
+    expect(companheiros).toContain(primeiroLN);
     // A capacidade informada vira aviso, não tranca.
     expect(b.body.excedeCapacidade).toBe(true);
     expect(b.body.capacidade).toBe(1);
@@ -7669,7 +7844,9 @@ describe('quinta revisão (Hugo): série LN e a câmara fria que divide lacuna',
     const mapa = await req('GET', '/cadaveres/mapa');
     const posicoes = mapa.body.posicoes.filter((p: { id: string }) => p.id === bandeja);
     expect(posicoes, 'a bandeja não pode aparecer duplicada').toHaveLength(1);
-    expect(posicoes[0].ocupantes).toHaveLength(2);
+    const dentro = posicoes[0].ocupantes.map((o: { identificador: string }) => o.identificador);
+    expect(dentro).toContain(primeiroLN);
+    expect(dentro).toContain(segundoLN);
 
     // E o histórico diz com quem o corpo divide o espaço.
     const ficha = await req('GET', `/cadaveres/${segundo}`);

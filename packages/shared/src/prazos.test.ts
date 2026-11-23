@@ -133,6 +133,67 @@ describe('aplicarSuspensoes', () => {
     const nova = aplicarSuspensoes(previsao, [], utc('2026-08-12'));
     expect(nova.getTime()).toBe(previsao.getTime());
   });
+
+  /**
+   * Um caso pode ter VARIAS pendencias com `suspendePrazo` ao mesmo tempo -
+   * `suspenderPrazo` insere sem checar janela aberta, e cada pendencia tem seu
+   * proprio `origemId`. O que conta e o tempo em que o laboratorio esteve
+   * impedido, ou seja a UNIAO das janelas; somar as duracoes daria folga que
+   * ninguem esperou.
+   */
+  test('duas pendencias no mesmo periodo contam o periodo uma vez', () => {
+    const previsao = utc('2026-08-17');
+    const janela = { inicio: utc('2026-08-10'), fim: utc('2026-08-12') }; // 2 dias uteis
+
+    const uma = aplicarSuspensoes(previsao, [janela], utc('2026-08-13'));
+    const duas = aplicarSuspensoes(previsao, [janela, { ...janela }], utc('2026-08-13'));
+
+    expect(uma.toISOString().slice(0, 10)).toBe('2026-08-19');
+    // A segunda pendencia nao acrescenta espera: o periodo e o mesmo.
+    expect(duas.toISOString().slice(0, 10)).toBe('2026-08-19');
+  });
+
+  test('sobreposicao parcial conta a uniao, nao a soma', () => {
+    const previsao = utc('2026-08-17');
+    const nova = aplicarSuspensoes(
+      previsao,
+      [
+        { inicio: utc('2026-08-10'), fim: utc('2026-08-12') }, // 11, 12
+        { inicio: utc('2026-08-11'), fim: utc('2026-08-14') }, // 12, 13, 14
+      ],
+      utc('2026-08-17'),
+    );
+
+    // Uniao = (10, 14] = 11, 12, 13, 14 -> 4 dias uteis, nao 5.
+    expect(nova.toISOString().slice(0, 10)).toBe('2026-08-21');
+  });
+
+  test('duas suspensoes abertas contam o periodo uma vez', () => {
+    const previsao = utc('2026-08-17');
+    const aberta = { inicio: utc('2026-08-10'), fim: null };
+
+    const nova = aplicarSuspensoes(previsao, [aberta, { ...aberta }], utc('2026-08-12'));
+
+    expect(nova.toISOString().slice(0, 10)).toBe('2026-08-19');
+  });
+
+  /**
+   * Guarda contra o excesso oposto: janelas que NAO se encostam continuam
+   * somando. Entre 11 (ter) e 13 (qui) o laboratorio voltou a trabalhar.
+   */
+  test('janelas separadas continuam somando', () => {
+    const previsao = utc('2026-08-17');
+    const nova = aplicarSuspensoes(
+      previsao,
+      [
+        { inicio: utc('2026-08-10'), fim: utc('2026-08-11') }, // 11
+        { inicio: utc('2026-08-13'), fim: utc('2026-08-14') }, // 14
+      ],
+      utc('2026-08-17'),
+    );
+
+    expect(nova.toISOString().slice(0, 10)).toBe('2026-08-19');
+  });
 });
 
 describe('alertaDoCaso: a cor do mapa de exames (quarta revisão)', () => {

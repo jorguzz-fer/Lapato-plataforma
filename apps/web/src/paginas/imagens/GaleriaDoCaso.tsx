@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -64,6 +64,20 @@ interface Props {
   moduloContexto?: string;
   /** Etapa pré-selecionada ao enviar (recebimento, requisição, triagem…). */
   tipoPadrao?: string;
+  /**
+   * Mostra só as imagens destas origens.
+   *
+   * Quinta revisão, tela da necropsia: "Imagens anexadas pelo LAPATO" e
+   * "Imagens enviadas pelo tutor" são dois quadros separados. A separação é de
+   * conteúdo, não de enfeite — a foto que o tutor mandou do animal vivo e a
+   * foto do órgão na bancada não têm o mesmo peso probatório, e misturá-las no
+   * mesmo mural é o começo de citar uma pela outra no laudo.
+   */
+  origens?: string[];
+  /** Título do quadro, quando a galeria aparece recortada por origem. */
+  titulo?: string;
+  /** Texto curto no lugar da explicação completa do acervo. */
+  resumo?: string;
 }
 
 export function GaleriaDoCaso({
@@ -71,6 +85,9 @@ export function GaleriaDoCaso({
   permissoes,
   moduloContexto = 'M16_IMAGENS',
   tipoPadrao = 'macroscopia',
+  origens,
+  titulo,
+  resumo,
 }: Props) {
   const [imagens, setImagens] = useState<ImagemDoCaso[]>([]);
   const [carregado, setCarregado] = useState(false);
@@ -90,6 +107,18 @@ export function GaleriaDoCaso({
   const [inativando, setInativando] = useState<ImagemDoCaso | null>(null);
   const [motivo, setMotivo] = useState('');
   const [ampliada, setAmpliada] = useState<ImagemDoCaso | null>(null);
+
+  /**
+   * O recorte por origem acontece na renderização, e não na busca: `origens` é
+   * um array literal do pai e muda de identidade a cada render — como
+   * dependência do `useCallback` que busca, faria a galeria recarregar em laço.
+   * A chave em texto é estável.
+   */
+  const chaveOrigens = origens?.join(',');
+  const visiveis = useMemo(
+    () => (chaveOrigens ? imagens.filter((i) => chaveOrigens.split(',').includes(i.origem)) : imagens),
+    [imagens, chaveOrigens],
+  );
 
   const podeEnviar = permissoes.includes('imagem:enviar');
   const [cameraAberta, setCameraAberta] = useState(false);
@@ -209,9 +238,14 @@ export function GaleriaDoCaso({
         sx={{ mb: 2.5, alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
       >
         <Box>
+          {titulo && (
+            <Typography variant="h3" sx={{ mb: 0.5 }}>
+              {titulo}
+            </Typography>
+          )}
           <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
-            Acervo do caso — todas as etapas num só lugar. Toda imagem guarda quem produziu,
-            quando e em qual contexto.
+            {resumo ??
+              'Acervo do caso — todas as etapas num só lugar. Toda imagem guarda quem produziu, quando e em qual contexto.'}
           </Typography>
           {podeEnviar && (
             <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.5 }}>
@@ -251,9 +285,9 @@ export function GaleriaDoCaso({
         )}
       </Stack>
 
-      {carregado && imagens.length === 0 && (
+      {carregado && visiveis.length === 0 && (
         <Typography sx={{ fontSize: 13.5, color: 'text.secondary' }}>
-          Nenhuma imagem no acervo deste caso.
+          {origens ? 'Nenhuma imagem desta origem.' : 'Nenhuma imagem no acervo deste caso.'}
         </Typography>
       )}
 
@@ -264,7 +298,7 @@ export function GaleriaDoCaso({
           gap: 2,
         }}
       >
-        {imagens.map((img) => (
+        {visiveis.map((img) => (
           <Card key={img.id} variant="outlined" sx={{ overflow: 'hidden' }}>
             <Box
               component="button"

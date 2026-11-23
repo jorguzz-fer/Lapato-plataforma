@@ -77,6 +77,7 @@ export const TIPO_EVENTO = [
   'necropsia.reaberta',
   'necropsia.formulario_enviado',
   'necropsia.formulario_respondido',
+  'necropsia.ciente_observacao',
 
   // M15 Controle de Cadaveres
   'cadaver.recebido',
@@ -232,6 +233,7 @@ export const EVENTO_LABEL: Record<TipoEvento, string> = {
   'necropsia.reaberta': 'Necropsia reaberta para correção',
   'necropsia.formulario_enviado': 'Formulário de necropsia enviado ao tutor',
   'necropsia.formulario_respondido': 'Formulário de necropsia preenchido',
+  'necropsia.ciente_observacao': 'Patologista deu ciência do pedido do tutor',
   'cadaver.recebido': 'Cadáver recebido',
   'cadaver.liberado': 'Cadáver liberado para retirada',
   'cadaver.retirado': 'Cadáver retirado do laboratório',

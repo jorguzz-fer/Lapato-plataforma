@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import Alert from '@mui/material/Alert';
 import AlertTitle from '@mui/material/AlertTitle';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
+import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import Divider from '@mui/material/Divider';
 import MenuItem from '@mui/material/MenuItem';
 import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import Tab from '@mui/material/Tab';
+import Tabs from '@mui/material/Tabs';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -34,15 +38,23 @@ import {
   MECANISMO_TERMINAL_LABEL,
   MODALIDADE_NECROPSIA,
   MODALIDADE_NECROPSIA_LABEL,
+  PERGUNTAS_FORMULARIO_NECROPSIA,
   RELACAO_LESAO_LABEL,
   type CavidadeNecropsia,
   type ClassificacaoLesao,
   type EstadoExameOrgao,
   type GrauCertezaCausa,
 } from '@lapato/shared';
-import { api, ErroApi, type BancadaNecropsia, type Dossie } from '../api';
+import {
+  api,
+  ErroApi,
+  type BancadaNecropsia,
+  type Dossie,
+  type SugestoesCopiloto,
+} from '../api';
 import { AjudaBiblioteca } from '../componentes/AjudaBiblioteca';
 import { BloqueioGuardian } from './BloqueioGuardian';
+import { GaleriaDoCaso } from './imagens/GaleriaDoCaso';
 import { MapaCorporal } from './necropsia/MapaCorporal';
 import { CamposDoFormularioNecropsia } from './necropsia/CamposDoFormulario';
 
@@ -76,7 +88,10 @@ const COR_CLASSIFICACAO: Partial<
   artefato: 'default',
 };
 
+type Aba = 'historico' | 'anexos' | 'externo' | 'interno' | 'microscopia' | 'conclusao';
+
 export function Necropsia({ permissoes }: { permissoes: string[] }) {
+  const navegar = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [dossie, setDossie] = useState<Dossie | null>(null);
   const [banca, setBanca] = useState<BancadaNecropsia | null>(null);
@@ -88,6 +103,7 @@ export function Necropsia({ permissoes }: { permissoes: string[] }) {
   const [bloqueio, setBloqueio] = useState<ErroApi | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [formulario, setFormulario] = useState<'preencher' | 'enviar' | null>(null);
+  const [aba, setAba] = useState<Aba>('historico');
 
   const podeExecutar = permissoes.includes('necropsia:executar');
   const podeConcluir = permissoes.includes('necropsia:concluir');
@@ -201,6 +217,32 @@ export function Necropsia({ permissoes }: { permissoes: string[] }) {
               {banca.necropsia.contatoResponsavel ? ` · ${banca.necropsia.contatoResponsavel}` : ''}
             </Typography>
           </Box>
+          {/*
+            "Data de entrada | Data do exame" lado a lado. A do exame e
+            editavel porque o corpo chega na sexta e a mesa so abre na segunda -
+            e e a data do exame que vai ao laudo.
+          */}
+          <Box>
+            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>Data do exame</Typography>
+            <TextField
+              size="small"
+              type="date"
+              variant="standard"
+              disabled={!editavel || ocupado}
+              value={banca.necropsia.exameEm ? banca.necropsia.exameEm.slice(0, 10) : ''}
+              onChange={(e) =>
+                void agir(
+                  () =>
+                    api.post(`/necropsia/${banca.necropsia.id}/cabecalho`, {
+                      exameEm: e.target.value ? new Date(`${e.target.value}T12:00:00`).toISOString() : null,
+                    }),
+                  'Não foi possível salvar a data do exame.',
+                )
+              }
+              slotProps={{ inputLabel: { shrink: true } }}
+              sx={{ width: 150 }}
+            />
+          </Box>
           {banca.necropsia.devolucaoCorpo !== null && (
             <Box>
               <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>Corpo</Typography>
@@ -250,6 +292,77 @@ export function Necropsia({ permissoes }: { permissoes: string[] }) {
         />
       )}
 
+      {/*
+        Quinta revisao: a observacao do tutor fica ACIMA de tudo, com o botao
+        "Ciente" ao lado. E um pedido que so se cumpre com o corpo na mesa, e
+        por isso nao pode estar escondido numa aba - lido depois do descarte,
+        nao se cumpre mais.
+      */}
+      {banca.necropsia.observacaoTutor && (
+        <Card
+          sx={{
+            p: 2,
+            mb: 2.5,
+            borderLeft: 4,
+            borderColor: banca.necropsia.cienteEm ? 'success.main' : 'warning.main',
+          }}
+        >
+          <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.8, color: 'text.secondary' }}>
+            OBSERVAÇÃO DO TUTOR
+          </Typography>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={2}
+            sx={{ mt: 0.5, alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+          >
+            <Typography sx={{ fontSize: 14 }}>{banca.necropsia.observacaoTutor}</Typography>
+            {banca.necropsia.cienteEm ? (
+              <Chip
+                size="small"
+                color="success"
+                label={`Ciente · ${banca.cientePor ?? 'equipe'} · ${new Date(banca.necropsia.cienteEm).toLocaleDateString('pt-BR')}`}
+              />
+            ) : (
+              <Button
+                variant="contained"
+                disabled={!editavel || ocupado}
+                onClick={() =>
+                  void agir(
+                    () => api.post(`/necropsia/${banca.necropsia.id}/ciente`),
+                    'Não foi possível registrar a ciência.',
+                  )
+                }
+              >
+                Ciente
+              </Button>
+            )}
+          </Stack>
+        </Card>
+      )}
+
+      {!banca.necropsia.observacaoTutor && editavel && (
+        <Box sx={{ mb: 2.5 }}>
+          <Button
+            size="small"
+            variant="text"
+            onClick={() => {
+              const texto = window.prompt('Pedido do tutor sobre o corpo (carimbo da pata, tufo de pelos…)');
+              if (texto && texto.trim()) {
+                void agir(
+                  () =>
+                    api.post(`/necropsia/${banca.necropsia.id}/cabecalho`, {
+                      observacaoTutor: texto.trim(),
+                    }),
+                  'Não foi possível salvar a observação.',
+                );
+              }
+            }}
+          >
+            + Registrar pedido do tutor
+          </Button>
+        </Box>
+      )}
+
       {/* Secao 72: o numero que importa e o dos orgaos que ficaram de fora. */}
       <Stack direction="row" spacing={1.5} sx={{ mb: 3, flexWrap: 'wrap' }}>
         {[
@@ -273,23 +386,75 @@ export function Necropsia({ permissoes }: { permissoes: string[] }) {
         ))}
       </Stack>
 
-      <ExameExterno banca={banca} editavel={editavel} agir={agir} ocupado={ocupado} />
+      {/*
+        As abas do documento: Historico, Anexos, Exame externo, Exame interno,
+        Microscopia, Conclusao. Antes era tudo empilhado numa pagina so - o que
+        funciona para ler, e nao para trabalhar: o patologista esta de luva,
+        alternando entre a cavidade aberta e a tela, e rolar meia pagina para
+        achar a secao certa custa cada vez.
+      */}
+      <Tabs
+        value={aba}
+        onChange={(_, v) => setAba(v as Aba)}
+        variant="scrollable"
+        scrollButtons="auto"
+        sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
+      >
+        <Tab value="historico" label="Histórico" />
+        <Tab value="anexos" label="Anexos" />
+        <Tab value="externo" label="Exame externo" />
+        <Tab value="interno" label="Exame interno" />
+        <Tab value="microscopia" label="Microscopia" />
+        <Tab value="conclusao" label="Conclusão" />
+      </Tabs>
 
-      <MapaCorporal banca={banca} editavel={editavel} agir={agir} ocupado={ocupado} />
+      {aba === 'historico' && <Historico banca={banca} dossie={dossie} />}
 
-      <ExameInterno banca={banca} editavel={editavel} agir={agir} ocupado={ocupado} />
+      {aba === 'anexos' && <Anexos casoId={dossie.caso.id} editavel={editavel} />}
 
-      <Lesoes banca={banca} editavel={editavel} agir={agir} ocupado={ocupado} />
+      {aba === 'externo' && (
+        <>
+          <ExameExterno banca={banca} editavel={editavel} agir={agir} ocupado={ocupado} />
+          <MapaCorporal banca={banca} editavel={editavel} agir={agir} ocupado={ocupado} />
+        </>
+      )}
 
-      <CausaMortis
-        banca={banca}
-        editavel={podeConcluir && !concluida}
-        agir={agir}
-        ocupado={ocupado}
-      />
+      {aba === 'interno' && (
+        <>
+          <SugestoesDaIa necropsiaId={banca.necropsia.id} />
+          <ExameInterno banca={banca} editavel={editavel} agir={agir} ocupado={ocupado} />
+          <AmostrasColetadas banca={banca} editavel={editavel} agir={agir} ocupado={ocupado} />
+          <Lesoes banca={banca} editavel={editavel} agir={agir} ocupado={ocupado} />
+        </>
+      )}
+
+      {aba === 'microscopia' && (
+        <Card sx={{ p: 2.5 }}>
+          <Typography variant="h3" sx={{ mb: 0.5 }}>
+            Microscopia
+          </Typography>
+          <Typography sx={{ fontSize: 13, color: 'text.secondary', mb: 2 }}>
+            A descrição microscópica e os diagnósticos ficam no laudo, junto das lâminas — é lá
+            que a assinatura acontece, e duplicar o campo aqui criaria duas versões do mesmo
+            texto.
+          </Typography>
+          <Button variant="outlined" onClick={() => navegar(`/casos/${dossie.caso.id}/laudo`)}>
+            Abrir laudo e microscopia
+          </Button>
+        </Card>
+      )}
+
+      {aba === 'conclusao' && (
+        <CausaMortis
+          banca={banca}
+          editavel={podeConcluir && !concluida}
+          agir={agir}
+          ocupado={ocupado}
+        />
+      )}
 
       {/* Secao 116-118: o que o Guardian achou, ANTES do clique de concluir. */}
-      {conferencia.length > 0 && (
+      {aba === 'conclusao' && conferencia.length > 0 && (
         <Alert severity={criticos.length > 0 ? 'error' : 'warning'} sx={{ mt: 2.5 }}>
           <AlertTitle>
             {criticos.length > 0
@@ -320,6 +485,11 @@ export function Necropsia({ permissoes }: { permissoes: string[] }) {
       )}
 
       <Stack direction="row" spacing={1} sx={{ mt: 3, justifyContent: 'flex-end' }}>
+        {concluida && (
+          <Button variant="outlined" onClick={() => navegar(`/casos/${dossie.caso.id}/laudo`)}>
+            Gerar laudo
+          </Button>
+        )}
         {podeConcluir && !concluida && (
           <Button
             variant="contained"
@@ -356,6 +526,326 @@ export function Necropsia({ permissoes }: { permissoes: string[] }) {
         )}
       </Stack>
     </Box>
+  );
+}
+
+/**
+ * A aba Historico: "Informacoes do formulario" (quinta revisao).
+ *
+ * E a primeira coisa que o patologista le, e por isso e a aba que abre. O
+ * relato do tutor nao e dado observado - vem como o tutor contou, e e assim que
+ * tem de ser lido. Por isso o rotulo de quem respondeu fica visivel: relato
+ * colhido por telefone pelo tecnico e relato escrito pelo tutor nao valem o
+ * mesmo quando o laudo precisa citar a fonte.
+ */
+function Historico({ banca, dossie }: { banca: BancadaNecropsia; dossie: Dossie }) {
+  const respostas = (banca.formulario?.respostas ?? {}) as Record<string, unknown>;
+  const texto = (chave: string) => {
+    const v = respostas[chave];
+    return typeof v === 'string' && v.trim() ? v.trim() : null;
+  };
+
+  if (!banca.formulario) {
+    return (
+      <Alert severity="info">
+        O formulário de solicitação ainda não foi respondido. Use <strong>Preencher
+        formulário</strong> ou <strong>Enviar formulário</strong> no topo da tela — o relato do
+        tutor é o que orienta o exame.
+      </Alert>
+    );
+  }
+
+  return (
+    <Card sx={{ p: 2.5 }}>
+      <Stack
+        direction="row"
+        spacing={2}
+        sx={{ mb: 2, alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap' }}
+      >
+        <Typography variant="h3">Informações do formulário</Typography>
+        <Chip
+          size="small"
+          variant="outlined"
+          color={banca.formulario.respondidoPor === 'tutor' ? 'success' : 'default'}
+          label={
+            banca.formulario.respondidoPor === 'tutor'
+              ? 'Respondido pelo tutor'
+              : 'Preenchido pelo laboratório'
+          }
+        />
+      </Stack>
+
+      <Stack spacing={2}>
+        <Stack direction="row" spacing={3} sx={{ flexWrap: 'wrap' }}>
+          <Box>
+            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>Data do óbito</Typography>
+            <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
+              {banca.necropsia.obitoEm
+                ? new Date(banca.necropsia.obitoEm).toLocaleString('pt-BR', {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                  })
+                : 'Não informada'}
+            </Typography>
+          </Box>
+          <Box>
+            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>Local</Typography>
+            <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
+              {texto('localObito') ?? 'Não informado'}
+            </Typography>
+          </Box>
+          <Box>
+            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>Entrada do material</Typography>
+            <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
+              {dossie.caso.entradaEm
+                ? new Date(dossie.caso.entradaEm).toLocaleDateString('pt-BR')
+                : '—'}
+            </Typography>
+          </Box>
+        </Stack>
+
+        {PERGUNTAS_FORMULARIO_NECROPSIA.filter((p) => p.tipo === 'texto_longo').map((pergunta) => {
+          const resposta =
+            texto(pergunta.chave) ??
+            (pergunta.destino === 'circunstanciasMorte'
+              ? banca.necropsia.circunstanciasMorte
+              : pergunta.destino === 'perguntasSolicitante'
+                ? banca.necropsia.perguntasSolicitante
+                : null);
+          if (!resposta) return null;
+          return (
+            <Box key={pergunta.chave}>
+              <Typography sx={{ fontSize: 13, fontWeight: 700 }}>{pergunta.rotulo}</Typography>
+              <Typography sx={{ fontSize: 14, whiteSpace: 'pre-wrap' }}>{resposta}</Typography>
+            </Box>
+          );
+        })}
+      </Stack>
+    </Card>
+  );
+}
+
+/**
+ * A aba Anexos: os dois quadros de imagem do documento.
+ *
+ * "Imagens anexadas pelo LAPATO" e "Imagens enviadas pelo tutor" - a mesma
+ * galeria do M16, recortada por origem. Separadas porque a foto do animal vivo
+ * que o tutor mandou pelo WhatsApp e a foto do orgao na bancada nao tem o mesmo
+ * peso, e o laudo nao pode citar uma pela outra.
+ */
+function Anexos({ casoId, editavel }: { casoId: string; editavel: boolean }) {
+  const permissoes = editavel ? ['imagem:enviar', 'imagem:editar'] : [];
+  return (
+    <Stack spacing={2.5}>
+      <Card sx={{ p: 2.5 }}>
+        <GaleriaDoCaso
+          casoId={casoId}
+          permissoes={permissoes}
+          moduloContexto="M14_NECROPSIA"
+          tipoPadrao="necropsia"
+          origens={['produzida_lapato']}
+          titulo="Imagens anexadas pelo LAPATO"
+          resumo="O que a bancada fotografou: corpo, cavidades, órgãos e lesões."
+        />
+      </Card>
+      <Card sx={{ p: 2.5 }}>
+        <GaleriaDoCaso
+          casoId={casoId}
+          permissoes={permissoes}
+          moduloContexto="M14_NECROPSIA"
+          tipoPadrao="documento"
+          origens={[
+            'enviada_cliente',
+            'enviada_veterinario',
+            'importada',
+            'laboratorio_parceiro',
+            'pericial_externa',
+          ]}
+          titulo="Imagens enviadas pelo tutor"
+          resumo="O que veio de fora — cada imagem mostra a origem, porque uma foto do tutor e um laudo de imagem da clínica não valem o mesmo no exame."
+        />
+      </Card>
+    </Stack>
+  );
+}
+
+/**
+ * As sugestoes do Copiloto na bancada (M17 + quinta revisao).
+ *
+ * "E importante que o suporte de IA sempre considere os exames previos do
+ * animal, bem como o historico apontado, sugerindo sistemas indispensaveis para
+ * exame e suspeitas diagnosticas."
+ *
+ * Sem provedor de IA, o cartao de indisponibilidade aparece e o exame segue: a
+ * secao 110 do M17 e explicita que o LAPATO funciona sem IA. A tela diz isso em
+ * vez de ficar em branco, para ninguem achar que a IA concordou com tudo.
+ */
+function SugestoesDaIa({ necropsiaId }: { necropsiaId: string }) {
+  const [dados, setDados] = useState<SugestoesCopiloto | null>(null);
+  const [carregado, setCarregado] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<SugestoesCopiloto>(`/necropsia/${necropsiaId}/sugestoes`)
+      .then(setDados)
+      .catch(() => setDados({ cartoes: [], disponivel: false }))
+      .finally(() => setCarregado(true));
+  }, [necropsiaId]);
+
+  if (!carregado) return <Skeleton variant="rounded" height={64} sx={{ mb: 2.5 }} />;
+
+  if (!dados?.disponivel) {
+    return (
+      <Alert severity="info" sx={{ mb: 2.5 }}>
+        Assistência de IA temporariamente indisponível. O exame segue normalmente — o que você
+        descrever e concluir não depende dela.
+      </Alert>
+    );
+  }
+
+  if (dados.cartoes.length === 0) return null;
+
+  return (
+    <Stack spacing={1.5} sx={{ mb: 2.5 }}>
+      {dados.cartoes.map((c) => (
+        <Alert
+          key={c.id}
+          severity={
+            c.nivel === 'critico'
+              ? 'error'
+              : c.nivel === 'atencao'
+                ? 'warning'
+                : c.nivel === 'sugestao'
+                  ? 'info'
+                  : 'success'
+          }
+        >
+          <AlertTitle sx={{ fontSize: 14 }}>{c.titulo}</AlertTitle>
+          <Typography sx={{ fontSize: 13.5, whiteSpace: 'pre-wrap' }}>{c.corpo}</Typography>
+          {/*
+            M17 secao 15: a sugestao diz quais dados usou e se houve inferencia.
+            Sem isso, o parecer da IA se confunde com achado observado - que e
+            exatamente o erro que um laudo de necropsia nao pode conter.
+          */}
+          <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mt: 0.75 }}>
+            {c.inferencia ? 'Inferência da IA' : 'Leitura direta dos dados'}
+            {c.fontes.length > 0 ? ` · fontes: ${c.fontes.join(', ')}` : ''}
+            {dados.modelo ? ` · ${dados.modelo}` : ''}
+          </Typography>
+        </Alert>
+      ))}
+    </Stack>
+  );
+}
+
+/**
+ * "INDICAR QUAIS AMOSTRAS FORAM COLETADAS" (quinta revisao).
+ *
+ * Marcado no proprio orgao examinado: e ali que a decisao acontece, com a
+ * cavidade aberta. A pergunta que isto responde chega meses depois - "ainda tem
+ * material do rim?" -, e sem o registro a resposta e procurar no freezer.
+ */
+function AmostrasColetadas({
+  banca,
+  editavel,
+  agir,
+  ocupado,
+}: {
+  banca: BancadaNecropsia;
+  editavel: boolean;
+  agir: (a: () => Promise<unknown>, p: string) => Promise<boolean>;
+  ocupado: boolean;
+}) {
+  const examinados = banca.orgaos.filter((o) => o.estado !== 'nao_examinado');
+  const coletados = examinados.filter((o) => o.amostraColetada);
+
+  return (
+    <Card sx={{ p: 2.5, mb: 2.5 }}>
+      <Stack
+        direction="row"
+        spacing={2}
+        sx={{ alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap' }}
+      >
+        <Typography variant="h3">Amostras coletadas</Typography>
+        <Chip
+          size="small"
+          variant="outlined"
+          label={`${coletados.length} de ${examinados.length} órgãos examinados`}
+        />
+      </Stack>
+      <Typography sx={{ fontSize: 13, color: 'text.secondary', mt: 0.5, mb: 2 }}>
+        Marque o que foi para o formol. Órgão não examinado não aparece aqui — não há de onde
+        coletar.
+      </Typography>
+
+      {examinados.length === 0 ? (
+        <Typography sx={{ fontSize: 13.5, color: 'text.secondary' }}>
+          Nenhum órgão examinado ainda.
+        </Typography>
+      ) : (
+        <Stack spacing={1}>
+          {examinados.map((o) => (
+            <Stack
+              key={o.id}
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1.5}
+              sx={{ alignItems: { sm: 'center' } }}
+            >
+              <FormControlLabel
+                sx={{ minWidth: 220 }}
+                control={
+                  <Checkbox
+                    checked={o.amostraColetada}
+                    disabled={!editavel || ocupado}
+                    onChange={(e) =>
+                      void agir(
+                        () =>
+                          api.post(`/necropsia/orgaos/${o.id}/coleta`, {
+                            coletada: e.target.checked,
+                            observacao: o.amostraObservacao,
+                          }),
+                        'Não foi possível registrar a coleta.',
+                      )
+                    }
+                  />
+                }
+                label={
+                  <Typography sx={{ fontSize: 14 }}>
+                    {o.orgao}
+                    {o.sistema ? (
+                      <Typography component="span" sx={{ fontSize: 12, color: 'text.secondary' }}>
+                        {' '}
+                        · {o.sistema}
+                      </Typography>
+                    ) : null}
+                  </Typography>
+                }
+              />
+              {o.amostraColetada && (
+                <TextField
+                  size="small"
+                  placeholder="Fixador, frasco, destino"
+                  defaultValue={o.amostraObservacao ?? ''}
+                  disabled={!editavel || ocupado}
+                  sx={{ flex: 1 }}
+                  onBlur={(e) => {
+                    if ((e.target.value || '') === (o.amostraObservacao ?? '')) return;
+                    void agir(
+                      () =>
+                        api.post(`/necropsia/orgaos/${o.id}/coleta`, {
+                          coletada: true,
+                          observacao: e.target.value.trim() || null,
+                        }),
+                      'Não foi possível salvar a observação da coleta.',
+                    );
+                  }}
+                />
+              )}
+            </Stack>
+          ))}
+        </Stack>
+      )}
+    </Card>
   );
 }
 

@@ -3454,6 +3454,16 @@ const respostasFormularioSchema = z.object({
   respostas: z.record(z.string(), z.unknown()),
 });
 
+const cabecalhoNecropsiaSchema = z.object({
+  observacaoTutor: z.string().max(2000).nullish(),
+  exameEm: z.string().datetime({ offset: true }).nullish(),
+});
+
+const coletaSchema = z.object({
+  coletada: z.boolean(),
+  observacao: z.string().max(400).nullish(),
+});
+
 const envioFormularioSchema = z.object({
   canal: z.enum(['whatsapp', 'email', 'ambos']),
   telefone: z.string().max(40).nullish(),
@@ -3528,6 +3538,19 @@ const causaMortisSchema = z.object({
 export class NecropsiaController {
   constructor(private readonly necropsia: NecropsiaService) {}
 
+  @Get('fila')
+  @ExigePermissao(PERMISSOES.NECROPSIA_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Os animais que aguardam a realização da necropsia',
+    description:
+      'Quinta revisão: "ao clicar em realizar exame, aparece a listagem de animais que ' +
+      'estão aguardando a realização da necropsia". Vem do corpo sob custódia, não da ' +
+      'ficha de exame — o animal entra na fila quando chega, antes de a ficha existir.',
+  })
+  async fila(@Query('q') q?: string) {
+    return this.necropsia.fila(q);
+  }
+
   @Get('casos/:casoId')
   @ExigePermissao(PERMISSOES.NECROPSIA_VISUALIZAR)
   @ApiOperation({
@@ -3550,6 +3573,55 @@ export class NecropsiaController {
   })
   async abrir(@Param('casoId', ParseUUIDPipe) casoId: string, @Body() corpo: unknown) {
     return this.necropsia.abrir(casoId, validarCorpo(aberturaNecropsiaSchema, corpo));
+  }
+
+  @Post(':id/cabecalho')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Observação do tutor e data do exame',
+    description:
+      'Mudar a observação zera a ciência: quem leu "carimbo da pata" não leu "e também ' +
+      'uma mecha da cauda".',
+  })
+  async salvarCabecalho(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.necropsia.salvarCabecalho(id, validarCorpo(cabecalhoNecropsiaSchema, corpo));
+  }
+
+  @Post(':id/ciente')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'O patologista dá ciência do pedido do tutor',
+    description:
+      'O pedido só se cumpre com o corpo na mesa — depois do descarte não há segunda ' +
+      'chance. Fica com nome e hora.',
+  })
+  async darCiencia(@Param('id', ParseUUIDPipe) id: string) {
+    await this.necropsia.darCiencia(id);
+  }
+
+  @Get(':id/sugestoes')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Sugestões do Copiloto para a bancada',
+    description:
+      'Considera o formulário, os exames anteriores do mesmo paciente e os órgãos já ' +
+      'examinados, e sugere sistemas indispensáveis e suspeitas diagnósticas. Sem ' +
+      'provedor de IA responde `disponivel: false` e o exame segue (M17 §110).',
+  })
+  async sugestoes(@Param('id', ParseUUIDPipe) id: string) {
+    return this.necropsia.sugestoes(id);
+  }
+
+  @Post('orgaos/:orgaoId/coleta')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Indica que foi coletada amostra do órgão',
+    description:
+      'Quinta revisão: "indicar quais amostras foram coletadas". Órgão não examinado ' +
+      'não aceita coleta — não há de onde coletar.',
+  })
+  async marcarColeta(@Param('orgaoId', ParseUUIDPipe) orgaoId: string, @Body() corpo: unknown) {
+    await this.necropsia.marcarColeta(orgaoId, validarCorpo(coletaSchema, corpo));
   }
 
   @Post(':id/formulario/preencher')

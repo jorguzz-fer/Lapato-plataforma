@@ -310,7 +310,7 @@ export interface PerguntaFormularioNecropsia {
   rotulo: string;
   tipo: 'texto' | 'texto_longo' | 'data_hora';
   ajuda?: string;
-  destino?: 'obitoEm' | 'circunstanciasMorte' | 'perguntasSolicitante';
+  destino?: 'obitoEm' | 'circunstanciasMorte' | 'perguntasSolicitante' | 'observacaoTutor';
 }
 
 export const PERGUNTAS_FORMULARIO_NECROPSIA: readonly PerguntaFormularioNecropsia[] = [
@@ -352,5 +352,21 @@ export const PERGUNTAS_FORMULARIO_NECROPSIA: readonly PerguntaFormularioNecropsi
     rotulo: 'Exames e diagnósticos anteriores',
     tipo: 'texto_longo',
     ajuda: 'Resultados que já existem — exames de imagem, laboratório, biópsias.',
+  },
+  {
+    /**
+     * Quinta revisao, tela do exame: "Observacao: tutor quer carimbo da pata e
+     * tufo de pelos", com o botao "Ciente" ao lado.
+     *
+     * Entra no formulario, e nao so num campo interno, porque e o tutor quem
+     * tem o pedido - e porque pedido anotado de ouvido na recepcao e pedido que
+     * se perde. Chega a tela do exame como observacao, e o patologista precisa
+     * dar ciencia: so se cumpre com o corpo na mesa.
+     */
+    chave: 'observacaoTutor',
+    rotulo: 'Pedido especial',
+    tipo: 'texto_longo',
+    ajuda: 'Lembranças (carimbo da pata, tufo de pelos) ou qualquer pedido sobre o corpo.',
+    destino: 'observacaoTutor',
   },
 ] as const;

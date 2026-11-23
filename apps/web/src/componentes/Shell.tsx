@@ -34,6 +34,7 @@ import LibraryBooksOutlined from '@mui/icons-material/LibraryBooksOutlined';
 import Science from '@mui/icons-material/ScienceOutlined';
 import Contacts from '@mui/icons-material/ContactsOutlined';
 import MedicalServices from '@mui/icons-material/MedicalServicesOutlined';
+import BiotechOutlined from '@mui/icons-material/BiotechOutlined';
 import Inventory2 from '@mui/icons-material/Inventory2Outlined';
 import LocalShippingOutlined from '@mui/icons-material/LocalShippingOutlined';
 import MenuBookOutlined from '@mui/icons-material/MenuBookOutlined';
@@ -151,6 +152,19 @@ const MENU = [
     icone: <LocalShippingOutlined fontSize="small" />,
     rotulo: 'Logística',
     permissao: 'logistica:visualizar',
+  },
+  {
+    /*
+      Quinta revisão: "Realizar exame" é entrada própria do menu de Necropsia -
+      "aparece a listagem de animais que estão aguardando a realização da
+      necropsia". Fica ao lado do controle de cadáveres porque é a mesma fila
+      física vista por outro ângulo: ali é onde o corpo está, aqui é o que falta
+      fazer com ele.
+    */
+    para: '/necropsia',
+    icone: <BiotechOutlined fontSize="small" />,
+    rotulo: 'Realizar exame',
+    permissao: 'necropsia:visualizar',
   },
   {
     /* M15: a fila é física e atravessa casos - quem está na câmara agora. */

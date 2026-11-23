@@ -110,6 +110,28 @@ export const necropsia = pgTable(
     limitacoes: jsonb('limitacoes').$type<string[]>().default([]),
     limitacoesObservacao: text('limitacoes_observacao'),
 
+    // --- Quinta revisao: a tela de realizar exame --------------------------
+    /**
+     * "Observacao: Tutor quer carimbo da pata e tufo de pelos." + botao
+     * "Ciente".
+     *
+     * Pedido do tutor que o patologista PRECISA ler antes de comecar - e um
+     * pedido que so se cumpre com o corpo na mesa. Lido depois, nao se cumpre
+     * mais: o corpo ja foi para o descarte e o tufo de pelos nao existe.
+     */
+    observacaoTutor: text('observacao_tutor'),
+    cienteEm: timestamp('ciente_em', { withTimezone: true }),
+    cientePorId: uuid('ciente_por_id').references(() => usuario.id),
+    /**
+     * "Data de entrada | Data do exame" lado a lado no cabecalho.
+     *
+     * Separada de `iniciadaEm` pelo mesmo motivo que `caso.entrada_em` e
+     * separada de `cadastrado_em` (segunda revisao): o corpo chega na sexta e a
+     * mesa so abre na segunda. `iniciadaEm` diz quando alguem abriu a ficha;
+     * esta diz quando o exame foi feito, que e a data que vai ao laudo.
+     */
+    exameEm: timestamp('exame_em', { withTimezone: true }),
+
     iniciadaEm: timestamp('iniciada_em', { withTimezone: true }).notNull().defaultNow(),
     iniciadaPorId: uuid('iniciada_por_id').references(() => usuario.id),
     concluidaEm: timestamp('concluida_em', { withTimezone: true }),
@@ -192,6 +214,18 @@ export const exameOrgao = pgTable(
     descricao: text('descricao'),
     /** Peso do orgao, quando pesado. Em gramas. */
     pesoGramas: integer('peso_gramas'),
+    /**
+     * Quinta revisao: "INDICAR QUAIS AMOSTRAS FORAM COLETADAS."
+     *
+     * Marcado no orgao, e nao numa lista a parte, porque e no orgao que a
+     * decisao acontece: quem abre o torax decide ali se o pulmao vai para o
+     * formol. A amostra fisica continua sendo do M05 - o que fica aqui e o
+     * registro de QUE a coleta foi feita, que e o que falta no laudo quando
+     * alguem pergunta meses depois se ainda ha material do rim.
+     */
+    amostraColetada: boolean('amostra_coletada').notNull().default(false),
+    /** Fixador, frasco, destino: o detalhe que permite achar o material depois. */
+    amostraObservacao: text('amostra_observacao'),
     ...colunasTempo,
   },
   (t) => [

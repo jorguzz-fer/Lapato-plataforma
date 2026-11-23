@@ -2604,6 +2604,197 @@ describe('formulário de necropsia ao tutor (M14, quinta revisão)', () => {
   });
 });
 
+describe('tela de realizar exame (M14, quinta revisão)', () => {
+  /**
+   * A tela do exame: a fila de quem aguarda, o pedido do tutor com ciencia, a
+   * data do exame separada da entrada, as amostras coletadas e as sugestoes da
+   * IA - que, sem provedor, respondem "indisponivel" sem travar nada.
+   */
+  let casoId: string;
+  let necropsiaId: string;
+  let cadaverId: string;
+  let orgaoId: string;
+
+  test('a fila mostra quem aguarda exame, com situação e prazo', async () => {
+    await entrar('recepcao@lapato.local');
+    const recebido = await req('POST', '/cadaveres', {
+      especie: 'Canina',
+      nomeAnimal: 'Nando',
+      raca: 'SRD',
+      sexo: 'M',
+      origemResponsavel: 'Mácia Gomes Lins',
+      conservacaoRecebimento: 'refrigerado',
+    });
+    expect(recebido.status, JSON.stringify(recebido.body)).toBe(201);
+    cadaverId = recebido.body.id;
+
+    await entrar('patologista@lapato.local');
+    const fila = await req('GET', '/necropsia/fila');
+    expect(fila.status, JSON.stringify(fila.body)).toBe(200);
+
+    const meu = fila.body.find((l: { cadaverId: string }) => l.cadaverId === cadaverId);
+    expect(meu, 'o corpo recebido entra na fila mesmo sem ficha de exame').toBeTruthy();
+    expect(meu.situacao).toBe('aguardando_exame');
+    expect(meu.nome).toBe('Nando');
+    expect(meu.responsavel).toBe('Mácia Gomes Lins');
+
+    // A busca encontra pelo nome do animal e pelo responsável.
+    const porNome = await req('GET', '/necropsia/fila?q=Nando');
+    expect(porNome.body.some((l: { cadaverId: string }) => l.cadaverId === cadaverId)).toBe(true);
+    const porResponsavel = await req('GET', '/necropsia/fila?q=Mácia');
+    expect(porResponsavel.body.some((l: { cadaverId: string }) => l.cadaverId === cadaverId)).toBe(
+      true,
+    );
+    const semResultado = await req('GET', '/necropsia/fila?q=zzz-nao-existe');
+    expect(semResultado.body.some((l: { cadaverId: string }) => l.cadaverId === cadaverId)).toBe(
+      false,
+    );
+  });
+
+  test('o pedido do tutor exige ciência, e mudar o pedido zera a ciência', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const criado = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0].id,
+      paciente: { nome: `Nando ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Cadáver' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    casoId = criado.body.id;
+
+    await entrar('patologista@lapato.local');
+    const abertura = await req('POST', `/necropsia/casos/${casoId}`, {
+      modalidade: 'forense',
+      responsavelSolicitacao: 'Mácia Gomes Lins',
+      cadaverId,
+    });
+    expect(abertura.status, JSON.stringify(abertura.body)).toBe(201);
+    necropsiaId = abertura.body.id;
+
+    // Sem observação não há o que dar ciência.
+    const semObservacao = await req('POST', `/necropsia/${necropsiaId}/ciente`);
+    expect(semObservacao.status).toBe(400);
+
+    const comPedido = await req('POST', `/necropsia/${necropsiaId}/cabecalho`, {
+      observacaoTutor: 'Tutor quer carimbo da pata e tufo de pêlos.',
+    });
+    expect(comPedido.status, JSON.stringify(comPedido.body)).toBe(201);
+
+    let banca = await req('GET', `/necropsia/casos/${casoId}`);
+    expect(banca.body.necropsia.observacaoTutor).toContain('carimbo da pata');
+    expect(banca.body.necropsia.cienteEm, 'pedido novo nasce sem ciência').toBeNull();
+
+    const ciente = await req('POST', `/necropsia/${necropsiaId}/ciente`);
+    expect(ciente.status).toBe(201);
+
+    banca = await req('GET', `/necropsia/casos/${casoId}`);
+    expect(banca.body.necropsia.cienteEm).not.toBeNull();
+    expect(banca.body.cientePor, 'quem leu fica pelo nome').toBeTruthy();
+
+    // O pedido muda: o visto de quem leu o texto antigo não vale para o novo.
+    await req('POST', `/necropsia/${necropsiaId}/cabecalho`, {
+      observacaoTutor: 'Carimbo da pata, tufo de pêlos e uma mecha da cauda.',
+    });
+    banca = await req('GET', `/necropsia/casos/${casoId}`);
+    expect(banca.body.necropsia.cienteEm, 'pedido alterado volta a exigir leitura').toBeNull();
+
+    const dossie = await req('GET', `/casos/${casoId}`);
+    const tipos = dossie.body.linhaDoTempo.map((e: { tipo: string }) => e.tipo);
+    expect(tipos).toContain('necropsia.ciente_observacao');
+  });
+
+  test('a data do exame é separada da entrada e não aceita futuro', async () => {
+    const futuro = new Date(Date.now() + 2 * 86_400_000).toISOString();
+    const recusado = await req('POST', `/necropsia/${necropsiaId}/cabecalho`, { exameEm: futuro });
+    expect(recusado.status, 'exame no futuro é erro de digitação').toBe(400);
+
+    const ontem = new Date(Date.now() - 86_400_000).toISOString();
+    const aceito = await req('POST', `/necropsia/${necropsiaId}/cabecalho`, { exameEm: ontem });
+    expect(aceito.status).toBe(201);
+
+    const banca = await req('GET', `/necropsia/casos/${casoId}`);
+    expect(new Date(banca.body.necropsia.exameEm).toISOString()).toBe(ontem);
+  });
+
+  test('órgão não examinado não aceita coleta de amostra', async () => {
+    const aberto = await req('POST', `/necropsia/${necropsiaId}/orgaos`, {
+      cavidade: 'toracica',
+      sistema: 'respiratorio',
+      orgao: 'Pulmão',
+      estado: 'alterado',
+      descricao: 'Edema difuso.',
+    });
+    expect(aberto.status, JSON.stringify(aberto.body)).toBe(201);
+
+    const fechado = await req('POST', `/necropsia/${necropsiaId}/orgaos`, {
+      cavidade: 'abdominal',
+      orgao: 'Baço',
+      estado: 'nao_examinado',
+    });
+    expect(fechado.status).toBe(201);
+
+    const banca = await req('GET', `/necropsia/casos/${casoId}`);
+    const pulmao = banca.body.orgaos.find((o: { orgao: string }) => o.orgao === 'Pulmão');
+    const baco = banca.body.orgaos.find((o: { orgao: string }) => o.orgao === 'Baço');
+    orgaoId = pulmao.id;
+
+    const semOrgao = await req('POST', `/necropsia/orgaos/${baco.id}/coleta`, { coletada: true });
+    expect(semOrgao.status, 'não se coleta fragmento de órgão que ninguém abriu').toBe(400);
+
+    const coletado = await req('POST', `/necropsia/orgaos/${orgaoId}/coleta`, {
+      coletada: true,
+      observacao: 'Formol 10%, frasco 2',
+    });
+    expect(coletado.status).toBe(201);
+
+    const depois = await req('GET', `/necropsia/casos/${casoId}`);
+    const pulmaoDepois = depois.body.orgaos.find((o: { orgao: string }) => o.orgao === 'Pulmão');
+    expect(pulmaoDepois.amostraColetada).toBe(true);
+    expect(pulmaoDepois.amostraObservacao).toBe('Formol 10%, frasco 2');
+  });
+
+  test('voltar o órgão para não examinado apaga a coleta', async () => {
+    const voltou = await req('POST', `/necropsia/${necropsiaId}/orgaos`, {
+      cavidade: 'toracica',
+      sistema: 'respiratorio',
+      orgao: 'Pulmão',
+      estado: 'nao_examinado',
+    });
+    expect(voltou.status).toBe(201);
+
+    const banca = await req('GET', `/necropsia/casos/${casoId}`);
+    const pulmao = banca.body.orgaos.find((o: { orgao: string }) => o.orgao === 'Pulmão');
+    expect(pulmao.amostraColetada, 'órgão não examinado não tem amostra').toBe(false);
+    expect(pulmao.amostraObservacao).toBeNull();
+  });
+
+  test('sem provedor de IA, as sugestões respondem indisponível e o exame segue', async () => {
+    const sugestoes = await req('GET', `/necropsia/${necropsiaId}/sugestoes`);
+    expect(sugestoes.status, JSON.stringify(sugestoes.body)).toBe(200);
+    expect(sugestoes.body.disponivel, 'M17 §110: o LAPATO funciona sem IA').toBe(false);
+    expect(sugestoes.body.cartoes).toEqual([]);
+
+    // E o exame continua aceitando trabalho logo depois.
+    const orgao = await req('POST', `/necropsia/${necropsiaId}/orgaos`, {
+      cavidade: 'toracica',
+      sistema: 'cardiovascular',
+      orgao: 'Coração',
+      estado: 'sem_alteracoes',
+    });
+    expect(orgao.status).toBe(201);
+  });
+
+  test('a recepção não dá ciência nem marca coleta', async () => {
+    await entrar('recepcao@lapato.local');
+    const ciente = await req('POST', `/necropsia/${necropsiaId}/ciente`);
+    expect([401, 403]).toContain(ciente.status);
+    const coleta = await req('POST', `/necropsia/orgaos/${orgaoId}/coleta`, { coletada: true });
+    expect([401, 403]).toContain(coleta.status);
+  });
+});
+
 describe('controle de cadáveres (M15)', () => {
   /**
    * O modulo responde, a qualquer momento (secao 4): quem esta sob

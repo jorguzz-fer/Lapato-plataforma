@@ -1,6 +1,6 @@
 # ADR 0010 — A API recusa subir com o schema do banco desatualizado
 
-- Status: aceito
+- Status: aceito; a opção 3 foi revista pelo ADR 0011 (2026-11-23)
 - Data: 2026-08-23
 
 ## Contexto
@@ -39,6 +39,11 @@ configuração — só não fazia isso para o schema.
    de uma réplica, duas instâncias migram ao mesmo tempo; migration destrutiva rodaria sem
    ninguém decidir; e o processo da aplicação passaria a rodar com o usuário dono do schema,
    contrariando a separação de `DATABASE_URL` e `DATABASE_MIGRATION_URL` (ADR 0002).
+
+   > **Revista pelo ADR 0011.** Esta opção foi adotada depois que o pré-deploy se mostrou
+   > incapaz de rodar o código novo: ele executa no container antigo, antes de o commit novo
+   > ser importado. Os três motivos acima foram reexaminados lá, um a um.
+
 4. **Recusar subir quando houver migrations pendentes.** O deploy falha alto, no momento em
    que quem deu deploy está olhando, e o Coolify mantém a versão anterior no ar — que está
    coerente com o banco que existe.

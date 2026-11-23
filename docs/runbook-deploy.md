@@ -485,28 +485,29 @@ O Coolify reimplanta a cada push na branch configurada, ou pelo botão da
 interface. Cada aplicativo é independente: mudança só no front reimplanta só o
 `lapato-web`.
 
-O **Pre-deployment Command** do `lapato-api` roda as migrations antes de o código
-novo subir. Isso não é ordem arbitrária — é o que torna o rollback possível.
+**A API aplica as migrations ao subir** (ADR 0011): o container do `lapato-api`
+roda o `migrate.js` da versão nova e só então abre a porta. Não há comando a
+configurar no Coolify — e o **Pre-deployment Command deve ficar vazio**. Ele roda
+dentro do container antigo, antes de o commit novo chegar, e por isso nunca aplicou
+a migration de uma versão nova; foi o que travou produção em 20/11/2026.
 
-🌐 **Painel do Coolify** → `lapato-api` → *Configuration* → **Pre-deployment Command**:
+A variável `DATABASE_MIGRATION_URL` precisa existir **no aplicativo** (não só no
+banco), apontando para o usuário dono do schema. Sem ela o container não sobe, e o
+log diz `DATABASE_MIGRATION_URL nao definida`.
 
-```
-node node_modules/@lapato/db/dist/cli/migrate.js
-```
+Se a migration **falhar**, a API nova não sobe, o healthcheck não passa e o Coolify
+mantém a versão anterior no ar. O banco fica como estava: as migrations pendentes
+rodam numa transação só, desfeita inteira. Leia o erro no log do deploy, corrija a
+migration e publique de novo.
 
-E a variável `DATABASE_MIGRATION_URL` precisa existir **no aplicativo** (não só no
-banco), apontando para o usuário dono do schema. Sem ela o comando falha; sem o
-comando, nada avisa.
-
-**A API recusa subir com o banco desatualizado** (ADR 0010). Se o pré-deploy não
-tiver rodado, o deploy falha na subida, com a lista de migrations pendentes no log,
-e o Coolify mantém a versão anterior no ar — que é coerente com o banco que existe.
-É o comportamento desejado: em 23/08/2026, antes dessa checagem existir, a API subiu
+**A API também recusa subir com o banco desatualizado** (ADR 0010). Com a migração na
+subida, esse guarda só dispara se o container for iniciado com outro comando — ele
+fica como segunda linha de defesa. Em 23/08/2026, antes dele existir, a API subiu
 contra um banco sem a coluna `miniatura_chave` e cada upload de imagem devolvia 500
 para o usuário, com a causa escondida no log do Postgres.
 
-Para subir mesmo assim, em emergência, defina `MIGRACOES_PENDENTES=avisar` no
-aplicativo. Não deixe ligado.
+`MIGRACOES_PENDENTES=avisar` faz o guarda apenas avisar, em emergência. Não ajuda
+quando a própria migration falha — aí a API nem chega ao guarda. Não deixe ligado.
 
 Depois de cada deploy:
 
@@ -524,7 +525,7 @@ A resposta traz o estado do schema:
 |---|---|
 | `ok` | Banco e código na mesma versão |
 | `desatualizado` | Migrations pendentes — só aparece com `MIGRACOES_PENDENTES=avisar` |
-| `indeterminado` | A API não conseguiu ler o controle de migrations. Rode o `migrate.js` uma vez: é ele que concede a leitura à role da aplicação |
+| `indeterminado` | A API não conseguiu ler o controle de migrations. Com a migração na subida, só acontece se o container foi iniciado com outro comando: é o `migrate.js` que concede a leitura à role da aplicação |
 
 ### Rollback
 

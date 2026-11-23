@@ -253,33 +253,36 @@ multi-stage sobre o monorepo inteiro e copiam `pnpm-workspace.yaml` e os
 `package.json` de vários pacotes. Apontar para `/infra` quebra o build no
 primeiro `COPY`.
 
-### Migrations antes do código novo
+### Migrations: a própria API aplica, ao subir
 
-No `lapato-api`, em **Pre-deployment Command**:
-
-```
-node node_modules/@lapato/db/dist/cli/migrate.js
-```
-
-Esse caminho não é palpite: a imagem é montada com `pnpm deploy`, então os
-comandos ficam em `node_modules/@lapato/db/dist/cli/`, junto da pasta `drizzle/`.
-
-O pré-deploy precisa da URL do dono do schema — acrescente ao `lapato-api`:
+A imagem do `lapato-api` aplica as migrations **na subida do container**, antes de
+a aplicação abrir a porta (ADR 0011). Não há comando a configurar — só a URL do dono
+do schema, que precisa existir no `lapato-api`:
 
 ```bash
 DATABASE_MIGRATION_URL=postgres://<usuario-do-coolify>:<senha>@<host>:5432/<banco>
 ```
 
-Rodar migration antes do código novo é o que permite rollback: toda migration
-precisa ser compatível com a versão anterior da aplicação — coluna nova sempre
-opcional, criar antes de remover, nunca renomear em um passo só.
+Sem ela, o container não sobe e o log diz por quê
+(`DATABASE_MIGRATION_URL nao definida`); o Coolify mantém a versão anterior no ar.
+
+**Não use o Pre-deployment Command para isso — e, se ele estiver preenchido, apague.**
+Era como este guia mandava fazer, e nunca funcionou: o Coolify roda o pré-deploy
+dentro do container que _já está no ar_, antes de importar o commit novo. O
+`migrate.js` que ele executa é o da versão antiga, que não conhece as migrations
+novas. Foi isso que travou produção em 20/11/2026 com nove migrations pendentes.
+
+Toda migration continua precisando ser compatível com a versão anterior da
+aplicação — coluna nova sempre opcional, criar antes de remover, nunca renomear em
+um passo só. É o que permite rollback: a imagem anterior encontra o banco à frente,
+não aplica nada e sobe.
 
 ---
 
 ## 6. Primeira subida, na ordem
 
 1. Criar o Postgres e rodar o SQL da §2.
-2. Subir o `lapato-api`. O pré-deploy aplica migrations, RLS e os triggers de
+2. Subir o `lapato-api`. Ao subir, ele aplica migrations, RLS e os triggers de
    imutabilidade.
 3. Conferir o `rolbypassrls` da §2.
 4. Provisionar a instituição real (§7).

@@ -61,4 +61,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 # Precisa de `DATABASE_MIGRATION_URL` (dono do schema). Sem ela, o migrate.js
 # falha com mensagem explicita e a API nao sobe - falhar alto no deploy e
 # melhor que pular a migration em silencio.
-CMD ["sh", "-c", "node node_modules/@lapato/db/dist/cli/migrate.js && exec node dist/main.js"]
+#
+# `env -u` tira essa URL do ambiente ANTES de o node da API nascer. Ela so serve
+# ao migrate.js; sem o `-u`, o `exec` a repassava e o processo que atende a
+# internet carregava a credencial do dono - que no Postgres do Coolify e
+# superusuario e ignora o RLS de todas as instituicoes. Qualquer falha que
+# expusesse o ambiente da API entregaria o banco inteiro (terceira auditoria).
+CMD ["sh", "-c", "node node_modules/@lapato/db/dist/cli/migrate.js && exec env -u DATABASE_MIGRATION_URL node dist/main.js"]

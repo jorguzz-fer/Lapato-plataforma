@@ -795,7 +795,14 @@ export interface FichaMacroscopia {
   larguraCm: string | null;
   alturaCm: string | null;
   pesoG: string | null;
+  /** Quinta revisão: vários fragmentos medidos como um monte. */
+  medidasEmConjunto: boolean;
+  /** Quinta revisão: adequada | parcial | inadequada; nula = ninguém avaliou. */
+  fixacao: string | null;
   materialTotalmenteIncluido: boolean;
+  /** Quinta revisão: o quadro final, revisado por quem fez a macro. */
+  resumoFinal: string | null;
+  resumoSalvoEm: string | null;
   iniciadaEm: string | null;
   concluidaEm: string | null;
   lesoes: Array<{
@@ -816,6 +823,8 @@ export interface FichaMacroscopia {
     metodoAmostragem: string | null;
     distanciaCm: string | null;
     naoAvaliavel: boolean;
+    /** Quinta revisão: a cor da tinta — é por ela que se diz QUAL margem. */
+    cor: string | null;
     lesaoRotulo: string | null;
   }>;
   cassetes: Array<{
@@ -825,6 +834,9 @@ export interface FichaMacroscopia {
     descricao: string | null;
     exigeDescalcificacao: boolean;
     fragmentos: number | null;
+    /** Quinta revisão: cor do cassete e se ele divide espaço com outra lesão. */
+    cor: string | null;
+    compartilhado: boolean;
     lesaoRotulo: string | null;
   }>;
 }

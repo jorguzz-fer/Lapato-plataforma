@@ -51,6 +51,7 @@ export const TIPO_EVENTO = [
   // M08 Macroscopia
   'macroscopia.iniciada',
   'macroscopia.concluida',
+  'macroscopia.resumo_salvo',
   'macroscopia.recorte_solicitado',
   'cassetes.gerados',
   // M09 Processamento
@@ -208,6 +209,7 @@ export const EVENTO_LABEL: Record<TipoEvento, string> = {
   'nao_conformidade.registrada': 'Não conformidade registrada',
   'macroscopia.iniciada': 'Macroscopia iniciada',
   'macroscopia.concluida': 'Macroscopia concluída',
+  'macroscopia.resumo_salvo': 'Quadro final da macroscopia salvo',
   'macroscopia.recorte_solicitado': 'Recorte solicitado — nova macroscopia sem cobrança',
   'cassetes.gerados': 'Cassetes gerados',
   'lote.enviado': 'Lote enviado ao processamento',

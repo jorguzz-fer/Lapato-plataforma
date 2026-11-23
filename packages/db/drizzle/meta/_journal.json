@@ -190,6 +190,13 @@
       "when": 1795435950339,
       "tag": "0026_demonic_peter_quill",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1795437167313,
+      "tag": "0027_pink_black_bolt",
+      "breakpoints": true
     }
   ]
 }

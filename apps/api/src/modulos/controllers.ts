@@ -79,6 +79,9 @@ import {
   MARGEM_CIRURGICA,
   MODALIDADE_COBRANCA,
   RESSALVAS_RECEBIMENTO,
+  COR_CASSETE,
+  COR_MARGEM,
+  FIXACAO_MACROSCOPIA,
   METODO_AMOSTRAGEM,
   NIVEL_BLOQUEIO,
   PERMISSOES,
@@ -538,6 +541,10 @@ const macroscopiaSchema = z.object({
   larguraCm: z.number().positive().optional(),
   alturaCm: z.number().positive().optional(),
   pesoG: z.number().positive().optional(),
+  /** Quinta revisão: "Em conjunto" — vários fragmentos medidos como um monte. */
+  medidasEmConjunto: z.boolean().optional(),
+  /** Quinta revisão: Adequada | Parcial | Inadequada, vista ao abrir o pote. */
+  fixacao: z.enum(FIXACAO_MACROSCOPIA).optional(),
   materialTotalmenteIncluido: z.boolean().optional(),
   lesoes: z
     .array(
@@ -561,6 +568,8 @@ const macroscopiaSchema = z.object({
         metodoAmostragem: z.enum(METODO_AMOSTRAGEM).optional(),
         distanciaCm: z.number().nonnegative().optional(),
         tinta: z.record(z.string(), z.unknown()).optional(),
+        /** Quinta revisão: a cor da tinta — Simples só a cor, Identificadas nome + cor. */
+        cor: z.enum(COR_MARGEM).nullish(),
         naoAvaliavel: z.boolean().optional(),
         lesaoRotulo: z.string().nullish(),
       }),
@@ -573,6 +582,10 @@ const macroscopiaSchema = z.object({
         descricao: z.string().optional(),
         exigeDescalcificacao: z.boolean().optional(),
         fragmentos: z.number().int().nonnegative().max(999).optional(),
+        /** Quinta revisão: a cor do cassete, para separar na bateria. */
+        cor: z.enum(COR_CASSETE).optional(),
+        /** Quinta revisão: "Mesmo cassete" — divide o cassete com outra lesão. */
+        compartilhado: z.boolean().optional(),
         lesaoRotulo: z.string().nullish(),
       }),
     )
@@ -645,6 +658,24 @@ export class MacroscopiaController {
       corpo,
     );
     return this.macro.comporDescricao(id, dados.selecoes, dados.lesaoRotulo);
+  }
+
+  @Post(':id/resumo')
+  @ExigePermissao(PERMISSOES.MACROSCOPIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Salva o quadro final da macroscopia, revisado',
+    description:
+      'Quinta revisão: "ao finalizar a macroscopia, aparece quadro com todas as informações da ' +
+      'macro... Todas as informações são editáveis nesse quadro. O sistema salva a data, horário ' +
+      'e usuário que fez aquela macroscopia." Fica na linha do tempo do caso — a aba de rastreio. ' +
+      'Aceita depois da conclusão: o que a conclusão congela é a amostragem, não a redação.',
+  })
+  async salvarResumo(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const dados = validarCorpo(
+      z.object({ texto: z.string().max(20000) }),
+      corpo,
+    );
+    return this.macro.salvarResumo(id, dados.texto);
   }
 
   @Post(':id/conclusao')

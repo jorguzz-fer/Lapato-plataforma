@@ -28,11 +28,22 @@ import ScienceOutlined from '@mui/icons-material/ScienceOutlined';
 import { tomBloquinho } from '@lapato/design-tokens';
 import {
   comporDescricaoMacro,
+  COR_CASSETE,
+  COR_CASSETE_HEX,
+  COR_CASSETE_LABEL,
+  COR_MARGEM,
+  COR_MARGEM_HEX,
+  COR_MARGEM_LABEL,
+  FIXACAO_MACROSCOPIA,
+  FIXACAO_MACROSCOPIA_LABEL,
   formatarMedidaCm,
   GRUPOS_DESCRITORES_MACRO,
   LATERALIDADE,
   METODO_AMOSTRAGEM,
   TEXTO_TODO_MATERIAL,
+  type CorCassete,
+  type CorMargem,
+  type FixacaoMacroscopia,
   type Lateralidade,
   type MetodoAmostragem,
 } from '@lapato/shared';
@@ -114,6 +125,12 @@ interface Margem {
   metodoAmostragem: MetodoAmostragem | '';
   distanciaCm: string;
   naoAvaliavel: boolean;
+  /**
+   * Quinta revisao: a cor da tinta. Nas margens simples e so a cor; nas
+   * identificadas, o par nome + cor - e e por ela que a microscopia diz QUAL
+   * margem esta comprometida.
+   */
+  cor: CorMargem | '';
   /** De qual lesao; vazio = da peca. */
   lesaoRotulo: string;
 }
@@ -124,6 +141,10 @@ interface CasseteNovo {
   exigeDescalcificacao: boolean;
   /** Terceira revisao: quantos fragmentos foram para este cassete. */
   fragmentos: string;
+  /** Quinta revisao: a cor, para separar na bateria de processamento. */
+  cor: CorCassete | '';
+  /** Quinta revisao: "Mesmo cassete" - divide o cassete com outra lesao. */
+  compartilhado: boolean;
   /** De qual lesao; vazio = da peca. */
   lesaoRotulo: string;
 }
@@ -195,6 +216,11 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
   const [largura, setLargura] = useState('');
   const [altura, setAltura] = useState('');
   const [peso, setPeso] = useState('');
+  /** Quinta revisão: "Em conjunto" e a qualidade da fixação, vistas na bancada. */
+  const [emConjunto, setEmConjunto] = useState(false);
+  const [fixacao, setFixacao] = useState<FixacaoMacroscopia | ''>('');
+  /** Quinta revisão: o quadro final, editável, salvo com data, hora e nome. */
+  const [resumo, setResumo] = useState('');
   const [totalmenteIncluido, setTotalmenteIncluido] = useState(false);
   const [lesoes, setLesoes] = useState<Lesao[]>([]);
   const [outroPorGrupo, setOutroPorGrupo] = useState<Record<string, string>>({});
@@ -247,6 +273,9 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
     setLargura(dados?.larguraCm ?? '');
     setAltura(dados?.alturaCm ?? '');
     setPeso(dados?.pesoG ?? '');
+    setEmConjunto(dados?.medidasEmConjunto ?? false);
+    setFixacao((dados?.fixacao as FixacaoMacroscopia | null) ?? '');
+    setResumo(dados?.resumoFinal ?? '');
     setTotalmenteIncluido(dados?.materialTotalmenteIncluido ?? false);
     const lesoesGravadas: Lesao[] = (dados?.lesoes ?? []).map((l) => ({
       id: l.id,
@@ -279,6 +308,7 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
         metodoAmostragem: (m.metodoAmostragem as MetodoAmostragem | null) ?? '',
         distanciaCm: m.distanciaCm ?? '',
         naoAvaliavel: m.naoAvaliavel,
+        cor: (m.cor as CorMargem | null) ?? '',
         lesaoRotulo: m.lesaoRotulo ?? '',
       })),
     );
@@ -370,6 +400,8 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
       ...(numero(largura) ? { larguraCm: numero(largura) } : {}),
       ...(numero(altura) ? { alturaCm: numero(altura) } : {}),
       ...(numero(peso) ? { pesoG: numero(peso) } : {}),
+      medidasEmConjunto: emConjunto,
+      ...(fixacao ? { fixacao } : {}),
       materialTotalmenteIncluido: totalmenteIncluido,
       ...(vivas.length > 0
         ? {
@@ -393,6 +425,7 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
               ...(m.metodoAmostragem ? { metodoAmostragem: m.metodoAmostragem } : {}),
               ...(numero(m.distanciaCm) !== undefined ? { distanciaCm: numero(m.distanciaCm) } : {}),
               naoAvaliavel: m.naoAvaliavel,
+              cor: m.cor || null,
               lesaoRotulo: m.lesaoRotulo || null,
             })),
           }
@@ -405,6 +438,8 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
               ...(c.descricao.trim() ? { descricao: c.descricao.trim() } : {}),
               exigeDescalcificacao: c.exigeDescalcificacao,
               ...(numero(c.fragmentos) !== undefined ? { fragmentos: numero(c.fragmentos) } : {}),
+              ...(c.cor ? { cor: c.cor } : {}),
+              compartilhado: c.compartilhado,
               lesaoRotulo: c.lesaoRotulo || null,
             })),
           }
@@ -505,6 +540,103 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
     setDescricaoTexto(partes.join('\n\n'));
   }
 
+  /**
+   * Monta o quadro final a partir do que está na ficha.
+   *
+   * O documento pede "todas as informações da macro: texto, cores, nº de
+   * cassetes, nº de fragmentos, margens". Monta a partir da TELA, e não do
+   * servidor, para o quadro refletir o que a pessoa acabou de digitar — se ela
+   * ainda não salvou, é o que está à frente dela que ela quer revisar.
+   */
+  function montarResumo(): string {
+    const linhas: string[] = [];
+
+    if (descricaoTexto.trim()) linhas.push(descricaoTexto.trim());
+
+    const medida = formatarMedidaCm([numero(comprimento), numero(largura), numero(altura)]);
+    if (medida) {
+      linhas.push(`Medidas: ${emConjunto ? `em conjunto ${medida}` : medida}.`);
+    }
+    if (numero(peso)) linhas.push(`Peso: ${peso} g.`);
+    if (fixacao) linhas.push(`Fixação: ${FIXACAO_MACROSCOPIA_LABEL[fixacao]}.`);
+
+    const cassetes = [
+      ...(ficha?.cassetes ?? []).map((c) => ({
+        rotulo: c.identificador.slice(c.identificador.lastIndexOf('-') + 1),
+        tecido: c.tecidoOrigem,
+        fragmentos: c.fragmentos,
+        cor: c.cor,
+        compartilhado: c.compartilhado,
+      })),
+      ...novosCassetes.map((c, i) => ({
+        rotulo: `novo ${i + 1}`,
+        tecido: c.tecidoOrigem.trim(),
+        fragmentos: numero(c.fragmentos) ?? null,
+        cor: c.cor || null,
+        compartilhado: c.compartilhado,
+      })),
+    ];
+
+    if (cassetes.length > 0) {
+      linhas.push(
+        `Cassetes (${cassetes.length}), ${resumoCassetes.fragmentos} fragmento(s):`,
+        ...cassetes.map((c) =>
+          [
+            `  • ${c.rotulo}`,
+            c.tecido || '(sem tecido de origem)',
+            c.cor ? COR_CASSETE_LABEL[c.cor as CorCassete].toLowerCase() : null,
+            c.fragmentos != null ? `${c.fragmentos} fragmento(s)` : null,
+            c.compartilhado ? 'mesmo cassete' : null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        ),
+      );
+    }
+
+    const comNome = margens.filter((m) => m.nome.trim());
+    if (comNome.length > 0) {
+      linhas.push(
+        'Margens:',
+        ...comNome.map((m) =>
+          [
+            `  • ${m.nome.trim()}`,
+            m.cor ? COR_MARGEM_LABEL[m.cor].toLowerCase() : null,
+            m.naoAvaliavel
+              ? 'não avaliável'
+              : m.distanciaCm.trim()
+                ? `a ${m.distanciaCm} cm`
+                : null,
+            m.lesaoRotulo || null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        ),
+      );
+    }
+
+    if (totalmenteIncluido) linhas.push('Todo o material foi incluído.');
+
+    return linhas.join('\n');
+  }
+
+  async function salvarResumo() {
+    if (!ficha) return;
+    setOcupado(true);
+    setErro(null);
+    try {
+      await api.post(`/macroscopia/${ficha.id}/resumo`, { texto: resumo });
+      // Recarrega só para trazer o "salvo em" do servidor, que é o registro.
+      const atual = await api.get<FichaMacroscopia | null>(`/macroscopia/amostras/${amostraId}`);
+      if (atual) setFicha(atual);
+      setAviso('Quadro final salvo, com a data, a hora e o seu nome.');
+    } catch (err) {
+      setErro(err instanceof ErroApi ? err.detalhe : 'Não foi possível salvar o quadro.');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
   async function concluir() {
     // Concluir sem salvar antes descartaria o que está na tela.
     if (!(await salvar(true))) return;
@@ -569,6 +701,8 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
         descricao: '',
         exigeDescalcificacao: false,
         fragmentos: '',
+        cor: '' as const,
+        compartilhado: false,
         lesaoRotulo,
       })),
     ]);
@@ -741,12 +875,55 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
                 <Medida rotulo="Largura (cm)" valor={largura} aoMudar={setLargura} travado={concluida} />
                 <Medida rotulo="Altura (cm)" valor={altura} aoMudar={setAltura} travado={concluida} />
                 <Medida rotulo="Peso (g)" valor={peso} aoMudar={setPeso} travado={concluida} />
+                {/*
+                  Quinta revisão: o botão "Em conjunto" ao lado das medidas.
+                  Vários fragmentos pequenos são medidos como um monte, e a
+                  frase precisa dizer isso — "mede" sugeriria uma peça única
+                  daquele tamanho, que é outra afirmação sobre o material.
+                */}
+                <Chip
+                  label="Em conjunto"
+                  size="small"
+                  color={emConjunto ? 'primary' : 'default'}
+                  variant={emConjunto ? 'filled' : 'outlined'}
+                  onClick={concluida ? undefined : () => setEmConjunto((v) => !v)}
+                  sx={{ fontSize: 12.5 }}
+                />
                 {medidaPeca && (
                   <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
-                    Sai como <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>{medidaPeca}</Box>
+                    Sai como{' '}
+                    <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                      {emConjunto ? `medem em conjunto ${medidaPeca}` : `mede ${medidaPeca}`}
+                    </Box>
                   </Typography>
                 )}
               </Stack>
+
+              {/*
+                Fixação: avaliada ao abrir o pote, porque é aí que se vê.
+                Registrada na hora, é uma ressalva técnica; descoberta depois, é
+                um diagnóstico posto em dúvida sem ninguém saber por quê.
+              */}
+              <Box>
+                <RotuloGrupo>Fixação</RotuloGrupo>
+                <Stack direction="row" sx={{ gap: 0.75, flexWrap: 'wrap' }}>
+                  {FIXACAO_MACROSCOPIA.map((v) => (
+                    <Chip
+                      key={v}
+                      size="small"
+                      label={FIXACAO_MACROSCOPIA_LABEL[v]}
+                      color={fixacao === v ? (v === 'adequada' ? 'success' : 'warning') : 'default'}
+                      variant={fixacao === v ? 'filled' : 'outlined'}
+                      onClick={concluida ? undefined : () => setFixacao(fixacao === v ? '' : v)}
+                    />
+                  ))}
+                </Stack>
+                <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mt: 0.5 }}>
+                  Entra no fim da descrição da peça. Parcial ou inadequada explica artefato na
+                  lâmina e limita o que o laudo pode afirmar.
+                </Typography>
+              </Box>
+
               <FormControlLabel
                 control={
                   <Checkbox
@@ -1024,7 +1201,14 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
                             onClick={() =>
                               setMargens((a) => [
                                 ...a,
-                                { nome: '', metodoAmostragem: '', distanciaCm: '', naoAvaliavel: false, lesaoRotulo: rotulo },
+                                {
+                                  nome: '',
+                                  metodoAmostragem: '',
+                                  distanciaCm: '',
+                                  naoAvaliavel: false,
+                                  cor: '',
+                                  lesaoRotulo: rotulo,
+                                },
                               ])
                             }
                           >
@@ -1207,6 +1391,54 @@ export function Macroscopia({ exigeSupervisao, permissoes }: Props) {
                 disabled={concluida}
               />
             </Secao>
+
+            {/*
+              Quinta revisão: "ao finalizar a macroscopia, aparece quadro com
+              todas as informações da macro, Texto, cores, nº de cassetes, nº de
+              fragmentos, margens… Todas as informações são editáveis nesse
+              quadro. O sistema salva a data, horário e usuário que fez aquela
+              macroscopia. Essas informações ficam salvas na aba de rastreio."
+
+              O botão monta o quadro a partir do que está na ficha; o texto é
+              editável e salva por conta própria, porque o que vale é o que a
+              pessoa CONFERIU — e o registro de quem conferiu só tem sentido se
+              for gravado no mesmo ato.
+            */}
+            <Secao
+              titulo="Quadro final"
+              descricao="O apanhado da macroscopia, revisado por quem a fez. Fica na linha do tempo do caso com a data, a hora e o nome."
+              acao={
+                <Stack direction="row" spacing={1}>
+                  <Button size="small" onClick={() => setResumo(montarResumo())}>
+                    Montar o quadro
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    onClick={() => void salvarResumo()}
+                    disabled={ocupado || resumo.trim() === ''}
+                  >
+                    Salvar
+                  </Button>
+                </Stack>
+              }
+            >
+              <TextField
+                value={resumo}
+                onChange={(e) => setResumo(e.target.value)}
+                multiline
+                minRows={6}
+                fullWidth
+                placeholder="Clique em “Montar o quadro” para trazer texto, cores, cassetes, fragmentos e margens — e ajuste o que precisar."
+              />
+              <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
+                {ficha.resumoSalvoEm
+                  ? `Salvo em ${new Date(ficha.resumoSalvoEm).toLocaleString('pt-BR')}.`
+                  : 'Ainda não salvo.'}{' '}
+                Aceita edição depois de concluída: o que a conclusão congela é a amostragem, não a
+                redação.
+              </Typography>
+            </Secao>
           </Stack>
 
           <input
@@ -1303,6 +1535,14 @@ function LinhaCasseteGravado({ cassete }: { cassete: FichaMacroscopia['cassetes'
   return (
     <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
       <Chip size="small" label={cassete.identificador} sx={{ ...MONO, fontSize: 12 }} />
+      {cassete.cor && (
+        <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
+          <AmostraDeCor cor={COR_CASSETE_HEX[cassete.cor as CorCassete]} />
+          <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>
+            {COR_CASSETE_LABEL[cassete.cor as CorCassete]}
+          </Typography>
+        </Stack>
+      )}
       <Typography sx={{ fontSize: 13.5 }}>{cassete.tecidoOrigem}</Typography>
       {cassete.descricao && (
         <Typography sx={{ fontSize: 12.5, color: 'text.secondary' }}>{cassete.descricao}</Typography>
@@ -1310,6 +1550,11 @@ function LinhaCasseteGravado({ cassete }: { cassete: FichaMacroscopia['cassetes'
       {cassete.exigeDescalcificacao && <Chip size="small" variant="outlined" label="descalcificação" />}
       {cassete.fragmentos != null && (
         <Chip size="small" variant="outlined" label={`${cassete.fragmentos} fragmento(s)`} />
+      )}
+      {cassete.compartilhado && (
+        <Tooltip title="Divide o cassete com outra lesão — há mais de um tecido no mesmo corte">
+          <Chip size="small" color="warning" variant="outlined" label="mesmo cassete" />
+        </Tooltip>
       )}
       <Tooltip title="Gravado — o identificador é definitivo">
         <CheckOutlined sx={{ fontSize: 16, color: 'success.main' }} />
@@ -1356,11 +1601,63 @@ function LinhaCasseteNovo({
         sx={{ width: { xs: '100%', md: 120 } }}
         helperText=" "
       />
+      {/*
+        Quinta revisão: a cor do cassete. Não é enfeite — é como a bancada
+        separa na bateria de processamento e como quem corta sabe de relance de
+        qual amostra o bloco é, sem ler o identificador impresso em 6pt.
+      */}
+      <TextField
+        select
+        label="Cor"
+        value={cassete.cor}
+        onChange={(e) => mudar({ cor: e.target.value as CorCassete })}
+        sx={{ minWidth: 140, width: { xs: '100%', md: 'auto' } }}
+        helperText=" "
+        slotProps={{
+          select: {
+            renderValue: (v) =>
+              v ? (
+                <Stack direction="row" sx={{ gap: 0.75, alignItems: 'center' }}>
+                  <AmostraDeCor cor={COR_CASSETE_HEX[v as CorCassete]} />
+                  {COR_CASSETE_LABEL[v as CorCassete]}
+                </Stack>
+              ) : (
+                '—'
+              ),
+          },
+        }}
+      >
+        <MenuItem value="">—</MenuItem>
+        {COR_CASSETE.map((v) => (
+          <MenuItem key={v} value={v}>
+            <Stack direction="row" sx={{ gap: 0.75, alignItems: 'center' }}>
+              <AmostraDeCor cor={COR_CASSETE_HEX[v]} />
+              {COR_CASSETE_LABEL[v]}
+            </Stack>
+          </MenuItem>
+        ))}
+      </TextField>
       <FormControlLabel
         control={
           <Checkbox checked={cassete.exigeDescalcificacao} onChange={(e) => mudar({ exigeDescalcificacao: e.target.checked })} />
         }
         label="Descalcificação"
+        slotProps={{ typography: { sx: { fontSize: 13 } } }}
+        sx={{ mt: 1 }}
+      />
+      {/*
+        "Mesmo cassete": fragmentos de mais de uma lesão dividem o cassete, o
+        que é rotina em peça pequena. Quem lê a lâmina PRECISA saber — dois
+        tecidos no mesmo corte sem aviso viram um achado que não existe.
+      */}
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={cassete.compartilhado}
+            onChange={(e) => mudar({ compartilhado: e.target.checked })}
+          />
+        }
+        label="Mesmo cassete"
         slotProps={{ typography: { sx: { fontSize: 13 } } }}
         sx={{ mt: 1 }}
       />
@@ -1417,6 +1714,42 @@ function LinhaMargem({
         erro={!concluida && !margem.naoAvaliavel && margem.distanciaCm.trim() === ''}
         aoMudar={(v) => mudar({ distanciaCm: v })}
       />
+      {/*
+        Quinta revisão: a cor da tinta. É por ela que a microscopia diz QUAL
+        margem está comprometida — sem a cor, "margem comprometida" não diz ao
+        cirurgião onde voltar.
+      */}
+      <TextField
+        select
+        label="Cor da tinta"
+        value={margem.cor}
+        onChange={(e) => mudar({ cor: e.target.value as CorMargem })}
+        disabled={concluida}
+        sx={{ minWidth: 165, width: { xs: '100%', md: 'auto' } }}
+        slotProps={{
+          select: {
+            renderValue: (v) =>
+              v ? (
+                <Stack direction="row" sx={{ gap: 0.75, alignItems: 'center' }}>
+                  <AmostraDeCor cor={COR_MARGEM_HEX[v as CorMargem]} />
+                  {COR_MARGEM_LABEL[v as CorMargem]}
+                </Stack>
+              ) : (
+                '—'
+              ),
+          },
+        }}
+      >
+        <MenuItem value="">—</MenuItem>
+        {COR_MARGEM.map((v) => (
+          <MenuItem key={v} value={v}>
+            <Stack direction="row" sx={{ gap: 0.75, alignItems: 'center' }}>
+              <AmostraDeCor cor={COR_MARGEM_HEX[v]} />
+              {COR_MARGEM_LABEL[v]}
+            </Stack>
+          </MenuItem>
+        ))}
+      </TextField>
       <FormControlLabel
         control={
           <Checkbox
@@ -1514,6 +1847,31 @@ function Remover({ rotulo, aoRemover }: { rotulo: string; aoRemover: () => void 
 }
 
 /** Rótulo curto e maiúsculo que abre cada grupo de bloquinhos. */
+/**
+ * O quadradinho de cor ao lado do nome.
+ *
+ * A cor PRECISA ser a mesma na tela, na etiqueta e no laudo - por isso o hex
+ * vem do shared, e nao de cada tela escolher o seu verde. Nunca aparece
+ * sozinho: o nome vem junto, porque quem nao distingue verde de marrom ainda
+ * precisa saber qual margem e qual (a mesma regra do M07 para os alertas).
+ */
+function AmostraDeCor({ cor }: { cor: string }) {
+  return (
+    <Box
+      aria-hidden
+      sx={{
+        width: 14,
+        height: 14,
+        borderRadius: 0.5,
+        bgcolor: cor,
+        border: '1px solid',
+        borderColor: 'divider',
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
 function RotuloGrupo({ children }: { children: React.ReactNode }) {
   return (
     <Typography

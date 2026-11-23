@@ -206,6 +206,13 @@ function enumerar(itens: string[]): string {
  * Eixo vazio nao aparece; nenhum eixo, nada. A ordem e imposta aqui porque quem
  * digita mede na ordem em que pega a peca, e o texto tem convencao propria.
  */
+/** Como a fixacao entra na frase do laudo, nao como rotulo de botao. */
+const FIXACAO_NA_FRASE = {
+  adequada: 'Fixação adequada',
+  parcial: 'Fixação parcial — pode haver artefato de autólise',
+  inadequada: 'Fixação inadequada — achados microscópicos sujeitos a artefato',
+} as const;
+
 export function formatarMedidaCm(valores: Array<number | null | undefined>): string | null {
   const validos = valores
     .filter((v): v is number => v != null && Number.isFinite(v) && v > 0)
@@ -216,7 +223,21 @@ export function formatarMedidaCm(valores: Array<number | null | undefined>): str
 
 export function comporDescricaoMacro(
   selecoes: Record<string, string[]>,
-  medidas?: { comprimentoCm?: number; larguraCm?: number; alturaCm?: number; pesoG?: number },
+  medidas?: {
+    comprimentoCm?: number;
+    larguraCm?: number;
+    alturaCm?: number;
+    pesoG?: number;
+    /**
+     * Quinta revisao: o botao "Em conjunto" ao lado das medidas. Varios
+     * fragmentos pequenos sao medidos como um monte - a frase precisa dizer
+     * isso, senao sugere uma peca unica daquele tamanho, que e uma afirmacao
+     * diferente sobre o material.
+     */
+    emConjunto?: boolean;
+  },
+  /** Quinta revisao: Adequada | Parcial | Inadequada - fecha a frase da peca. */
+  fixacao?: 'adequada' | 'parcial' | 'inadequada' | null,
 ): string {
   const marcados = (chave: string) => (selecoes[chave] ?? []).filter((s) => s.trim() !== '');
 
@@ -244,7 +265,7 @@ export function comporDescricaoMacro(
   if (medidas) {
     const dimensoes = formatarMedidaCm([medidas.comprimentoCm, medidas.larguraCm, medidas.alturaCm]);
     const trechos: string[] = [];
-    if (dimensoes) trechos.push(`Mede ${dimensoes}`);
+    if (dimensoes) trechos.push(`${medidas.emConjunto ? 'Medem em conjunto' : 'Mede'} ${dimensoes}`);
     if (medidas.pesoG != null && medidas.pesoG > 0) {
       trechos.push(`pesa ${medidas.pesoG.toLocaleString('pt-BR')} g`);
     }
@@ -252,6 +273,13 @@ export function comporDescricaoMacro(
   }
 
   for (const fecho of fechos) frases.push(`${fecho}.`);
+
+  /**
+   * A fixacao fecha a descricao, e nao abre: ela e uma ressalva tecnica sobre o
+   * material, nao uma caracteristica da lesao. "Adequada" tambem entra, porque
+   * o silencio nao distingue "estava boa" de "ninguem olhou".
+   */
+  if (fixacao) frases.push(`${FIXACAO_NA_FRASE[fixacao]}.`);
 
   return frases.join(' ').trim();
 }

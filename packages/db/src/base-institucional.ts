@@ -408,7 +408,18 @@ export const TABELAS_MESTRES: Array<{ chave: string; nome: string; termos: strin
   {
     chave: 'fixador',
     nome: 'Fixadores',
-    termos: ['Formol 10% tamponado', 'Formol 10% não tamponado', 'Bouin', 'Álcool 70%'],
+    /**
+     * "Nao fixada" e o padrao da citologia (quinta revisao): a lamina chega
+     * seca da coleta. E um valor legitimo do campo, nao a ausencia dele - por
+     * isso esta na tabela, e nao como "deixar em branco".
+     */
+    termos: [
+      'Formol 10% tamponado',
+      'Formol 10% não tamponado',
+      'Bouin',
+      'Álcool 70%',
+      'Não fixada',
+    ],
   },
   {
     chave: 'recipiente',
@@ -670,6 +681,41 @@ export const TIPOS_PENDENCIA: Array<{
   { chave: 'macroscopia', nome: 'Macroscopia' },
   { chave: 'outra', nome: 'Outra' },
 ];
+
+/**
+ * Racas para a lista nao nascer vazia, por especie.
+ *
+ * O documento pede um dropdown "abastecido com as racas pelo uso" - entao esta
+ * lista e so o ponto de partida do primeiro dia, nao um catalogo. Ela cresce
+ * sozinha a cada cadastro, e o laboratorio pode inativar o que nao ve. "SRD"
+ * vem primeiro de proposito: e o que mais se digita, e e o que aparece no
+ * proprio desenho da tela.
+ *
+ * Especies sem lista aqui (Bovina, Ave, Replil, Roedor) comecam vazias e
+ * aprendem do zero - inventar racas de ave para um laboratorio de pequenos
+ * animais seria enche-lo de opcoes que ele nunca vai usar.
+ */
+export const RACAS_INICIAIS: Record<string, string[]> = {
+  Canina: [
+    'SRD',
+    'Labrador Retriever',
+    'Golden Retriever',
+    'Shih Tzu',
+    'Poodle',
+    'Yorkshire Terrier',
+    'Pinscher',
+    'Bulldog Francês',
+    'Pastor Alemão',
+    'Rottweiler',
+    'Dachshund',
+    'Border Collie',
+    'Pug',
+    'Lhasa Apso',
+    'Maltês',
+  ],
+  Felina: ['SRD', 'Persa', 'Siamês', 'Maine Coon', 'Angorá', 'Bengal', 'Ragdoll', 'Sphynx'],
+  Equina: ['Mangalarga Marchador', 'Quarto de Milha', 'Puro Sangue Inglês', 'Crioulo', 'Árabe'],
+};
 
 /** Setores criados na unidade sede, na ordem do fluxo. */
 const SETORES_PADRAO = ['recepcao', 'triagem', 'macroscopia', 'microscopia', 'histotecnica'];
@@ -937,15 +983,40 @@ export async function criarBaseInstitucional(
       .values({ tenantId, chave: def.chave, nome: def.nome, sistema: true })
       .returning();
 
-    await tx.insert(s.termo).values(
-      def.termos.map((valor, i) => ({
-        tenantId,
-        tabelaId: tabela!.id,
-        valor,
-        codigo: codificar(valor),
-        ordem: i,
-      })),
-    );
+    const termos = await tx
+      .insert(s.termo)
+      .values(
+        def.termos.map((valor, i) => ({
+          tenantId,
+          tabelaId: tabela!.id,
+          valor,
+          codigo: codificar(valor),
+          ordem: i,
+        })),
+      )
+      .returning();
+
+    /**
+     * Racas iniciais, penduradas na especie recem-criada. A lista cresce pelo
+     * uso a cada cadastro (quinta revisao); isto e so o ponto de partida.
+     */
+    if (def.chave === 'especie') {
+      const iniciais = termos.flatMap((especie) => {
+        const lista = RACAS_INICIAIS[especie.valor] ?? [];
+        return lista.map((nome, i) => ({
+          tenantId,
+          especieId: especie.id,
+          nome,
+          /**
+           * A lista e ordenada por `usos`, entao a ordem escrita aqui vira uma
+           * dianteira pequena - "SRD" no topo no primeiro dia. Bastam alguns
+           * cadastros reais para o uso do laboratorio passar na frente.
+           */
+          usos: lista.length - i,
+        }));
+      });
+      if (iniciais.length > 0) await tx.insert(s.raca).values(iniciais);
+    }
   }
 
   // --- M01: servicos -----------------------------------------------------

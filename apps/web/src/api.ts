@@ -318,7 +318,17 @@ export interface Dossie {
    * `exigeTriagem` (M01) entra na precondicao pre-analitica: servico que
    * dispensa triagem nao a exige antes da bancada.
    */
-  servico: { nome: string; modalidade: string; exigeTriagem: boolean };
+  servico: {
+    nome: string;
+    modalidade: string;
+    exigeTriagem: boolean;
+    /**
+     * Citologia (quinta revisão): serviço sem macroscopia conta lâmina, não
+     * fragmento, e não tem margem para avaliar. É a flag que distingue o
+     * registro de cito do de histo.
+     */
+    exigeMacroscopia: boolean;
+  };
   estado: { etapa: string; previsaoLiberacao: string | null; bloqueado: boolean } | null;
   /** Para quem foi a lâmina (segunda review) — nulo enquanto ninguém a destinou. */
   patologistaResponsavel: { id: string; nome: string } | null;
@@ -348,6 +358,9 @@ export interface Dossie {
     observacoes: string | null;
     quantidadeDeclarada: number | null;
     quantidadeRecebida: number | null;
+    /** Citologia (quinta revisão): quantas lâminas vieram da coleta. */
+    laminasDeclaradas: number | null;
+    laminasRecebidas: number | null;
     /** Conferência (documento do Hugo): fragmentos por pote e ressalva em dropdown. */
     fragmentosRecebidos: number | null;
     fragmentosMultiplos: boolean;
@@ -1436,6 +1449,15 @@ export interface TipoPendencia {
   nome: string;
   bloqueiaPadrao: string;
   ordem: number;
+}
+
+/**
+ * Raça conhecida da espécie — a lista que se abastece pelo uso (quinta
+ * revisão). Quem cadastra pode escrever uma que não está aqui.
+ */
+export interface RacaConhecida {
+  id: string;
+  nome: string;
 }
 
 /** Amostra do caso, para escolher o alvo do pedido (DB28901 A, B, C). */

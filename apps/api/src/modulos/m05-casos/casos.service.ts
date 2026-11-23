@@ -1,5 +1,17 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { aliasedTable, and, desc, eq, getTableColumns, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
+import {
+  aliasedTable,
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  ilike,
+  inArray,
+  isNull,
+  or,
+  sql,
+} from 'drizzle-orm';
 import {
   amostra,
   bloco,
@@ -10,11 +22,14 @@ import {
   historicoClinico,
   lamina,
   laudo,
+  notificacaoPendente,
   paciente,
   perfil,
+  raca,
   recipiente,
   servico,
   termo,
+  tipoPendencia,
   tutor,
   usuario,
   usuarioPerfil,
@@ -34,6 +49,7 @@ import { DbService } from '../../core/db/db.service.js';
 import { EventosService } from '../../core/eventos/eventos.service.js';
 import { AuditoriaService } from '../../core/auditoria/auditoria.service.js';
 import { NumeracaoService } from '../m01-administracao/numeracao.service.js';
+import { SolicitacoesService } from '../m10-solicitacoes/solicitacoes.service.js';
 import { FluxoService } from '../m07-fluxo/fluxo.service.js';
 import { OrdensService } from '../m20-ordens/ordens.service.js';
 import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
@@ -64,6 +80,8 @@ export interface DadosRecipienteEdicao {
   fixadorId?: string | null;
   identificacaoExterna?: string | null;
   quantidadeDeclarada?: number;
+  /** Citologia: quantas laminas vieram da coleta (quinta revisao). */
+  laminasDeclaradas?: number;
 }
 
 export interface DadosNovoCaso {
@@ -97,6 +115,7 @@ export interface DadosNovoCaso {
     fixadorId?: string;
     identificacaoExterna?: string;
     quantidadeDeclarada?: number;
+    laminasDeclaradas?: number;
   }>;
 }
 
@@ -117,6 +136,8 @@ export class CasosService {
     private readonly eventos: EventosService,
     private readonly auditoria: AuditoriaService,
     private readonly numeracao: NumeracaoService,
+    /** A pendencia e do M10; o M05 so estabelece o contexto (quinta revisao). */
+    private readonly solicitacoes: SolicitacoesService,
     private readonly fluxo: FluxoService,
     private readonly ordens: OrdensService,
   ) {}
@@ -275,6 +296,11 @@ export class CasosService {
       /** Documento do Hugo: fragmentos por pote (numero) ou "multiplos". */
       fragmentosRecebidos?: number | null;
       fragmentosMultiplos?: boolean;
+      /**
+       * Citologia (quinta revisao): "na cito, a conferencia ja e feita aqui no
+       * recebimento" - e o que se confere e quantas laminas vieram.
+       */
+      laminasRecebidas?: number | null;
       ressalva?: string | null;
       ressalvaDetalhe?: string | null;
     }>,
@@ -311,6 +337,7 @@ export class CasosService {
             quantidadeRecebida: item.quantidadeRecebida,
             fragmentosRecebidos: item.fragmentosMultiplos ? null : (item.fragmentosRecebidos ?? null),
             fragmentosMultiplos: item.fragmentosMultiplos ?? false,
+            laminasRecebidas: item.laminasRecebidas ?? null,
             ressalva: item.ressalva || null,
             ressalvaDetalhe: item.ressalvaDetalhe?.trim() || null,
             recebidoEm: new Date(),
@@ -352,6 +379,33 @@ export class CasosService {
             },
           });
         }
+
+        /**
+         * Na citologia a lamina E o material: vieram duas e chegou uma, o
+         * caso perdeu metade do que seria lido. A divergencia de laminas vale
+         * tanto quanto a de frascos.
+         */
+        if (
+          alvo.laminasDeclaradas !== null &&
+          item.laminasRecebidas !== undefined &&
+          item.laminasRecebidas !== null &&
+          alvo.laminasDeclaradas !== item.laminasRecebidas
+        ) {
+          divergencias++;
+          await this.eventos.publicar(tx, {
+            tipo: 'divergencia.identificada',
+            casoId,
+            moduloOrigem: MODULOS.M05_RECEBIMENTO,
+            objetoTipo: 'recipiente',
+            objetoId: alvo.id,
+            payload: {
+              recipiente: alvo.identificador,
+              objeto: 'laminas',
+              declarada: alvo.laminasDeclaradas,
+              recebida: item.laminasRecebidas,
+            },
+          });
+        }
       }
 
       await tx
@@ -378,6 +432,138 @@ export class CasosService {
       await this.ordens.criarParaCaso(tx, casoId);
 
       return { divergencias };
+    });
+  }
+
+  /**
+   * "Gerar pendencia macroscopia", na tela de conferencia.
+   *
+   * Quinta revisao: "a amostra fica pendente para o tecnico responsavel pela
+   * checagem, permitindo que a amostra nao fique esquecida". E o caso do
+   * conferente que abre o pote, ve algo que nao bate com a requisicao e nao e
+   * ele quem decide - mas tambem nao pode deixar passar.
+   *
+   * A pendencia e do M10; aqui so se estabelece o contexto. Ela nasce com o
+   * tipo "Macroscopia" do catalogo, para contar no fim do mes quantas vezes a
+   * bancada parou por isso.
+   */
+  async pendenciaDeMacroscopia(
+    casoId: string,
+    dados: { amostraIds?: string[]; responsavelId?: string; observacao: string },
+  ): Promise<{ id: string; criadas: number }> {
+    const ctx = exigirContexto();
+
+    const tipoId = await this.db.executar(async (tx) => {
+      const [tipo] = await tx
+        .select({ id: tipoPendencia.id })
+        .from(tipoPendencia)
+        .where(
+          and(
+            eq(tipoPendencia.tenantId, ctx.tenantId),
+            eq(tipoPendencia.chave, 'macroscopia'),
+            isNull(tipoPendencia.inativadoEm),
+          ),
+        )
+        .limit(1);
+      return tipo?.id;
+    });
+
+    return this.solicitacoes.criarPendencia({
+      casoId,
+      // Sem o tipo no catalogo (alguem o inativou), o rotulo em texto segura a
+      // pendencia de pe - melhor uma pendencia sem tipo do que nenhuma.
+      ...(tipoId ? { tipoId } : {}),
+      tipo: 'Macroscopia',
+      descricao: dados.observacao.trim(),
+      ...(dados.responsavelId ? { responsavelId: dados.responsavelId } : {}),
+      ...(dados.amostraIds?.length ? { amostraIds: dados.amostraIds } : {}),
+      // Sem destino nominal, fica com quem opera a bancada da macro.
+      ...(dados.responsavelId ? {} : { setorResponsavel: 'macroscopia' }),
+    });
+  }
+
+  /**
+   * "Enviar ressalva para cliente", na tela de conferencia.
+   *
+   * Quinta revisao: "a pendencia e fotos capturadas podem ser enviadas direto
+   * para o cliente (clinica) para que as duvidas possam ser resolvidas". Hoje
+   * isso e uma ligacao ou um WhatsApp que ninguem registra; aqui vira um
+   * evento do caso, visivel no Portal, mais uma notificacao enfileirada.
+   *
+   * Como no envio do laudo (M11), o M05 NAO envia: ele enfileira. Quem escolhe
+   * canal, monta a mensagem e registra a entrega e o M26. Prometer "enviado"
+   * sem servidor de e-mail configurado seria mentir para quem clica.
+   */
+  async enviarRessalvaAoCliente(
+    casoId: string,
+    dados: { recipienteId?: string; mensagem: string },
+  ): Promise<{ destinatario: string | null }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const registro = await this.buscarCaso(tx, casoId);
+
+      const [dono] = await tx
+        .select({ nome: cliente.nomeFantasia, email: cliente.email })
+        .from(cliente)
+        .where(and(eq(cliente.tenantId, ctx.tenantId), eq(cliente.id, registro.clienteId)))
+        .limit(1);
+
+      let recipienteRotulo: string | null = null;
+      if (dados.recipienteId) {
+        const [alvo] = await tx
+          .select({ identificador: recipiente.identificador })
+          .from(recipiente)
+          .where(
+            and(
+              eq(recipiente.tenantId, ctx.tenantId),
+              eq(recipiente.id, dados.recipienteId),
+              eq(recipiente.casoId, casoId),
+            ),
+          )
+          .limit(1);
+        if (!alvo) throw new NotFoundException('Recipiente não encontrado neste caso.');
+        recipienteRotulo = alvo.identificador;
+      }
+
+      const mensagem = dados.mensagem.trim();
+
+      /**
+       * Visibilidade externa: e o que faz a ressalva aparecer no Portal do
+       * cliente, que e onde a duvida se resolve sem telefone.
+       */
+      await this.eventos.publicar(tx, {
+        tipo: 'ressalva.enviada_cliente',
+        casoId,
+        moduloOrigem: MODULOS.M05_RECEBIMENTO,
+        visibilidade: 'externo',
+        ...(recipienteRotulo ? { objetoTipo: 'recipiente', objetoId: dados.recipienteId! } : {}),
+        payload: {
+          recipiente: recipienteRotulo,
+          mensagem,
+          por: ctx.nomeCompleto,
+        },
+      });
+
+      await tx.insert(notificacaoPendente).values({
+        tenantId: ctx.tenantId,
+        casoId,
+        canal: 'email',
+        destinatarioTipo: 'cliente',
+        destinatarioId: registro.clienteId,
+        destinatarioEndereco: dono?.email ?? null,
+        assunto: `Ressalva no recebimento — ${registro.identificador}`,
+        corpo: recipienteRotulo ? `${recipienteRotulo}: ${mensagem}` : mensagem,
+      });
+
+      await this.auditoria.registrar(tx, {
+        entidade: 'caso',
+        entidadeId: casoId,
+        acao: 'ressalva_enviada_cliente',
+        valorNovo: { recipiente: recipienteRotulo, mensagem },
+      });
+
+      return { destinatario: dono?.email ?? null };
     });
   }
 
@@ -618,6 +804,7 @@ export class CasosService {
           fixadorId: dados.fixadorId ?? null,
           identificacaoExterna: dados.identificacaoExterna?.trim() || null,
           quantidadeDeclarada: dados.quantidadeDeclarada ?? 1,
+          laminasDeclaradas: dados.laminasDeclaradas ?? null,
         })
         .returning({ id: recipiente.id });
 
@@ -962,12 +1149,15 @@ export class CasosService {
       tutorId = novoTutor!.id;
     }
 
+    const racaId = await this.registrarRaca(tx, dados.raca, dados.especieId);
+
     const [novo] = await tx
       .insert(paciente)
       .values({
         tenantId: ctx.tenantId,
         nome: dados.nome,
         especieId: dados.especieId || null,
+        racaId,
         raca: dados.raca?.trim() || null,
         sexo: dados.sexo ?? null,
         dataNascimento: dados.dataNascimento || null,
@@ -978,6 +1168,82 @@ export class CasosService {
       .returning({ id: paciente.id });
 
     return novo!.id;
+  }
+
+  /**
+   * Guarda a raca na lista daquela especie e devolve o id.
+   *
+   * Quinta revisao: "um dropdown, que vai sendo abastecido com as racas pelo
+   * uso". Quem digita uma raca que nao esta na lista nao e barrado - a raca
+   * entra, e na proxima vez ja aparece. `usos` sobe a cada cadastro, e e o que
+   * ordena a lista: o laboratorio de equinos ve Mangalarga antes de Arabe sem
+   * ninguem ter configurado nada.
+   *
+   * Raca escrita de formas diferentes ("srd", "SRD ") e a mesma raca: o nome e
+   * normalizado antes de procurar, e o que fica gravado e a primeira grafia
+   * que entrou, para a lista nao virar um amontoado de variacoes.
+   */
+  private async registrarRaca(
+    tx: Transacao,
+    nome: string | undefined,
+    especieId: string | undefined,
+  ): Promise<string | null> {
+    const ctx = exigirContexto();
+    const limpo = nome?.trim();
+    if (!limpo) return null;
+
+    const [existente] = await tx
+      .select({ id: raca.id, usos: raca.usos })
+      .from(raca)
+      .where(
+        and(
+          eq(raca.tenantId, ctx.tenantId),
+          especieId ? eq(raca.especieId, especieId) : isNull(raca.especieId),
+          sql`lower(${raca.nome}) = lower(${limpo})`,
+        ),
+      )
+      .limit(1);
+
+    if (existente) {
+      await tx
+        .update(raca)
+        // Reativa junto: usar de novo uma raca inativada e dize-la viva.
+        .set({ usos: existente.usos + 1, inativadoEm: null, inativadoPor: null })
+        .where(eq(raca.id, existente.id));
+      return existente.id;
+    }
+
+    const [nova] = await tx
+      .insert(raca)
+      .values({ tenantId: ctx.tenantId, especieId: especieId ?? null, nome: limpo, usos: 1 })
+      .returning({ id: raca.id });
+    return nova!.id;
+  }
+
+  /**
+   * Racas conhecidas da especie, mais usadas primeiro.
+   *
+   * Sem especie, devolve as que nao estao presas a nenhuma - e nao a lista
+   * inteira: oferecer "Mangalarga Marchador" para um gato e pior do que nao
+   * oferecer nada.
+   */
+  async listarRacas(especieId?: string): Promise<Array<{ id: string; nome: string }>> {
+    const ctx = exigirContexto();
+
+    return this.db.executar((tx) =>
+      tx
+        .select({ id: raca.id, nome: raca.nome })
+        .from(raca)
+        .where(
+          and(
+            eq(raca.tenantId, ctx.tenantId),
+            isNull(raca.inativadoEm),
+            especieId ? eq(raca.especieId, especieId) : isNull(raca.especieId),
+          ),
+        )
+        .orderBy(desc(raca.usos), asc(raca.nome))
+        .limit(200),
+    );
   }
 
   /**
@@ -1113,7 +1379,18 @@ export class CasosService {
       const mudancas: Record<string, unknown> = {};
       if (dados.nome !== undefined && dados.nome.trim()) mudancas.nome = dados.nome.trim();
       if (dados.especieId !== undefined) mudancas.especieId = dados.especieId || null;
-      if (dados.raca !== undefined) mudancas.raca = dados.raca.trim() || null;
+      if (dados.raca !== undefined) {
+        mudancas.raca = dados.raca.trim() || null;
+        /**
+         * Corrigir a raca tambem ensina a lista: foi corrigida porque a
+         * primeira estava errada, e e a segunda que vale.
+         */
+        mudancas.racaId = await this.registrarRaca(
+          tx,
+          dados.raca,
+          dados.especieId ?? atual.especieId ?? undefined,
+        );
+      }
       if (dados.sexo !== undefined) mudancas.sexo = dados.sexo || null;
       if (dados.dataNascimento !== undefined) mudancas.dataNascimento = dados.dataNascimento || null;
       if (dados.idadeInformada !== undefined)
@@ -1212,6 +1489,7 @@ export class CasosService {
           fixadorId: r.fixadorId ?? null,
           identificacaoExterna: r.identificacaoExterna ?? null,
           quantidadeDeclarada: r.quantidadeDeclarada ?? 1,
+          laminasDeclaradas: r.laminasDeclaradas ?? null,
         })
         .returning({ id: recipiente.id });
       recipientesCriados.push(novo!.id);

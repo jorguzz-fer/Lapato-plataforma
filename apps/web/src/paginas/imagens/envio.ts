@@ -65,7 +65,14 @@ export async function enviarImagemDoCaso(
   moduloContexto: string,
   /** Terceira revisão: a foto de uma lesão da macroscopia aponta para ela. */
   objeto?: { objetoTipo: string; objetoId: string },
-): Promise<void> {
+  /**
+   * Quinta revisão: "nas fotos de requisição e dos potes, seria bom já poder
+   * inserir legenda". Escrita na hora em que a foto é tirada, e não depois na
+   * galeria: quem tirou a foto sabe o que ela mostra; três dias depois,
+   * ninguém sabe qual das quatro é o pote C.
+   */
+  legenda?: string,
+): Promise<{ id: string }> {
   conferirImagem(arquivo);
   const corpo = new FormData();
   corpo.append('arquivo', arquivo);
@@ -75,7 +82,10 @@ export async function enviarImagemDoCaso(
     corpo.append('objetoTipo', objeto.objetoTipo);
     corpo.append('objetoId', objeto.objetoId);
   }
+  if (legenda?.trim()) corpo.append('legenda', legenda.trim());
   const mini = await gerarMiniatura(arquivo);
   if (mini) corpo.append('miniatura', mini, 'miniatura.jpg');
-  await api.postForm(`/imagens/casos/${casoId}`, corpo);
+  // Devolve o id para quem envia poder pedir a legenda da foto que acabou de
+  // subir, em vez de deixar a legenda para depois (quinta revisao).
+  return api.postForm<{ id: string }>(`/imagens/casos/${casoId}`, corpo);
 }

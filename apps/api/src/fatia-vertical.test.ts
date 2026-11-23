@@ -7262,3 +7262,168 @@ describe('quinta revisão (Hugo): pendências e solicitações por amostra', () 
     expect(semDestino.status).toBe(404);
   });
 });
+
+describe('quinta revisão (Hugo): cadastro de histo e cito', () => {
+  /**
+   * "Em Raça, seria bom colocar um dropdown, que vai sendo abastecido com as
+   * raças pelo uso. As opções de raça devem estar relacionadas à espécie
+   * previamente escolhida." E, para a citologia: "não tem margens; ao invés de
+   * tipo de frascos, número de frascos; fixador deixar como padrão Não fixada;
+   * ao invés de quantidade declarada, número de lâminas; não requer macro."
+   */
+  let especieCanina: string;
+  let especieFelina: string;
+
+  test('a lista de raças é por espécie e a mais usada vem primeiro', async () => {
+    await entrar('recepcao@lapato.local');
+
+    const especies = await req('GET', '/catalogo/tabelas/especie');
+    especieCanina = especies.body.find((t: { valor: string }) => t.valor === 'Canina').id;
+    especieFelina = especies.body.find((t: { valor: string }) => t.valor === 'Felina').id;
+
+    const caninas = await req('GET', `/casos/racas?especieId=${especieCanina}`);
+    expect(caninas.status).toBe(200);
+    const nomesCanina = caninas.body.map((r: { nome: string }) => r.nome);
+    expect(nomesCanina).toContain('SRD');
+    expect(nomesCanina).toContain('Labrador Retriever');
+
+    // Raça de cão não aparece para gato: oferecer "Labrador" para um felino é
+    // pior do que não oferecer nada.
+    const felinas = await req('GET', `/casos/racas?especieId=${especieFelina}`);
+    expect(felinas.body.map((r: { nome: string }) => r.nome)).not.toContain('Labrador Retriever');
+    expect(felinas.body.map((r: { nome: string }) => r.nome)).toContain('Persa');
+  });
+
+  test('raça fora da lista entra na lista, e o uso a empurra para cima', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const histo = servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id;
+    const nova = `Raça Teste ${Date.now().toString().slice(-6)}`;
+
+    // Três cadastros com a mesma raça inédita.
+    for (let i = 0; i < 3; i++) {
+      const caso = await req('POST', '/casos', {
+        servicoId: histo,
+        clienteId: clientes.body[0]!.id,
+        paciente: {
+          nome: `Raça nova ${i} ${Date.now().toString().slice(-5)}`,
+          especieId: especieFelina,
+          raca: i === 1 ? nova.toLowerCase() : nova, // grafias diferentes, mesma raça
+        },
+        amostras: [{ descricao: 'Fragmento' }],
+        recipientes: [{ quantidadeDeclarada: 1 }],
+      });
+      expect(caso.status, JSON.stringify(caso.body)).toBe(201);
+    }
+
+    const felinas = await req('GET', `/casos/racas?especieId=${especieFelina}`);
+    const nomes = felinas.body.map((r: { nome: string }) => r.nome);
+
+    // Entrou UMA vez, não três: grafia diferente é a mesma raça.
+    expect(nomes.filter((n: string) => n.toLowerCase() === nova.toLowerCase())).toHaveLength(1);
+
+    // E três usos a põem na frente do que foi semeado (Persa tem 7, SRD 8).
+    expect(nomes.indexOf(nova)).toBeLessThan(nomes.indexOf('Sphynx'));
+  });
+
+  test('citologia declara lâminas e a conferência do recebimento as confere', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const cito = servicos.body.find((s: { codigo: string }) => s.codigo === 'CITO');
+    expect(cito, 'o serviço de citologia precisa existir na base').toBeTruthy();
+    // É a flag que distingue o registro de cito do de histo.
+    expect(cito.exigeMacroscopia).toBe(false);
+
+    const fixadores = await req('GET', '/catalogo/tabelas/fixador');
+    const naoFixada = fixadores.body.find((t: { valor: string }) => /não fixada/i.test(t.valor));
+    expect(naoFixada, '"Não fixada" precisa existir para ser o padrão da cito').toBeTruthy();
+
+    const clientes = await req('GET', '/catalogo/clientes');
+    const caso = await req('POST', '/casos', {
+      servicoId: cito.id,
+      clienteId: clientes.body[0]!.id,
+      paciente: { nome: `Cito ${Date.now().toString().slice(-5)}`, especieId: especieCanina },
+      amostras: [{ descricao: 'Punção de linfonodo' }],
+      recipientes: [
+        { fixadorId: naoFixada.id, quantidadeDeclarada: 2, laminasDeclaradas: 4 },
+      ],
+    });
+    expect(caso.status, JSON.stringify(caso.body)).toBe(201);
+
+    const dossie = await req('GET', `/casos/${caso.body.id}`);
+    expect(dossie.body.recipientes[0].laminasDeclaradas).toBe(4);
+    expect(dossie.body.servico.exigeMacroscopia).toBe(false);
+
+    // Vieram três das quatro: a divergência de lâminas conta como divergência.
+    await entrar('tecnico@lapato.local');
+    const recebimento = await req('POST', `/casos/${caso.body.id}/recebimento`, {
+      conferencia: [
+        {
+          recipienteId: dossie.body.recipientes[0].id,
+          quantidadeRecebida: 2,
+          laminasRecebidas: 3,
+        },
+      ],
+    });
+    expect(recebimento.status, JSON.stringify(recebimento.body)).toBe(201);
+    expect(recebimento.body.divergencias).toBe(1);
+
+    const depois = await req('GET', `/casos/${caso.body.id}`);
+    expect(depois.body.recipientes[0].laminasRecebidas).toBe(3);
+    const divergencia = depois.body.linhaDoTempo.find(
+      (e: { tipo: string; payload?: { objeto?: string } }) =>
+        e.tipo === 'divergencia.identificada' && e.payload?.objeto === 'laminas',
+    );
+    expect(divergencia, 'a divergência de lâminas precisa ficar na linha do tempo').toBeTruthy();
+  });
+
+  test('conferência gera pendência de macroscopia e manda ressalva ao cliente', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const caso = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body.find((c: { codigo: string }) => c.codigo === 'CV').id,
+      paciente: { nome: `Conferência ${Date.now().toString().slice(-5)}` },
+      amostras: [{ descricao: 'Nódulo' }, { descricao: 'Margem' }],
+      recipientes: [{ quantidadeDeclarada: 2 }],
+    });
+    expect(caso.status, JSON.stringify(caso.body)).toBe(201);
+    const casoId = caso.body.id;
+    const dossie = await req('GET', `/casos/${casoId}`);
+
+    await entrar('tecnico@lapato.local');
+
+    // "A amostra fica pendente para o técnico responsável pela checagem."
+    const pendencia = await req('POST', `/casos/${casoId}/recebimento/pendencia-macroscopia`, {
+      observacao: 'O pote tem dois fragmentos e a requisição diz um.',
+      amostraIds: [dossie.body.amostras[0].id],
+    });
+    expect(pendencia.status, JSON.stringify(pendencia.body)).toBe(201);
+    expect(pendencia.body.criadas).toBe(1);
+
+    const abertas = await req('GET', '/solicitacoes/pendencias');
+    const minha = abertas.body.find((p: { id: string }) => p.id === pendencia.body.id);
+    expect(minha.tipo).toBe('Macroscopia');
+    expect(minha.setorResponsavel).toBe('macroscopia');
+    expect(minha.descricao).toContain(dossie.body.amostras[0].identificador);
+
+    // "A pendência e fotos capturadas podem ser enviadas direto para o cliente."
+    const ressalva = await req('POST', `/casos/${casoId}/recebimento/ressalva-cliente`, {
+      recipienteId: dossie.body.recipientes[0].id,
+      mensagem: 'Confirme se eram dois fragmentos ou se houve troca de pote.',
+    });
+    expect(ressalva.status, JSON.stringify(ressalva.body)).toBe(201);
+    // O cliente da base tem e-mail desde o PR do envio de laudo.
+    expect(ressalva.body.destinatario).toBeTruthy();
+
+    // Vira evento EXTERNO do caso: é o que faz aparecer no Portal do cliente.
+    const comRessalva = await req('GET', `/casos/${casoId}`);
+    const evento = comRessalva.body.linhaDoTempo.find(
+      (e: { tipo: string }) => e.tipo === 'ressalva.enviada_cliente',
+    );
+    expect(evento, 'a ressalva precisa ficar na linha do tempo do caso').toBeTruthy();
+    expect(evento.payload.mensagem).toContain('troca de pote');
+  });
+});

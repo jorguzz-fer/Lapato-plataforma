@@ -7312,6 +7312,32 @@ describe('quarta revisão (Hugo): o cliente abre a solicitação pelo Portal', (
     const painelDepois = await req('GET', '/portal/painel');
     expect(painelDepois.body.solicitacoesAbertas).toBe(painelAntes.body.solicitacoesAbertas);
   });
+
+  test('quem pede não dispensa a aprovação que o catálogo exige', async () => {
+    /**
+     * Terceira auditoria: `exigeAprovacao: false` no corpo vencia o catalogo, e
+     * a recepcao - sem `solicitacao:aprovar` - abria IHQ de alto custo direto
+     * na fila de execucao.
+     */
+    await entrar('admin@lapato.local');
+    const tipos = await req('GET', '/administracao/tipos-solicitacao');
+    const ihq = tipos.body.find((t: { chave: string }) => t.chave === 'imuno_histoquimica');
+    expect(ihq?.exigeAprovacao).toBe(true);
+
+    await entrar('recepcao@lapato.local');
+    const pedido = await req('POST', '/solicitacoes', {
+      casoId,
+      tipoId: ihq.id,
+      tipo: ihq.chave,
+      descricao: 'Painel IHQ sem passar pela análise.',
+      exigeAprovacao: false,
+    });
+    expect(pedido.status, JSON.stringify(pedido.body)).toBe(201);
+
+    const abertas = await req('GET', '/solicitacoes?aba=abertas');
+    const criada = abertas.body.find((s: { id: string }) => s.id === pedido.body.id);
+    expect(criada?.status).toBe('aguardando_analise');
+  });
 });
 
 describe('quarta revisão (Hugo): a cor do mapa de exames vem do serviço', () => {

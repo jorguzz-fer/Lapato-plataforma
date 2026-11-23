@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, count, desc, eq, ilike, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import {
   caso,
   cliente,
@@ -136,6 +136,7 @@ export class PortalService {
           ),
         );
 
+      // A mesma regra da lista: o que o laboratorio pede a si mesmo nao conta.
       const [solicitacoes] = await tx
         .select({ total: count() })
         .from(solicitacao)
@@ -144,6 +145,7 @@ export class PortalService {
           and(
             eq(solicitacao.tenantId, ctx.tenantId),
             eq(caso.clienteId, clienteId),
+            ne(solicitacao.visibilidadePortal, 'nao'),
             sql`${solicitacao.status} not in ('concluida', 'cancelada', 'recusada')`,
           ),
         );
@@ -436,7 +438,19 @@ export class PortalService {
     });
   }
 
-  /** Solicitacoes do cliente (secoes 30-31), com os status externos. */
+  /**
+   * Solicitacoes do cliente (secoes 30-31), com os status externos.
+   *
+   * **So as que tem visibilidade externa** (M10: `visibilidade_portal`). Ser do
+   * caso do cliente nao basta: a reamostragem, a revisao interna e o problema
+   * tecnico tambem moram no caso dele, e a descricao interna e o registro
+   * tecnico do laboratorio ("erro tecnico na HE, suspeita de linfoma"). Antes
+   * deste filtro, tudo isso aparecia no Portal palavra por palavra.
+   *
+   * Pelo mesmo motivo o texto devolvido e o `texto_portal` - a traducao
+   * contextual -, nunca a `descricao`. So quem foi marcado como visivel por
+   * inteiro (`sim`) mostra a descricao quando nao ha traducao.
+   */
   async solicitacoes() {
     const ctx = exigirContexto();
     const clienteId = this.clienteDaConta();
@@ -448,7 +462,10 @@ export class PortalService {
           identificador: solicitacao.identificador,
           tipo: solicitacao.tipo,
           nomeTipo: tipoSolicitacao.nome,
-          descricao: solicitacao.descricao,
+          descricao: sql<string | null>`coalesce(
+            ${solicitacao.textoPortal},
+            case when ${solicitacao.visibilidadePortal} = 'sim' then ${solicitacao.descricao} end
+          )`,
           status: solicitacao.status,
           criadoEm: solicitacao.criadoEm,
           casoIdentificador: caso.identificador,
@@ -480,7 +497,13 @@ export class PortalService {
         .innerJoin(caso, eq(caso.id, solicitacao.casoId))
         .innerJoin(paciente, eq(paciente.id, caso.pacienteId))
         .leftJoin(tipoSolicitacao, eq(tipoSolicitacao.id, solicitacao.tipoId))
-        .where(and(eq(solicitacao.tenantId, ctx.tenantId), eq(caso.clienteId, clienteId)))
+        .where(
+          and(
+            eq(solicitacao.tenantId, ctx.tenantId),
+            eq(caso.clienteId, clienteId),
+            ne(solicitacao.visibilidadePortal, 'nao'),
+          ),
+        )
         .orderBy(desc(solicitacao.criadoEm))
         .limit(100),
     );

@@ -7222,6 +7222,42 @@ describe('quarta revisão (Hugo): o cliente abre a solicitação pelo Portal', (
     });
     expect(recusado.status).toBe(404);
   });
+
+  test('a solicitação interna no caso do cliente não aparece no Portal', async () => {
+    /**
+     * Terceira auditoria de seguranca: o Portal filtrava so pelo cliente do
+     * caso e devolvia a `descricao` interna. Uma revisao pedida pelo patologista
+     * aparecia para a clinica palavra por palavra - inclusive a suspeita.
+     */
+    await entrar('portal@clinicacentral.local');
+    const painelAntes = await req('GET', '/portal/painel');
+    expect(painelAntes.status).toBe(200);
+
+    await entrar('recepcao@lapato.local');
+    const nota = `NOTA INTERNA ${Date.now()}: erro técnico na HE, suspeita de linfoma`;
+    const interna = await req('POST', '/solicitacoes', {
+      casoId,
+      tipo: 'revisao_interna',
+      descricao: nota,
+    });
+    expect(interna.status, JSON.stringify(interna.body)).toBe(201);
+
+    await entrar('portal@clinicacentral.local');
+    const lista = await req('GET', '/portal/solicitacoes');
+    expect(lista.status).toBe(200);
+    expect(lista.body.map((s: { id: string }) => s.id)).not.toContain(interna.body.id);
+    expect(JSON.stringify(lista.body)).not.toContain('NOTA INTERNA');
+
+    // O pedido do proprio cliente continua la, com o texto que ele escreveu.
+    const doCliente = lista.body.find((s: { id: string }) => s.id === solicitacaoId);
+    expect(doCliente?.descricao).toBe(
+      'Preciso do bloco para exame complementar em outro laboratório.',
+    );
+
+    // E o contador do painel segue a mesma regra da lista.
+    const painelDepois = await req('GET', '/portal/painel');
+    expect(painelDepois.body.solicitacoesAbertas).toBe(painelAntes.body.solicitacoesAbertas);
+  });
 });
 
 describe('quarta revisão (Hugo): a cor do mapa de exames vem do serviço', () => {

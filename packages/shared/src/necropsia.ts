@@ -288,3 +288,69 @@ export const VISTA_MAPA_CORPORAL_LABEL: Record<VistaMapaCorporal, string> = {
  * cao, de gato ou de cavalo desenhada depois nao invalida o que foi marcado.
  */
 export const ESCALA_MAPA_CORPORAL = 1000;
+
+// ---------------------------------------------------------------------------
+// Formulario de solicitacao e autorizacao de necropsia (quinta revisao)
+// ---------------------------------------------------------------------------
+
+/**
+ * O questionario que o tutor (ou o tecnico, por ele) responde antes do exame.
+ *
+ * Uma lista, e nao campos fixos numa tela, por dois motivos. Primeiro, as
+ * respostas moram num `jsonb`: acrescentar pergunta nao e migracao. Segundo, a
+ * MESMA lista desenha as duas telas - a do tecnico e a publica do tutor -, de
+ * modo que nao existe a versao que pergunta mais do que a outra.
+ *
+ * `destino` marca as tres perguntas que tem casa propria na necropsia: o
+ * servico as move do mapa para a coluna, porque a tela do exame as le como
+ * campos e o Guardian confere o obito. O resto fica no mapa.
+ */
+export interface PerguntaFormularioNecropsia {
+  chave: string;
+  rotulo: string;
+  tipo: 'texto' | 'texto_longo' | 'data_hora';
+  ajuda?: string;
+  destino?: 'obitoEm' | 'circunstanciasMorte' | 'perguntasSolicitante';
+}
+
+export const PERGUNTAS_FORMULARIO_NECROPSIA: readonly PerguntaFormularioNecropsia[] = [
+  {
+    chave: 'obitoEm',
+    rotulo: 'Data e hora do óbito',
+    tipo: 'data_hora',
+    ajuda: 'Ainda que aproximada — o intervalo até o exame muda o que se pode concluir.',
+    destino: 'obitoEm',
+  },
+  {
+    chave: 'localObito',
+    rotulo: 'Onde o animal morreu',
+    tipo: 'texto',
+    ajuda: 'Em casa, na clínica, na rua, durante transporte.',
+  },
+  {
+    chave: 'relatoCronologico',
+    rotulo: 'Relato cronológico',
+    tipo: 'texto_longo',
+    ajuda: 'O que aconteceu, em ordem, desde o primeiro sinal até a morte.',
+    destino: 'circunstanciasMorte',
+  },
+  {
+    chave: 'principalDuvida',
+    rotulo: 'Principal dúvida a esclarecer',
+    tipo: 'texto_longo',
+    ajuda: 'A pergunta que você quer ver respondida no laudo.',
+    destino: 'perguntasSolicitante',
+  },
+  {
+    chave: 'doencaPrevia',
+    rotulo: 'Doença prévia e tratamentos',
+    tipo: 'texto_longo',
+    ajuda: 'Diagnósticos em curso, medicamentos, cirurgias recentes.',
+  },
+  {
+    chave: 'diagnosticosAnteriores',
+    rotulo: 'Exames e diagnósticos anteriores',
+    tipo: 'texto_longo',
+    ajuda: 'Resultados que já existem — exames de imagem, laboratório, biópsias.',
+  },
+] as const;

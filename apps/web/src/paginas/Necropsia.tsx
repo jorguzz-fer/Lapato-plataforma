@@ -12,6 +12,10 @@ import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import {
   CAVIDADE_NECROPSIA,
@@ -40,6 +44,7 @@ import { api, ErroApi, type BancadaNecropsia, type Dossie } from '../api';
 import { AjudaBiblioteca } from '../componentes/AjudaBiblioteca';
 import { BloqueioGuardian } from './BloqueioGuardian';
 import { MapaCorporal } from './necropsia/MapaCorporal';
+import { CamposDoFormularioNecropsia } from './necropsia/CamposDoFormulario';
 
 /**
  * M14 - bancada de necropsia.
@@ -82,6 +87,7 @@ export function Necropsia({ permissoes }: { permissoes: string[] }) {
   const [erro, setErro] = useState<string | null>(null);
   const [bloqueio, setBloqueio] = useState<ErroApi | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  const [formulario, setFormulario] = useState<'preencher' | 'enviar' | null>(null);
 
   const podeExecutar = permissoes.includes('necropsia:executar');
   const podeConcluir = permissoes.includes('necropsia:concluir');
@@ -106,16 +112,19 @@ export function Necropsia({ permissoes }: { permissoes: string[] }) {
       .finally(() => setCarregado(true));
   }, [id, recarregar]);
 
-  async function agir(acao: () => Promise<unknown>, padrao: string) {
+  /** Devolve se a acao passou, para o diálogo só fechar quando passou. */
+  async function agir(acao: () => Promise<unknown>, padrao: string): Promise<boolean> {
     setOcupado(true);
     setErro(null);
     setBloqueio(null);
     try {
       await acao();
       await recarregar();
+      return true;
     } catch (e) {
       if (e instanceof ErroApi && e.bloqueadoPeloGuardian) setBloqueio(e);
       else setErro(e instanceof ErroApi ? e.detalhe : padrao);
+      return false;
     } finally {
       setOcupado(false);
     }
@@ -192,8 +201,54 @@ export function Necropsia({ permissoes }: { permissoes: string[] }) {
               {banca.necropsia.contatoResponsavel ? ` · ${banca.necropsia.contatoResponsavel}` : ''}
             </Typography>
           </Box>
+          {banca.necropsia.devolucaoCorpo !== null && (
+            <Box>
+              <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>Corpo</Typography>
+              <Typography sx={{ fontSize: 13 }}>
+                {banca.necropsia.devolucaoCorpo ? 'Com devolução' : 'Sem devolução'}
+              </Typography>
+            </Box>
+          )}
+          {/*
+            Os dois botoes da quinta revisao: ou o tecnico preenche agora, com o
+            tutor na frente ou no telefone, ou manda o link e o tutor preenche.
+            O mesmo questionario nos dois caminhos.
+          */}
+          {editavel && (
+            <Stack direction="row" spacing={1} sx={{ ml: 'auto', alignItems: 'center' }}>
+              <Button size="small" variant="outlined" onClick={() => setFormulario('preencher')}>
+                Preencher formulário
+              </Button>
+              <Button size="small" variant="outlined" onClick={() => setFormulario('enviar')}>
+                Enviar formulário
+              </Button>
+            </Stack>
+          )}
         </Stack>
       </Card>
+
+      {formulario === 'preencher' && (
+        <DialogoPreencherFormulario
+          necropsia={banca.necropsia}
+          aoFechar={() => setFormulario(null)}
+          aoSalvar={async (respostas) => {
+            const ok = await agir(
+              () => api.post(`/necropsia/${banca.necropsia.id}/formulario/preencher`, { respostas }),
+              'Não foi possível salvar o formulário.',
+            );
+            if (ok) setFormulario(null);
+          }}
+          ocupado={ocupado}
+        />
+      )}
+
+      {formulario === 'enviar' && (
+        <DialogoEnviarFormulario
+          necropsiaId={banca.necropsia.id}
+          contatoSugerido={banca.necropsia.contatoResponsavel}
+          aoFechar={() => setFormulario(null)}
+        />
+      )}
 
       {/* Secao 72: o numero que importa e o dos orgaos que ficaram de fora. */}
       <Stack direction="row" spacing={1.5} sx={{ mb: 3, flexWrap: 'wrap' }}>
@@ -304,6 +359,186 @@ export function Necropsia({ permissoes }: { permissoes: string[] }) {
   );
 }
 
+/**
+ * O formulario preenchido pelo proprio tecnico (quinta revisao: "o formulario e
+ * aberto e o proprio tecnico ira preenche-lo").
+ *
+ * Os mesmos campos da tela do tutor, vindos do mesmo componente. O que o caso
+ * ja sabe vem preenchido: o tecnico corrige, nao redigita.
+ */
+function DialogoPreencherFormulario({
+  necropsia,
+  aoFechar,
+  aoSalvar,
+  ocupado,
+}: {
+  necropsia: BancadaNecropsia['necropsia'];
+  aoFechar: () => void;
+  aoSalvar: (respostas: Record<string, string>) => void;
+  ocupado: boolean;
+}) {
+  const [valores, setValores] = useState<Record<string, string>>(() => ({
+    responsavelSolicitacao: necropsia.responsavelSolicitacao ?? '',
+    contatoResponsavel: necropsia.contatoResponsavel ?? '',
+    responsavelDocumento: necropsia.responsavelDocumento ?? '',
+    responsavelCidade: necropsia.responsavelCidade ?? '',
+    responsavelUf: necropsia.responsavelUf ?? '',
+    obitoEm: necropsia.obitoEm ? necropsia.obitoEm.slice(0, 16) : '',
+    relatoCronologico: necropsia.circunstanciasMorte ?? '',
+    principalDuvida: necropsia.perguntasSolicitante ?? '',
+  }));
+
+  return (
+    <Dialog open onClose={aoFechar} maxWidth="sm" fullWidth>
+      <DialogTitle>Formulário de solicitação e autorização</DialogTitle>
+      <DialogContent>
+        <Typography sx={{ fontSize: 13, color: 'text.secondary', mb: 2 }}>
+          Preenchido por você, com o responsável presente ou por telefone. Fica registrado que
+          quem respondeu foi o laboratório, e não o tutor.
+        </Typography>
+        <CamposDoFormularioNecropsia valores={valores} aoMudar={setValores} />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={aoFechar}>Cancelar</Button>
+        <Button
+          variant="contained"
+          disabled={ocupado || (valores.responsavelSolicitacao ?? '').trim().length < 3}
+          onClick={() => aoSalvar(valores)}
+        >
+          Salvar formulário
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/**
+ * O envio do link ao tutor (quinta revisao: "enviado via whatsapp e/ou email
+ * para o tutor, finalizar o preenchimento").
+ *
+ * O link aparece aqui depois de gerado, com "Copiar": o envio automatico passa
+ * pela fila do M26, e quando o WhatsApp do laboratorio ainda nao esta ligado a
+ * recepcao cola o link na conversa que ja tem aberta - e o mesmo caminho do
+ * convite de autocadastro do cliente.
+ */
+function DialogoEnviarFormulario({
+  necropsiaId,
+  contatoSugerido,
+  aoFechar,
+}: {
+  necropsiaId: string;
+  contatoSugerido: string | null;
+  aoFechar: () => void;
+}) {
+  const [canal, setCanal] = useState<'whatsapp' | 'email' | 'ambos'>('whatsapp');
+  const [telefone, setTelefone] = useState(
+    contatoSugerido && !contatoSugerido.includes('@') ? contatoSugerido : '',
+  );
+  const [email, setEmail] = useState(
+    contatoSugerido && contatoSugerido.includes('@') ? contatoSugerido : '',
+  );
+  const [link, setLink] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+
+  async function enviar() {
+    setOcupado(true);
+    setErro(null);
+    try {
+      const r = await api.post<{ caminho: string; expiraEm: string }>(
+        `/necropsia/${necropsiaId}/formulario/enviar`,
+        {
+          canal,
+          telefone: telefone.trim() || null,
+          email: email.trim() || null,
+        },
+      );
+      setLink(`${window.location.origin}${r.caminho}`);
+    } catch (e) {
+      setErro(e instanceof ErroApi ? e.detalhe : 'Não foi possível gerar o link.');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <Dialog open onClose={aoFechar} maxWidth="sm" fullWidth>
+      <DialogTitle>Enviar formulário ao tutor</DialogTitle>
+      <DialogContent>
+        {link ? (
+          <Stack spacing={2}>
+            <Alert severity="success">
+              Link gerado e na fila de envio. Vale uma única vez, por sete dias.
+            </Alert>
+            <TextField label="Link do formulário" value={link} slotProps={{ input: { readOnly: true } }} />
+            <Box>
+              <Button
+                variant="outlined"
+                onClick={() => void navigator.clipboard?.writeText(link)}
+              >
+                Copiar link
+              </Button>
+            </Box>
+          </Stack>
+        ) : (
+          <Stack spacing={2}>
+            <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+              O tutor recebe o formulário e preenche o que falta. Ele edita tudo, menos o valor
+              combinado.
+            </Typography>
+            <TextField
+              select
+              label="Canal"
+              value={canal}
+              onChange={(e) => setCanal(e.target.value as typeof canal)}
+            >
+              <MenuItem value="whatsapp">WhatsApp</MenuItem>
+              <MenuItem value="email">E-mail</MenuItem>
+              <MenuItem value="ambos">WhatsApp e e-mail</MenuItem>
+            </TextField>
+            {canal !== 'email' && (
+              <TextField
+                label="WhatsApp"
+                value={telefone}
+                onChange={(e) => setTelefone(e.target.value)}
+              />
+            )}
+            {canal !== 'whatsapp' && (
+              <TextField
+                label="E-mail"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            )}
+            {erro && <Alert severity="error">{erro}</Alert>}
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={aoFechar}>{link ? 'Fechar' : 'Cancelar'}</Button>
+        {!link && (
+          <Button variant="contained" onClick={enviar} disabled={ocupado}>
+            {ocupado ? 'Gerando…' : 'Gerar e enviar'}
+          </Button>
+        )}
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/**
+ * "1.250,00" e "1250.00" chegam da mesma mao, em dias diferentes. Se o campo
+ * recusasse a virgula, a recepcao digitaria o valor errado em vez de digitar
+ * de novo.
+ */
+function valorEmNumero(bruto: string): number | null {
+  const limpo = bruto.trim();
+  if (!limpo) return null;
+  const n = Number(limpo.replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 function Abertura({
   dossie,
   podeExecutar,
@@ -322,6 +557,12 @@ function Abertura({
   const [contato, setContato] = useState('');
   const [conservacao, setConservacao] = useState('');
   const [circunstancias, setCircunstancias] = useState('');
+  // Quinta revisao: o combinado com o tutor, fechado ANTES de o corpo chegar.
+  const [devolucao, setDevolucao] = useState('');
+  const [valor, setValor] = useState('');
+  const [documento, setDocumento] = useState('');
+  const [cidade, setCidade] = useState('');
+  const [uf, setUf] = useState('');
 
   if (!podeExecutar) {
     return <Alert severity="info">Este caso ainda não tem necropsia aberta.</Alert>;
@@ -343,7 +584,7 @@ function Abertura({
             label="Modalidade"
             value={modalidade}
             onChange={(e) => setModalidade(e.target.value)}
-            helperText="Muda campos obrigatórios, fotografia e modelo de laudo."
+            helperText="Forense exige fotodocumentação de cada etapa; hospitalar, não."
           >
             {MODALIDADE_NECROPSIA.map((m) => (
               <MenuItem key={m} value={m}>
@@ -366,6 +607,57 @@ function Abertura({
               value={contato}
               onChange={(e) => setContato(e.target.value)}
               sx={{ flex: 1 }}
+            />
+          </Stack>
+
+          {/*
+            O responsavel legal com CPF, cidade e UF: e ele quem assina a
+            autorizacao do exame, e o documento de autorizacao precisa
+            identificar quem autorizou - nome solto nao identifica.
+          */}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <TextField
+              label="CPF do responsável"
+              value={documento}
+              onChange={(e) => setDocumento(e.target.value)}
+              sx={{ flex: 1.2 }}
+              helperText="Vai na autorização do exame."
+            />
+            <TextField
+              label="Cidade"
+              value={cidade}
+              onChange={(e) => setCidade(e.target.value)}
+              sx={{ flex: 1.2 }}
+              helperText=" "
+            />
+            <TextField
+              label="UF"
+              value={uf}
+              onChange={(e) => setUf(e.target.value.toUpperCase().slice(0, 2))}
+              sx={{ width: 110 }}
+              helperText=" "
+            />
+          </Stack>
+
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <TextField
+              select
+              label="Devolução do corpo"
+              value={devolucao}
+              onChange={(e) => setDevolucao(e.target.value)}
+              sx={{ flex: 1 }}
+              helperText="Combinado na entrada; o destino do corpo segue no controle de cadáveres."
+            >
+              <MenuItem value="">A combinar</MenuItem>
+              <MenuItem value="sim">Com devolução</MenuItem>
+              <MenuItem value="nao">Sem devolução</MenuItem>
+            </TextField>
+            <TextField
+              label="Valor combinado"
+              value={valor}
+              onChange={(e) => setValor(e.target.value.replace(/[^\d.,]/g, ''))}
+              sx={{ flex: 1 }}
+              helperText="Em reais. O tutor vê, mas não edita, no formulário."
             />
           </Stack>
 
@@ -406,6 +698,11 @@ function Abertura({
                   contatoResponsavel: contato.trim() || null,
                   conservacao: conservacao || null,
                   circunstanciasMorte: circunstancias.trim() || null,
+                  devolucaoCorpo: devolucao === '' ? null : devolucao === 'sim',
+                  valorCombinado: valorEmNumero(valor),
+                  responsavelDocumento: documento.trim() || null,
+                  responsavelCidade: cidade.trim() || null,
+                  responsavelUf: uf.trim() || null,
                 })
               }
             >
@@ -426,7 +723,7 @@ function ExameExterno({
 }: {
   banca: BancadaNecropsia;
   editavel: boolean;
-  agir: (a: () => Promise<unknown>, p: string) => Promise<void>;
+  agir: (a: () => Promise<unknown>, p: string) => Promise<boolean>;
   ocupado: boolean;
 }) {
   const [limitacoes, setLimitacoes] = useState<string[]>(banca.necropsia.limitacoes ?? []);
@@ -524,7 +821,7 @@ function ExameInterno({
 }: {
   banca: BancadaNecropsia;
   editavel: boolean;
-  agir: (a: () => Promise<unknown>, p: string) => Promise<void>;
+  agir: (a: () => Promise<unknown>, p: string) => Promise<boolean>;
   ocupado: boolean;
 }) {
   const [cavidade, setCavidade] = useState<CavidadeNecropsia>('toracica');
@@ -679,7 +976,7 @@ function Lesoes({
 }: {
   banca: BancadaNecropsia;
   editavel: boolean;
-  agir: (a: () => Promise<unknown>, p: string) => Promise<void>;
+  agir: (a: () => Promise<unknown>, p: string) => Promise<boolean>;
   ocupado: boolean;
 }) {
   const [orgao, setOrgao] = useState('');
@@ -896,7 +1193,7 @@ function CausaMortis({
 }: {
   banca: BancadaNecropsia;
   editavel: boolean;
-  agir: (a: () => Promise<unknown>, p: string) => Promise<void>;
+  agir: (a: () => Promise<unknown>, p: string) => Promise<boolean>;
   ocupado: boolean;
 }) {
   const atual = banca.causaMortis;

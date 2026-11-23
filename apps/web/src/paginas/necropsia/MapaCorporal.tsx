@@ -123,7 +123,7 @@ export function MapaCorporal({
 }: {
   banca: BancadaNecropsia;
   editavel: boolean;
-  agir: (a: () => Promise<unknown>, p: string) => Promise<void>;
+  agir: (a: () => Promise<unknown>, p: string) => Promise<boolean>;
   ocupado: boolean;
 }) {
   const [vista, setVista] = useState<VistaMapaCorporal>('lateral_esquerda');

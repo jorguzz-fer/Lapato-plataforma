@@ -1160,6 +1160,41 @@ export class AutocadastroClienteController {
 }
 
 /**
+ * Formulario de solicitacao e autorizacao de necropsia, preenchido pelo tutor
+ * pelo link (quinta revisao). Mesmo desenho do autocadastro acima: o tenant vem
+ * no caminho, o token e o unico segredo, teto de entrada contra varredura.
+ */
+@ApiTags('Formulário público de necropsia')
+@Controller('formulario-necropsia')
+export class FormularioNecropsiaController {
+  constructor(private readonly necropsia: NecropsiaService) {}
+
+  @Publica()
+  @LimiteEntrada()
+  @Get(':tenantSlug/:token')
+  @ApiOperation({ summary: 'O que o tutor vê ao abrir o link do formulário' })
+  async ler(@Param('tenantSlug') tenantSlug: string, @Param('token') token: string) {
+    return this.necropsia.lerFormularioPublico(tenantSlug, token);
+  }
+
+  @Publica()
+  @LimiteEntrada()
+  @Post(':tenantSlug/:token')
+  @ApiOperation({
+    summary: 'O tutor envia o formulário; o link se consome',
+    description: 'O valor combinado não entra por aqui, nem que venha no corpo.',
+  })
+  async responder(
+    @Param('tenantSlug') tenantSlug: string,
+    @Param('token') token: string,
+    @Body() corpo: unknown,
+  ) {
+    const { respostas } = validarCorpo(respostasFormularioSchema, corpo);
+    return this.necropsia.responderFormularioPublico(tenantSlug, token, respostas);
+  }
+}
+
+/**
  * Fora de `/laudos` de proposito: e a unica rota do modulo sem sessao, e
  * misturá-la ao controller autenticado tornaria facil esquecer o `@Publica()`
  * num endpoint futuro por perto. O slug da instituicao vem na URL pela mesma
@@ -3397,6 +3432,32 @@ const aberturaNecropsiaSchema = z.object({
   obitoEm: z.string().datetime({ offset: true }).nullish(),
   circunstanciasMorte: z.string().nullish(),
   perguntasSolicitante: z.string().nullish(),
+  /**
+   * Quinta revisão: o cadastro do caso de necropsia pergunta "com devolução ou
+   * sem devolução do corpo", o valor combinado e o responsável legal com
+   * documento, cidade e UF — o formulário de autorização é assinado por ele.
+   */
+  devolucaoCorpo: z.boolean().nullish(),
+  valorCombinado: z.number().nonnegative().nullish(),
+  responsavelDocumento: z.string().max(30).nullish(),
+  responsavelCidade: z.string().max(120).nullish(),
+  responsavelUf: z.string().length(2, 'UF tem duas letras.').nullish(),
+});
+
+/**
+ * As respostas do formulário são um mapa aberto: o questionário é o que o
+ * documento mostra na tela do exame hoje, mas cresce sem migração. O que tem
+ * casa própria na necropsia (óbito, relato, dúvida) o serviço move para a
+ * coluna; o resto fica no mapa.
+ */
+const respostasFormularioSchema = z.object({
+  respostas: z.record(z.string(), z.unknown()),
+});
+
+const envioFormularioSchema = z.object({
+  canal: z.enum(['whatsapp', 'email', 'ambos']),
+  telefone: z.string().max(40).nullish(),
+  email: z.string().email('E-mail inválido.').nullish(),
 });
 
 const exameExternoSchema = z.object({
@@ -3489,6 +3550,32 @@ export class NecropsiaController {
   })
   async abrir(@Param('casoId', ParseUUIDPipe) casoId: string, @Body() corpo: unknown) {
     return this.necropsia.abrir(casoId, validarCorpo(aberturaNecropsiaSchema, corpo));
+  }
+
+  @Post(':id/formulario/preencher')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'O próprio técnico preenche o formulário do tutor',
+    description:
+      'Quinta revisão: "ao clicar em Preencher formulário, o formulário é aberto e o ' +
+      'próprio técnico irá preenchê-lo" — o tutor que está na recepção ou que ditou ' +
+      'por telefone. Fica registrado que quem respondeu foi o técnico.',
+  })
+  async preencherFormulario(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    const { respostas } = validarCorpo(respostasFormularioSchema, corpo);
+    return this.necropsia.preencherFormulario(id, respostas);
+  }
+
+  @Post(':id/formulario/enviar')
+  @ExigePermissao(PERMISSOES.NECROPSIA_EXECUTAR)
+  @ApiOperation({
+    summary: 'Envia o formulário ao tutor por WhatsApp e/ou e-mail',
+    description:
+      'Link de uso único com sete dias de validade. Gerar de novo encerra o anterior. ' +
+      'O tutor edita tudo, menos o valor combinado.',
+  })
+  async enviarFormulario(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    return this.necropsia.enviarFormulario(id, validarCorpo(envioFormularioSchema, corpo));
   }
 
   @Post(':id/exame-externo')

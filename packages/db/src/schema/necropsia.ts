@@ -1,8 +1,10 @@
 import { relations } from 'drizzle-orm';
 import {
+  boolean,
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   text,
   timestamp,
@@ -74,6 +76,29 @@ export const necropsia = pgTable(
     /** Secao 19: o que o solicitante quer que a necropsia responda. */
     perguntasSolicitante: text('perguntas_solicitante'),
 
+    // --- Quinta revisao: o cadastro do caso de necropsia -------------------
+    /**
+     * "Devolucao do corpo: Com devolucao | Sem devolucao." E a pergunta que
+     * decide o destino antes de o corpo chegar, e por isso mora aqui e nao so
+     * no cadaver: na hora de receber, quem atende ja sabe se a camara guarda
+     * para entrega ou para descarte. O M15 continua dono da destinacao
+     * efetiva - este campo e o combinado, nao o executado.
+     */
+    devolucaoCorpo: boolean('devolucao_corpo'),
+    /**
+     * "Valor: digitavel." O preco combinado com o tutor na abertura.
+     *
+     * Fica aqui, e nao so na ordem de servico, por um motivo do documento: o
+     * tutor edita o formulario inteiro MENOS o valor. Para o formulario poder
+     * mostra-lo travado, o valor combinado precisa existir antes de a OS ser
+     * emitida. A cobranca continua sendo do M20 - este e o acordado.
+     */
+    valorCombinado: numeric('valor_combinado', { precision: 12, scale: 2 }),
+    /** Responsavel legal: o documento pede CPF, cidade e UF ao lado do nome. */
+    responsavelDocumento: text('responsavel_documento'),
+    responsavelCidade: text('responsavel_cidade'),
+    responsavelUf: text('responsavel_uf'),
+
     /** Secao 57: peso, escore corporal, mucosas, orificios, intervencoes medicas. */
     exameExterno: jsonb('exame_externo').$type<Record<string, unknown>>().default({}),
 
@@ -94,6 +119,52 @@ export const necropsia = pgTable(
   (t) => [
     unique('uq_necropsia_caso').on(t.tenantId, t.casoId),
     index('idx_necropsia_caso').on(t.tenantId, t.casoId),
+  ],
+);
+
+/**
+ * Formulario de solicitacao e autorizacao da necropsia, preenchido pelo tutor.
+ *
+ * Quinta revisao (documento do Dr. Hugo): "ao clicar em Enviar formulario, o
+ * formulario de solicitacao e autorizacao de necropsia e enviado via whatsapp
+ * e/ou email para o tutor, finalizar o preenchimento. Todos os dados inseridos,
+ * a excecao do valor, podem ser editados pelo tutor. Ao clicar em Preencher
+ * formulario, o formulario e aberto e o proprio tecnico ira preenche-lo."
+ *
+ * Mesmo desenho do convite de autocadastro do cliente (M03): token de uso
+ * unico, so o HASH guardado, validade curta. O motivo e o mesmo e vale repetir:
+ * o link vai por WhatsApp, passa por aparelho de terceiro e fica no historico
+ * de conversa - guardar o token em claro seria guardar a chave junto da porta.
+ *
+ * `respostas` e jsonb de proposito. O questionario e do laboratorio e muda com
+ * a pratica; fixar cada pergunta como coluna obrigaria a uma migration por
+ * pergunta nova. O que a tela do exame le (data do obito, relato cronologico,
+ * principal duvida) sao chaves conhecidas desse mapa.
+ */
+export const formularioNecropsia = pgTable(
+  'formulario_necropsia',
+  {
+    ...colunasTenant,
+    necropsiaId: uuid('necropsia_id')
+      .notNull()
+      .references(() => necropsia.id, { onDelete: 'cascade' }),
+    /** Nulo quando o proprio tecnico preencheu: nao houve link para ninguem. */
+    tokenHash: text('token_hash').unique(),
+    expiraEm: timestamp('expira_em', { withTimezone: true }),
+    /** Uso unico: respondido uma vez, o link morre. */
+    respondidoEm: timestamp('respondido_em', { withTimezone: true }),
+    /** `tutor` quando veio pelo link; `tecnico` quando foi preenchido na casa. */
+    respondidoPor: text('respondido_por'),
+    /** whatsapp | email | ambos; nulo quando o tecnico preencheu. */
+    canalEnvio: text('canal_envio'),
+    enviadoEm: timestamp('enviado_em', { withTimezone: true }),
+    enviadoPorId: uuid('enviado_por_id').references(() => usuario.id),
+    respostas: jsonb('respostas').$type<Record<string, unknown>>().notNull().default({}),
+    ...colunasTempo,
+  },
+  (t) => [
+    index('idx_formulario_necropsia').on(t.tenantId, t.necropsiaId),
+    index('idx_formulario_necropsia_token').on(t.tokenHash),
   ],
 );
 

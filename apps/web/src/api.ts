@@ -909,6 +909,13 @@ export interface BancadaNecropsia {
     conservacao: string | null;
     circunstanciasMorte: string | null;
     perguntasSolicitante: string | null;
+    obitoEm: string | null;
+    /** Quinta revisão: o combinado com o tutor, fechado na abertura do caso. */
+    devolucaoCorpo: boolean | null;
+    valorCombinado: string | null;
+    responsavelDocumento: string | null;
+    responsavelCidade: string | null;
+    responsavelUf: string | null;
     exameExterno: Record<string, unknown>;
     limitacoes: string[];
     limitacoesObservacao: string | null;
@@ -1417,6 +1424,30 @@ export interface AutocadastroCliente {
     documento: string | null;
     email: string | null;
     telefone: string | null;
+  };
+}
+
+/**
+ * O que o tutor recebe ao abrir o link do formulario de necropsia. O valor vem
+ * como texto (numeric do Postgres) e so para leitura: ele nao o edita.
+ */
+export interface FormularioNecropsiaPublico {
+  instituicao: string;
+  expiraEm: string | null;
+  valorCombinado: string | null;
+  dados: {
+    paciente: string | null;
+    especie: string | null;
+    modalidade: string | null;
+    responsavelSolicitacao: string | null;
+    contatoResponsavel: string | null;
+    responsavelDocumento: string | null;
+    responsavelCidade: string | null;
+    responsavelUf: string | null;
+    devolucaoCorpo: boolean | null;
+    obitoEm: string | null;
+    circunstanciasMorte: string | null;
+    perguntasSolicitante: string | null;
   };
 }
 

@@ -173,7 +173,13 @@ export function Cadaveres({ permissoes }: { permissoes: string[] }) {
         Quem está sob responsabilidade do laboratório, onde está e o que impede a saída.
       </Typography>
 
-      <Stack direction="row" spacing={1.5} sx={{ mb: 3, flexWrap: 'wrap' }}>
+      {/*
+        `useFlexGap`: sem ele o `spacing` vira margem a esquerda de cada card, e
+        o que abre uma linha nova herda essa margem - "Com bloqueio" quebrava
+        deslocado 12px e colado na linha de cima. Com `gap` o espaco fica entre
+        os cards, nas duas direcoes.
+      */}
+      <Stack direction="row" spacing={1.5} useFlexGap sx={{ mb: 3, flexWrap: 'wrap' }}>
         {indicadores.map((i) => (
           <Card key={i.rotulo} sx={{ px: 2, py: 1.5, minWidth: 132 }}>
             <Typography sx={{ fontSize: 24, fontWeight: 600 }}>{i.valor}</Typography>

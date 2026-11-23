@@ -4251,6 +4251,60 @@ describe('assistência de IA exige perfil interno (M17)', () => {
     const interno = await req('POST', '/ia/sugerir', { modulo: 'M11_LAUDOS' });
     expect(interno.status, JSON.stringify(interno.body)).toBe(201);
   });
+
+  test('perguntar sobre um caso exige poder ver o caso', async () => {
+    /**
+     * Terceira auditoria: o Financeiro tem `ia:utilizar` e nao tem
+     * `caso:visualizar`. Com o `casoId` da lista de ordens, o Copiloto lia o
+     * historico clinico e as amostras do caso e mandava ao modelo.
+     */
+    const marca = Date.now().toString().slice(-6);
+    await entrar('admin@lapato.local');
+    const perfis = await req('GET', '/usuarios/perfis');
+    const financeiro = perfis.body.find((p: { chave: string }) => p.chave === 'financeiro');
+    expect(financeiro, 'perfil financeiro não provisionado').toBeTruthy();
+
+    const email = `financeiro.ia.${marca}@lapato.local`;
+    const criado = await req('POST', '/usuarios', {
+      nomeCompleto: `Financeiro IA ${marca}`,
+      email,
+      perfilIds: [financeiro.id],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const caso = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body.find((c: { codigo: string }) => c.codigo === 'CV').id,
+      paciente: { nome: `Copiloto ${marca}` },
+      historicoClinico: 'Histórico que o Financeiro não deveria ler.',
+      amostras: [{ descricao: 'Nódulo' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(caso.status, JSON.stringify(caso.body)).toBe(201);
+    const casoId = caso.body.id;
+
+    cookie = '';
+    await req('POST', '/auth/login', {
+      instituicao: 'demo',
+      email,
+      senha: criado.body.senhaProvisoria,
+    });
+    const troca = await req('POST', '/auth/senha', {
+      senhaAtual: criado.body.senhaProvisoria,
+      senhaNova: `Financeiro!${marca}`,
+    });
+    expect(troca.body.estagio).toBe('ativa');
+
+    const sobreCaso = await req('POST', '/ia/sugerir', { modulo: 'M11_LAUDOS', casoId });
+    expect(sobreCaso.status, 'Financeiro não lê o caso pelo Copiloto').toBe(403);
+
+    // Sem caso, o Copiloto continua disponível para o perfil.
+    const semCaso = await req('POST', '/ia/sugerir', { modulo: 'M20_FINANCEIRO' });
+    expect(semCaso.status, JSON.stringify(semCaso.body)).toBe(201);
+  });
 });
 
 describe('ordem de serviço: do recebimento ao despacho (M20 parcial)', () => {
@@ -7221,6 +7275,68 @@ describe('quarta revisão (Hugo): o cliente abre a solicitação pelo Portal', (
       descricao: 'Quero pedir uma coloração especial.',
     });
     expect(recusado.status).toBe(404);
+  });
+
+  test('a solicitação interna no caso do cliente não aparece no Portal', async () => {
+    /**
+     * Terceira auditoria de seguranca: o Portal filtrava so pelo cliente do
+     * caso e devolvia a `descricao` interna. Uma revisao pedida pelo patologista
+     * aparecia para a clinica palavra por palavra - inclusive a suspeita.
+     */
+    await entrar('portal@clinicacentral.local');
+    const painelAntes = await req('GET', '/portal/painel');
+    expect(painelAntes.status).toBe(200);
+
+    await entrar('recepcao@lapato.local');
+    const nota = `NOTA INTERNA ${Date.now()}: erro técnico na HE, suspeita de linfoma`;
+    const interna = await req('POST', '/solicitacoes', {
+      casoId,
+      tipo: 'revisao_interna',
+      descricao: nota,
+    });
+    expect(interna.status, JSON.stringify(interna.body)).toBe(201);
+
+    await entrar('portal@clinicacentral.local');
+    const lista = await req('GET', '/portal/solicitacoes');
+    expect(lista.status).toBe(200);
+    expect(lista.body.map((s: { id: string }) => s.id)).not.toContain(interna.body.id);
+    expect(JSON.stringify(lista.body)).not.toContain('NOTA INTERNA');
+
+    // O pedido do proprio cliente continua la, com o texto que ele escreveu.
+    const doCliente = lista.body.find((s: { id: string }) => s.id === solicitacaoId);
+    expect(doCliente?.descricao).toBe(
+      'Preciso do bloco para exame complementar em outro laboratório.',
+    );
+
+    // E o contador do painel segue a mesma regra da lista.
+    const painelDepois = await req('GET', '/portal/painel');
+    expect(painelDepois.body.solicitacoesAbertas).toBe(painelAntes.body.solicitacoesAbertas);
+  });
+
+  test('quem pede não dispensa a aprovação que o catálogo exige', async () => {
+    /**
+     * Terceira auditoria: `exigeAprovacao: false` no corpo vencia o catalogo, e
+     * a recepcao - sem `solicitacao:aprovar` - abria IHQ de alto custo direto
+     * na fila de execucao.
+     */
+    await entrar('admin@lapato.local');
+    const tipos = await req('GET', '/administracao/tipos-solicitacao');
+    const ihq = tipos.body.find((t: { chave: string }) => t.chave === 'imuno_histoquimica');
+    expect(ihq?.exigeAprovacao).toBe(true);
+
+    await entrar('recepcao@lapato.local');
+    const pedido = await req('POST', '/solicitacoes', {
+      casoId,
+      tipoId: ihq.id,
+      tipo: ihq.chave,
+      descricao: 'Painel IHQ sem passar pela análise.',
+      exigeAprovacao: false,
+    });
+    expect(pedido.status, JSON.stringify(pedido.body)).toBe(201);
+
+    const abertas = await req('GET', '/solicitacoes?aba=abertas');
+    const criada = abertas.body.find((s: { id: string }) => s.id === pedido.body.id);
+    expect(criada?.status).toBe('aguardando_analise');
   });
 });
 

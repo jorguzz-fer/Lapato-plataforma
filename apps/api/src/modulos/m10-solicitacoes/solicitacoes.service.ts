@@ -306,8 +306,8 @@ export class SolicitacoesService {
       /**
        * O tipo do catalogo manda no que a solicitacao sabe de si: se exige
        * aprovacao e para que setor vai quando quem pede nao escolhe uma
-       * pessoa. Quem passa `exigeAprovacao` explicitamente vence o catalogo -
-       * e como o M08 cria o recorte.
+       * pessoa. `exigeAprovacao` explicito so pode ENDURECER o catalogo (ver a
+       * decisao do status, mais abaixo).
        */
       const tipo = dados.tipoId ? await this.exigirTipo(tx, dados.tipoId) : null;
 
@@ -357,8 +357,14 @@ export class SolicitacoesService {
        * nasce aguardando analise; o resto ja cai na fila de execucao. "Criada"
        * como estado de repouso nao existe na pratica - criada sem proximo passo
        * e exatamente a demanda esquecida que o modulo quer eliminar.
+       *
+       * Quem pede pode EXIGIR aprovacao que o catalogo nao exige, mas nao pode
+       * DISPENSAR a que ele exige. Antes valia `dados.exigeAprovacao ?? catalogo`,
+       * e `exigeAprovacao: false` no corpo fazia a recepcao - que nao tem
+       * `solicitacao:aprovar` - abrir uma IHQ de alto custo direto na fila de
+       * execucao. Dispensar aprovacao e aprovar, e aprovar tem permissao propria.
        */
-      const exigeAprovacao = dados.exigeAprovacao ?? tipo?.exigeAprovacao ?? false;
+      const exigeAprovacao = (tipo?.exigeAprovacao ?? false) || dados.exigeAprovacao === true;
       const status: StatusSolicitacao = exigeAprovacao
         ? 'aguardando_analise'
         : 'aguardando_execucao';

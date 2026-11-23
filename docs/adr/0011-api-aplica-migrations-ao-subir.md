@@ -65,7 +65,9 @@ converteu uma quebra silenciosa numa trava permanente.
    - _"O processo da aplicação passaria a rodar com o usuário dono do schema."_ Não passa: a
      migração roda num **processo separado**, que termina antes de a API começar; a API
      continua conectando só com `DATABASE_URL`. A credencial do dono fica no ambiente do
-     container — onde já estava, porque o pré-deploy precisava dela.
+     container — onde já estava, porque o pré-deploy precisava dela —, mas **não chega ao
+     processo da API**: o `CMD` a remove com `env -u` antes de iniciar o node (ver a nota
+     abaixo).
 
 ## Decisão
 
@@ -79,6 +81,16 @@ node node_modules/@lapato/db/dist/cli/migrate.js && exec node dist/main.js
   mantém a versão anterior no ar, coerente com o banco — o drizzle aplica as migrations
   pendentes numa transação só, desfeita inteira se algo falhar.
 - **`exec`**: o node vira o PID 1 e recebe o `SIGTERM` do rolling update.
+- **`env -u DATABASE_MIGRATION_URL`**: a URL do dono sai do ambiente antes de o node da
+  API nascer.
+
+  > **Nota da terceira auditoria de segurança (23/11/2026).** A primeira versão deste
+  > `CMD` era `... && exec node dist/main.js`. O `exec` repassa o ambiente inteiro, e o
+  > processo que atende a internet ficava com a credencial do dono em `process.env`. No
+  > Postgres do Coolify o dono é o `POSTGRES_USER` da imagem — superusuário, que ignora o
+  > RLS mesmo com `FORCE`. Qualquer falha que expusesse o ambiente da API entregaria o
+  > banco de todas as instituições. O que este ADR afirmava ("a API continua conectando
+  > só com `DATABASE_URL`") era verdade sobre a conexão e falso sobre o alcance.
 - **`DATABASE_MIGRATION_URL` é obrigatória.** Sem ela o `migrate.js` falha com mensagem
   explícita e a API não sobe. Pular a migration em silêncio recriaria exatamente o problema
   que o ADR 0010 descreve.

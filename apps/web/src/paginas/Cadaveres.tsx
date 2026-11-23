@@ -39,7 +39,9 @@ import {
   type CadaverLista,
   type FichaCadaver,
   type LocalFisicoAdmin,
+  type ContadoresNecropsia,
   type MapaArmazenamento,
+  type PosicaoMapa,
 } from '../api';
 
 /**
@@ -83,6 +85,8 @@ export function Cadaveres({ permissoes }: { permissoes: string[] }) {
   const [aba, setAba] = useState<'painel' | 'mapa'>('painel');
   const [lista, setLista] = useState<CadaverLista[] | null>(null);
   const [mapa, setMapa] = useState<MapaArmazenamento | null>(null);
+  /** Quinta revisão: os sete contadores do centro de controle de necropsias. */
+  const [contadores, setContadores] = useState<ContadoresNecropsia | null>(null);
   const [filtro, setFiltro] = useState<StatusCadaver | 'todos'>('todos');
   const [busca, setBusca] = useState('');
   const [recebendo, setRecebendo] = useState(false);
@@ -104,12 +108,37 @@ export function Cadaveres({ permissoes }: { permissoes: string[] }) {
       .get<MapaArmazenamento>('/cadaveres/mapa')
       .then(setMapa)
       .catch(() => undefined);
+    api
+      .get<ContadoresNecropsia>('/cadaveres/contadores')
+      .then(setContadores)
+      .catch(() => undefined);
   }, [filtro, busca]);
 
   useEffect(recarregar, [recarregar]);
 
-  // Secao 37: o painel conta o que importa para a operacao do dia.
+  /**
+   * Os sete contadores do desenho da quinta revisão.
+   *
+   * Vêm do servidor, e não de contar a lista na tela: a lista é filtrada e
+   * paginada, então contar o que está à vista daria números que dependem do
+   * filtro — "quantos corpos estão sob responsabilidade do laboratório" não
+   * pode mudar porque alguém digitou no campo de busca.
+   *
+   * Enquanto não chegam, cai no que dá para contar da lista — a tela nunca fica
+   * sem números (seção 37: o painel conta o que importa para a operação do dia).
+   */
   const indicadores = useMemo(() => {
+    if (contadores) {
+      return [
+        { rotulo: 'Câmara fria', valor: contadores.camaraFria },
+        { rotulo: 'Freezer', valor: contadores.freezer },
+        { rotulo: 'Aguardando necropsia', valor: contadores.aguardandoNecropsia },
+        { rotulo: 'Aguardando devolução', valor: contadores.aguardandoDevolucao },
+        { rotulo: 'Aguardando descarte', valor: contadores.aguardandoDescarte },
+        { rotulo: 'Aguardando chegada', valor: contadores.aguardandoChegada },
+        { rotulo: 'Com bloqueio', valor: contadores.comBloqueio },
+      ];
+    }
     const todos = lista ?? [];
     return [
       { rotulo: 'Armazenados', valor: todos.filter((c) => c.status === 'armazenado').length },
@@ -121,7 +150,7 @@ export function Cadaveres({ permissoes }: { permissoes: string[] }) {
       },
       { rotulo: 'Com bloqueio', valor: todos.filter((c) => c.bloqueios > 0).length },
     ];
-  }, [lista]);
+  }, [contadores, lista]);
 
   return (
     <Box sx={{ maxWidth: 1080 }}>
@@ -146,7 +175,7 @@ export function Cadaveres({ permissoes }: { permissoes: string[] }) {
 
       <Stack direction="row" spacing={1.5} sx={{ mb: 3, flexWrap: 'wrap' }}>
         {indicadores.map((i) => (
-          <Card key={i.rotulo} sx={{ px: 2, py: 1.5, minWidth: 150 }}>
+          <Card key={i.rotulo} sx={{ px: 2, py: 1.5, minWidth: 132 }}>
             <Typography sx={{ fontSize: 24, fontWeight: 600 }}>{i.valor}</Typography>
             <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{i.rotulo}</Typography>
           </Card>
@@ -276,6 +305,7 @@ export function Cadaveres({ permissoes }: { permissoes: string[] }) {
 
       <DialogoRecebimento
         aberto={recebendo}
+        bandejas={(mapa?.posicoes ?? []).filter((p) => p.categoria === 'bandeja_cadaver')}
         aoFechar={() => setRecebendo(false)}
         aoSalvar={() => {
           setRecebendo(false);
@@ -340,33 +370,59 @@ function Mapa({
             {nomes.get(paiId) ?? 'Sem equipamento'}
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-            {posicoes.map((p) => (
-              <Box
-                key={p.id}
-                onClick={() => p.ocupanteId && aoAbrir(p.ocupanteId)}
-                sx={{
-                  minWidth: 132,
-                  p: 1.25,
-                  borderRadius: 1,
-                  border: 1,
-                  borderColor: p.ocupanteId ? 'primary.main' : 'divider',
-                  bgcolor: p.ocupanteId ? 'action.hover' : 'transparent',
-                  cursor: p.ocupanteId ? 'pointer' : 'default',
-                }}
-              >
-                <Typography sx={{ ...MONO, fontSize: 12, color: 'text.secondary' }}>
-                  {p.codigo}
-                </Typography>
-                <Typography sx={{ fontSize: 13, fontWeight: p.ocupanteId ? 600 : 400 }}>
-                  {p.ocupanteIdentificador ?? 'Livre'}
-                </Typography>
-                {p.ocupanteNome && (
-                  <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
-                    {p.ocupanteNome}
-                  </Typography>
-                )}
-              </Box>
-            ))}
+            {posicoes.map((p) => {
+              const ocupada = p.ocupantes.length > 0;
+              return (
+                <Box
+                  key={p.id}
+                  sx={{
+                    minWidth: 142,
+                    p: 1.25,
+                    borderRadius: 1,
+                    border: 1,
+                    borderColor: ocupada ? 'primary.main' : 'divider',
+                    bgcolor: ocupada ? 'action.hover' : 'transparent',
+                  }}
+                >
+                  <Stack direction="row" sx={{ gap: 0.75, alignItems: 'baseline' }}>
+                    <Typography sx={{ ...MONO, fontSize: 12, color: 'text.secondary' }}>
+                      {p.codigo}
+                    </Typography>
+                    {/*
+                      Quinta revisão: mais de um corpo cabe na mesma lacuna. O
+                      número aparece porque "ocupada" deixou de ser sim ou não —
+                      o que a bancada precisa saber é quantos estão ali.
+                    */}
+                    {p.ocupantes.length > 1 && (
+                      <Chip
+                        size="small"
+                        label={`${p.ocupantes.length} corpos`}
+                        sx={{ height: 18, fontSize: 10.5 }}
+                      />
+                    )}
+                  </Stack>
+
+                  {!ocupada && <Typography sx={{ fontSize: 13 }}>Livre</Typography>}
+
+                  {p.ocupantes.map((o) => (
+                    <Box
+                      key={o.id}
+                      onClick={() => aoAbrir(o.id)}
+                      sx={{ cursor: 'pointer', mt: 0.25 }}
+                    >
+                      <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
+                        {o.identificador}
+                      </Typography>
+                      {o.nome && (
+                        <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
+                          {o.nome}
+                        </Typography>
+                      )}
+                    </Box>
+                  ))}
+                </Box>
+              );
+            })}
           </Box>
         </Card>
       ))}
@@ -406,10 +462,13 @@ function Mapa({
 
 function DialogoRecebimento({
   aberto,
+  bandejas,
   aoFechar,
   aoSalvar,
 }: {
   aberto: boolean;
+  /** Quinta revisão: a grade da câmara fria, escolhida aqui mesmo. */
+  bandejas: PosicaoMapa[];
   aoFechar: () => void;
   aoSalvar: () => void;
 }) {
@@ -418,6 +477,10 @@ function DialogoRecebimento({
   const [sexo, setSexo] = useState('');
   const [microchip, setMicrochip] = useState('');
   const [origem, setOrigem] = useState('');
+  /** Quinta revisão: CPF de quem entregou, reconhecimento e a bandeja. */
+  const [origemDocumento, setOrigemDocumento] = useState('');
+  const [reconhecimento, setReconhecimento] = useState('');
+  const [localId, setLocalId] = useState('');
   const [conservacao, setConservacao] = useState('refrigerado');
   const [embalagem, setEmbalagem] = useState('');
   const [integridade, setIntegridade] = useState('');
@@ -434,6 +497,9 @@ function DialogoRecebimento({
     setSexo('');
     setMicrochip('');
     setOrigem('');
+    setOrigemDocumento('');
+    setReconhecimento('');
+    setLocalId('');
     setConservacao('refrigerado');
     setEmbalagem('');
     setIntegridade('');
@@ -455,6 +521,9 @@ function DialogoRecebimento({
         sexo: sexo || null,
         microchip: microchip.trim() || null,
         origemResponsavel: origem.trim() || null,
+        origemResponsavelDocumento: origemDocumento.trim() || null,
+        reconhecimento: reconhecimento.trim() || null,
+        localId: localId || null,
         conservacaoRecebimento: conservacao || null,
         embalagem: embalagem || null,
         integridade: integridade || null,
@@ -519,10 +588,33 @@ function DialogoRecebimento({
             />
           </Stack>
 
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <TextField
+              label="Origem / responsável pela entrega"
+              value={origem}
+              onChange={(e) => setOrigem(e.target.value)}
+              sx={{ flex: 2 }}
+            />
+            {/*
+              Quinta revisão: o CPF ao lado do nome. Corpo entregue por quem não
+              é o tutor — motorista, vizinho, funcionário da clínica — é rotina,
+              e o documento de quem fez a entrega é o que permite voltar nessa
+              pessoa quando a identidade não bate.
+            */}
+            <TextField
+              label="CPF de quem entregou"
+              value={origemDocumento}
+              onChange={(e) => setOrigemDocumento(e.target.value)}
+              placeholder="000.000.000-00"
+              sx={{ flex: 1 }}
+            />
+          </Stack>
+
           <TextField
-            label="Origem / responsável pela entrega"
-            value={origem}
-            onChange={(e) => setOrigem(e.target.value)}
+            label="Reconhecimento"
+            value={reconhecimento}
+            onChange={(e) => setReconhecimento(e.target.value)}
+            helperText="Como o corpo foi reconhecido como sendo este animal — quem respondeu por isso."
           />
 
           <Divider textAlign="left" sx={{ fontSize: 12 }}>
@@ -597,6 +689,44 @@ function DialogoRecebimento({
             onChange={(e) => setPrazo(e.target.value)}
             helperText="Vira a data prevista para retirada ou destinação."
           />
+
+          {/*
+            Quinta revisão: "o técnico pode indicar onde está o animal dentro da
+            câmara fria". A bandeja é escolhida AQUI, no recebimento — antes
+            disso o corpo nascia sem posição e alguém tinha de armazenar num
+            segundo passo, que é o passo que se esquece.
+          */}
+          {bandejas.length > 0 && (
+            <Box>
+              <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'text.secondary', mb: 0.75 }}>
+                ONDE O CORPO FICA
+              </Typography>
+              <Stack direction="row" sx={{ gap: 0.75, flexWrap: 'wrap' }}>
+                {bandejas.map((b) => {
+                  const escolhida = localId === b.id;
+                  return (
+                    <Chip
+                      key={b.id}
+                      label={
+                        b.ocupantes.length > 0
+                          ? `${b.codigo} · ${b.ocupantes.length}`
+                          : b.codigo
+                      }
+                      color={escolhida ? 'primary' : 'default'}
+                      variant={escolhida ? 'filled' : 'outlined'}
+                      onClick={() => setLocalId(escolhida ? '' : b.id)}
+                      sx={{ ...MONO, fontSize: 12 }}
+                    />
+                  );
+                })}
+              </Stack>
+              <Typography sx={{ fontSize: 11.5, color: 'text.secondary', mt: 0.5 }}>
+                O número ao lado do código é quantos corpos já estão na bandeja — mais de um cabe,
+                quando são pequenos. Sem escolher, o corpo entra sem posição e aparece no mapa como
+                fora do armazenamento.
+              </Typography>
+            </Box>
+          )}
 
           <TextField
             label="Observações"

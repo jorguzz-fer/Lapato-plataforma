@@ -28,6 +28,14 @@ const TABELAS_CRIADAS = [
   'servico',
   'termo',
   'tabela_mestre',
+  /**
+   * Antes de `setor`: desde a quinta revisao a base cria o armazenamento de
+   * cadaveres (camara fria e freezer, com as bandejas de cada um), e esses
+   * `local_fisico` apontam para o setor. Um DELETE so leva camara e bandejas
+   * juntas - a auto-referencia `pai_id` nao atrapalha porque pai e filho somem
+   * no mesmo comando.
+   */
+  'local_fisico',
   'setor',
   'unidade',
   'politica_ia',
@@ -232,6 +240,47 @@ describe('configuracao institucional minima', () => {
     expect(vazias.paciente).toHaveLength(0);
     expect(vazias.caso).toHaveLength(0);
     expect(vazias.usuario).toHaveLength(0);
+  });
+
+  /**
+   * Quinta revisao (documento do Dr. Hugo): o desenho da camara fria e uma
+   * grade 3x3, de 1A a 3C, e os contadores separam "Camara fria" de "Freezer".
+   *
+   * O teste existe porque a grade e a condicao de o recebimento funcionar no
+   * primeiro dia: corpo recebido sem lugar no mapa e exatamente o que o M15
+   * existe para impedir, e abrir o sistema com zero posicoes obriga a
+   * inventa-las na primeira entrada.
+   */
+  test('cria o armazenamento de cadaveres com a grade da camara fria', async () => {
+    const locais = await comTenant(db, tenantId, (tx) =>
+      tx.select().from(s.localFisico).where(eq(s.localFisico.tenantId, tenantId)),
+    );
+
+    const camara = locais.find((l) => l.codigo === 'CF');
+    const freezer = locais.find((l) => l.codigo === 'FZ');
+    expect(camara, 'a camara fria precisa existir').toBeTruthy();
+    expect(freezer, 'o freezer precisa existir').toBeTruthy();
+
+    // Refrigerado x congelado e o que separa os dois contadores da tela.
+    expect(camara!.condicaoAmbiental).toBe('refrigerado');
+    expect(freezer!.condicaoAmbiental).toBe('congelado');
+
+    const bandejasCamara = locais.filter((l) => l.paiId === camara!.id);
+    expect(bandejasCamara.map((l) => l.codigo).sort()).toEqual([
+      'CF1A', 'CF1B', 'CF1C', 'CF2A', 'CF2B', 'CF2C', 'CF3A', 'CF3B', 'CF3C',
+    ]);
+    // Toda bandeja esta no setor da camara e herda a condicao dela.
+    expect(bandejasCamara.every((l) => l.condicaoAmbiental === 'refrigerado')).toBe(true);
+    expect(bandejasCamara.every((l) => l.categoria === 'bandeja_cadaver')).toBe(true);
+
+    /**
+     * `capacidade: 1` nao e tranca: desde esta revisao a lacuna aceita mais de
+     * um corpo ("e possivel acondiciona-los juntos") e a capacidade so serve
+     * para o sistema avisar que passou da conta.
+     */
+    expect(bandejasCamara.every((l) => l.capacidade === 1)).toBe(true);
+
+    expect(locais.filter((l) => l.paiId === freezer!.id)).toHaveLength(6);
   });
 
   test('cria a unidade de laboratorio de apoio somente quando pedida', async () => {

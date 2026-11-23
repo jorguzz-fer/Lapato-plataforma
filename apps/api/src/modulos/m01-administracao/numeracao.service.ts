@@ -118,8 +118,15 @@ export class NumeracaoService {
     return identificadorRemessa(ano, await this.proximo(tx, 'remessa', ano));
   }
 
-  async proximoCadaver(tx: Transacao, ano: number): Promise<string> {
-    return identificadorCadaver(ano, await this.proximo(tx, 'cadaver', ano));
+  /**
+   * Serie LN, continua e sem ano (quinta revisao).
+   *
+   * `ano = 0` e o mesmo recurso que a Biblioteca usa para um codigo estavel: a
+   * serie nao reinicia em janeiro. O corpo que entra em dezembro e sai em marco
+   * teria dois numeros se o ano entrasse na chave.
+   */
+  async proximoCadaver(tx: Transacao): Promise<string> {
+    return identificadorCadaver(await this.proximo(tx, 'cadaver', 0));
   }
 
   async proximoObjetoBiologico(tx: Transacao, ano: number): Promise<string> {

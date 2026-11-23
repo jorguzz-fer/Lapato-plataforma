@@ -3156,6 +3156,11 @@ const recebimentoCadaverSchema = z.object({
   sexo: z.string().nullish(),
   raca: z.string().nullish(),
   pelagem: z.string().nullish(),
+  /** Quinta revisão: CPF de quem entregou e como o corpo foi reconhecido. */
+  origemResponsavelDocumento: z.string().max(32).nullish(),
+  reconhecimento: z.string().max(300).nullish(),
+  /** Quinta revisão: a bandeja escolhida na própria tela de recebimento. */
+  localId: z.string().uuid().nullish(),
   microchip: z.string().nullish(),
   origemResponsavel: z.string().nullish(),
   obitoEm: z.string().datetime({ offset: true }).nullish(),
@@ -3216,11 +3221,25 @@ export class CadaveresController {
   @ApiOperation({
     summary: 'Mapa de armazenamento',
     description:
-      'Posições e quem ocupa cada uma (§19), mais quem está fora do armazenamento — ' +
-      'porque nenhum cadáver desaparece do mapa quando é retirado (§29).',
+      'Posições e QUEM ocupa cada uma (§19), mais quem está fora do armazenamento — porque ' +
+      'nenhum cadáver desaparece do mapa quando é retirado (§29). Desde a quinta revisão cada ' +
+      'posição traz uma lista de ocupantes: a lacuna aceita mais de um corpo pequeno.',
   })
   async mapa() {
     return this.cadaveres.mapa();
+  }
+
+  @Get('contadores')
+  @ExigePermissao(PERMISSOES.CADAVER_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Contadores do centro de controle de necropsias',
+    description:
+      'Quinta revisão: câmara fria, freezer, aguardando necropsia, aguardando devolução, ' +
+      'aguardando descarte, aguardando chegada e com bloqueio — a pergunta da manhã sobre ' +
+      'quantos corpos estão sob responsabilidade do laboratório e o que cada grupo espera.',
+  })
+  async contadores() {
+    return this.cadaveres.contadoresNecropsia();
   }
 
   @Get('conferencia')
@@ -3269,10 +3288,14 @@ export class CadaveresController {
   @ExigePermissao(PERMISSOES.CADAVER_MOVIMENTAR)
   @ApiOperation({
     summary: 'Armazena ou transfere de posição',
-    description: 'Posição ocupada recusa a movimentação (§25) — é assim que a identidade se perde.',
+    description:
+      'Quinta revisão: mais de um corpo cabe na mesma lacuna — "podemos ter cadáveres muito ' +
+      'pequenos, como um pássaro ou um filhote de gato". A resposta diz com quem o corpo passa ' +
+      'a dividir a bandeja e se passou da capacidade informada; recusar a posição deixava o ' +
+      'corpo pequeno FORA do mapa, que é como a identidade se perde de verdade (§25).',
   })
   async armazenar(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
-    await this.cadaveres.armazenar(id, validarCorpo(armazenamentoSchema, corpo));
+    return this.cadaveres.armazenar(id, validarCorpo(armazenamentoSchema, corpo));
   }
 
   @Post(':id/retirada-necropsia')

@@ -2499,7 +2499,8 @@ describe('controle de cadáveres (M15)', () => {
       prazoGuardaDias: 15,
     });
     expect(r.status, JSON.stringify(r.body)).toBe(201);
-    expect(r.body.identificador).toMatch(/^CAD-\d{4}-\d{5}$/);
+    // Quinta revisão: a série é LN, contínua e sem ano (ver o bloco próprio adiante).
+    expect(r.body.identificador).toMatch(/^LN\d{3,}$/);
     cadaverId = r.body.id;
 
     const ficha = await req('GET', `/cadaveres/${cadaverId}`);
@@ -2509,25 +2510,44 @@ describe('controle de cadáveres (M15)', () => {
     expect(ficha.body.movimentacoes[0].tipo).toBe('recebimento');
   });
 
-  test('a mesma posição não recebe dois cadáveres (§25)', async () => {
+  /**
+   * Esta regra MUDOU na quinta revisao, e de proposito.
+   *
+   * A secao 25 pedia bloqueio ("posicao ocupada... devera ser impedida ate
+   * correcao"), preocupada com duas etiquetas na mesma prateleira. O documento
+   * do Dr. Hugo corrigiu a leitura a partir da bancada: "e possivel
+   * acondiciona-los juntos", porque um passaro e um filhote de gato cabem na
+   * mesma bandeja. O risco real nao era a bandeja compartilhada - era a bandeja
+   * compartilhada SEM REGISTRO, que e justamente o que o bloqueio produzia.
+   *
+   * O teste agora fixa o comportamento novo: aceita, conta, nomeia com quem o
+   * corpo divide o espaco e avisa quando passa da capacidade.
+   */
+  test('a mesma posição aceita mais de um corpo, contado e nomeado (quinta revisão)', async () => {
     await entrar('tecnico@lapato.local');
     const primeiro = await req('POST', `/cadaveres/${cadaverId}/armazenamento`, { localId: posA });
     expect(primeiro.status, JSON.stringify(primeiro.body)).toBe(201);
+    expect(primeiro.body.companheiros).toEqual([]);
 
     await entrar('recepcao@lapato.local');
     const outro = await req('POST', '/cadaveres', { especie: 'Felino', nomeAnimal: 'Mimi' });
 
     await entrar('tecnico@lapato.local');
-    const colisao = await req('POST', `/cadaveres/${outro.body.id}/armazenamento`, {
+    const junto = await req('POST', `/cadaveres/${outro.body.id}/armazenamento`, {
       localId: posA,
     });
-    expect(colisao.status, JSON.stringify(colisao.body)).toBe(400);
-    expect(colisao.body.detail).toContain('já ocupada');
+    expect(junto.status, JSON.stringify(junto.body)).toBe(201);
+    expect(junto.body.companheiros).toHaveLength(1);
 
+    // E continua podendo ir para outra posição, claro.
     const outroLugar = await req('POST', `/cadaveres/${outro.body.id}/armazenamento`, {
       localId: posB,
     });
     expect(outroLugar.status).toBe(201);
+    // Saiu de A: lá fica só o primeiro de novo.
+    const mapa = await req('GET', '/cadaveres/mapa');
+    const posicaoA = mapa.body.posicoes.find((p: { id: string }) => p.id === posA);
+    expect(posicaoA.ocupantes.map((o: { id: string }) => o.id)).toEqual([cadaverId]);
   });
 
   test('sai para necropsia sem sumir do mapa (§29)', async () => {
@@ -2538,7 +2558,7 @@ describe('controle de cadáveres (M15)', () => {
 
     const mapa = await req('GET', '/cadaveres/mapa');
     const posicao = mapa.body.posicoes.find((p: { id: string }) => p.id === posA);
-    expect(posicao.ocupanteId, 'a posição volta a ficar livre').toBeNull();
+    expect(posicao.ocupantes, 'a posição volta a ficar livre').toEqual([]);
 
     // Mas o corpo continua visível — só não está numa posição.
     const fora = mapa.body.foraDoArmazenamento.find((c: { id: string }) => c.id === cadaverId);
@@ -2592,9 +2612,9 @@ describe('controle de cadáveres (M15)', () => {
     const mapa = await req('GET', '/cadaveres/mapa');
     const posicao = mapa.body.posicoes.find((p: { id: string }) => p.id === posA);
     expect(
-      posicao.ocupanteId,
+      posicao.ocupantes.map((o: { id: string }) => o.id),
       'liberar não é sair: o corpo continua ocupando a posição',
-    ).toBe(cadaverId);
+    ).toEqual([cadaverId]);
   });
 
   test('alterar a destinação preserva a anterior (§41)', async () => {
@@ -2633,7 +2653,7 @@ describe('controle de cadáveres (M15)', () => {
 
     const mapa = await req('GET', '/cadaveres/mapa');
     const posicao = mapa.body.posicoes.find((p: { id: string }) => p.id === posA);
-    expect(posicao.ocupanteId, 'a posição só se libera na saída física').toBeNull();
+    expect(posicao.ocupantes, 'a posição só se libera na saída física').toEqual([]);
   });
 
   test('destinação não é exclusão: o histórico permanece inteiro (§50)', async () => {
@@ -7552,5 +7572,129 @@ describe('quinta revisão (Hugo): macroscopia com cor, fixação e quadro final'
     // Já a ficha, não: alteração pós-conclusão tem rota e permissão próprias.
     const tentativa = await req('POST', `/macroscopia/${macroscopiaId}`, { pesoG: 12 });
     expect(tentativa.status).toBe(400);
+  });
+});
+
+describe('quinta revisão (Hugo): série LN e a câmara fria que divide lacuna', () => {
+  /**
+   * "LN é código do paciente e deverá ser gerado automaticamente em série, no
+   * momento do recebimento do cadáver. Essa numeração não segue a regra dos
+   * histos ou das citos." E, sobre a grade: "talvez fosse importante poder
+   * colocar mais de um cadáver em cada lacuna... como podemos ter cadáveres
+   * muito pequenos, como um pássaro ou um filhote de gato, é possível
+   * acondicioná-los juntos."
+   */
+  let bandeja: string;
+  let primeiro: string;
+  let segundo: string;
+
+  test('a câmara fria nasce com a grade 3×3 e o freezer com a dele', async () => {
+    await entrar('tecnico@lapato.local');
+    const mapa = await req('GET', '/cadaveres/mapa');
+    expect(mapa.status).toBe(200);
+
+    const bandejas = mapa.body.posicoes.filter(
+      (p: { categoria: string }) => p.categoria === 'bandeja_cadaver',
+    );
+    const codigos = bandejas.map((p: { codigo: string }) => p.codigo);
+
+    // A grade do desenho, de 1A a 3C.
+    for (const pos of ['CF1A', 'CF1B', 'CF1C', 'CF2A', 'CF2B', 'CF2C', 'CF3A', 'CF3B', 'CF3C']) {
+      expect(codigos, `a bandeja ${pos} precisa existir`).toContain(pos);
+    }
+    expect(codigos).toContain('FZ1A');
+
+    // Cada posição traz uma LISTA de ocupantes, não um ocupante só.
+    expect(Array.isArray(bandejas[0].ocupantes)).toBe(true);
+    bandeja = bandejas.find((p: { codigo: string }) => p.codigo === 'CF1A').id;
+  });
+
+  test('o identificador é LN em série contínua, sem o ano', async () => {
+    // Quem recebe o corpo é a recepção; o técnico é quem o armazena e move.
+    await entrar('recepcao@lapato.local');
+
+    const um = await req('POST', '/cadaveres', {
+      especie: 'Canina',
+      nomeAnimal: 'Primeiro',
+      origemResponsavel: 'Maria Eduarda',
+      origemResponsavelDocumento: '000.000.000-00',
+      reconhecimento: 'Reconhecido pela tutora na entrega',
+      conservacaoRecebimento: 'refrigerado',
+    });
+    expect(um.status, JSON.stringify(um.body)).toBe(201);
+    expect(um.body.identificador).toMatch(/^LN\d{3,}$/);
+    // Sem ano no meio: a série não reinicia em janeiro.
+    expect(um.body.identificador).not.toContain(String(new Date().getFullYear()));
+    primeiro = um.body.id;
+
+    const dois = await req('POST', '/cadaveres', {
+      especie: 'Ave',
+      nomeAnimal: 'Segundo',
+      conservacaoRecebimento: 'refrigerado',
+    });
+    expect(dois.status).toBe(201);
+    segundo = dois.body.id;
+
+    // Série: o segundo é o número seguinte.
+    const n = (id: string) => Number(id.replace('LN', ''));
+    expect(n(dois.body.identificador)).toBe(n(um.body.identificador) + 1);
+
+    // Os campos novos do recebimento ficam gravados.
+    await entrar('tecnico@lapato.local');
+    const ficha = await req('GET', `/cadaveres/${primeiro}`);
+    expect(ficha.body.cadaver.origemResponsavelDocumento).toBe('000.000.000-00');
+    expect(ficha.body.cadaver.reconhecimento).toContain('tutora');
+  });
+
+  test('dois corpos pequenos dividem a mesma bandeja, e o mapa conta os dois', async () => {
+    await entrar('tecnico@lapato.local');
+
+    const a = await req('POST', `/cadaveres/${primeiro}/armazenamento`, { localId: bandeja });
+    expect(a.status, JSON.stringify(a.body)).toBe(201);
+    expect(a.body.companheiros).toEqual([]);
+
+    /**
+     * Antes desta revisão isto era recusado — e o efeito prático era pior que a
+     * divisão: o corpo pequeno ficava FORA do mapa, porque a bandeja onde ele
+     * de fato estava não aceitava o registro.
+     */
+    const b = await req('POST', `/cadaveres/${segundo}/armazenamento`, { localId: bandeja });
+    expect(b.status, JSON.stringify(b.body)).toBe(201);
+    expect(b.body.companheiros).toHaveLength(1);
+    // A capacidade informada vira aviso, não tranca.
+    expect(b.body.excedeCapacidade).toBe(true);
+    expect(b.body.capacidade).toBe(1);
+
+    // O mapa mostra a bandeja UMA vez, com os dois dentro.
+    const mapa = await req('GET', '/cadaveres/mapa');
+    const posicoes = mapa.body.posicoes.filter((p: { id: string }) => p.id === bandeja);
+    expect(posicoes, 'a bandeja não pode aparecer duplicada').toHaveLength(1);
+    expect(posicoes[0].ocupantes).toHaveLength(2);
+
+    // E o histórico diz com quem o corpo divide o espaço.
+    const ficha = await req('GET', `/cadaveres/${segundo}`);
+    const movimento = ficha.body.movimentacoes.find(
+      (m: { tipo: string }) => m.tipo === 'armazenamento',
+    );
+    expect(movimento.observacao).toContain('Divide a posição');
+  });
+
+  test('os contadores do centro de controle separam câmara fria de freezer', async () => {
+    await entrar('tecnico@lapato.local');
+    const contadores = await req('GET', '/cadaveres/contadores');
+    expect(contadores.status).toBe(200);
+
+    // Os dois que acabei de armazenar estão refrigerados.
+    expect(contadores.body.camaraFria).toBeGreaterThanOrEqual(2);
+    expect(contadores.body).toMatchObject({
+      freezer: expect.any(Number),
+      aguardandoNecropsia: expect.any(Number),
+      aguardandoDevolucao: expect.any(Number),
+      aguardandoDescarte: expect.any(Number),
+      aguardandoChegada: expect.any(Number),
+      comBloqueio: expect.any(Number),
+    });
+    // Armazenado é "aguardando necropsia": o corpo está lá esperando a bancada.
+    expect(contadores.body.aguardandoNecropsia).toBeGreaterThanOrEqual(2);
   });
 });

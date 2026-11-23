@@ -4251,6 +4251,60 @@ describe('assistência de IA exige perfil interno (M17)', () => {
     const interno = await req('POST', '/ia/sugerir', { modulo: 'M11_LAUDOS' });
     expect(interno.status, JSON.stringify(interno.body)).toBe(201);
   });
+
+  test('perguntar sobre um caso exige poder ver o caso', async () => {
+    /**
+     * Terceira auditoria: o Financeiro tem `ia:utilizar` e nao tem
+     * `caso:visualizar`. Com o `casoId` da lista de ordens, o Copiloto lia o
+     * historico clinico e as amostras do caso e mandava ao modelo.
+     */
+    const marca = Date.now().toString().slice(-6);
+    await entrar('admin@lapato.local');
+    const perfis = await req('GET', '/usuarios/perfis');
+    const financeiro = perfis.body.find((p: { chave: string }) => p.chave === 'financeiro');
+    expect(financeiro, 'perfil financeiro não provisionado').toBeTruthy();
+
+    const email = `financeiro.ia.${marca}@lapato.local`;
+    const criado = await req('POST', '/usuarios', {
+      nomeCompleto: `Financeiro IA ${marca}`,
+      email,
+      perfilIds: [financeiro.id],
+    });
+    expect(criado.status, JSON.stringify(criado.body)).toBe(201);
+
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const caso = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body.find((c: { codigo: string }) => c.codigo === 'CV').id,
+      paciente: { nome: `Copiloto ${marca}` },
+      historicoClinico: 'Histórico que o Financeiro não deveria ler.',
+      amostras: [{ descricao: 'Nódulo' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(caso.status, JSON.stringify(caso.body)).toBe(201);
+    const casoId = caso.body.id;
+
+    cookie = '';
+    await req('POST', '/auth/login', {
+      instituicao: 'demo',
+      email,
+      senha: criado.body.senhaProvisoria,
+    });
+    const troca = await req('POST', '/auth/senha', {
+      senhaAtual: criado.body.senhaProvisoria,
+      senhaNova: `Financeiro!${marca}`,
+    });
+    expect(troca.body.estagio).toBe('ativa');
+
+    const sobreCaso = await req('POST', '/ia/sugerir', { modulo: 'M11_LAUDOS', casoId });
+    expect(sobreCaso.status, 'Financeiro não lê o caso pelo Copiloto').toBe(403);
+
+    // Sem caso, o Copiloto continua disponível para o perfil.
+    const semCaso = await req('POST', '/ia/sugerir', { modulo: 'M20_FINANCEIRO' });
+    expect(semCaso.status, JSON.stringify(semCaso.body)).toBe(201);
+  });
 });
 
 describe('ordem de serviço: do recebimento ao despacho (M20 parcial)', () => {

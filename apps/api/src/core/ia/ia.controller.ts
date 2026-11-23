@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { MODULOS, PERMISSOES, type ContextoCopiloto } from '@lapato/shared';
@@ -6,6 +6,7 @@ import { CopilotoFactory } from './copiloto.provider.js';
 import { SugestoesService } from './sugestoes.service.js';
 import { validarCorpo } from '../http/validacao.js';
 import { ExigePermissao } from '../auth/guards.js';
+import { exigirContexto } from '../contexto/contexto-requisicao.js';
 
 const sugerirSchema = z.object({
   modulo: z.string().min(1),
@@ -63,6 +64,18 @@ export class IaController {
   })
   async sugerir(@Body() corpo: unknown) {
     const dados = validarCorpo(sugerirSchema, corpo);
+
+    /**
+     * Com `casoId`, o provedor le o caso (historico clinico, amostras) e manda
+     * ao modelo - e o que volta nos cartoes pode citar esse conteudo. Entao
+     * quem pergunta sobre um caso precisa poder VER o caso: `ia:utilizar` so
+     * nao basta. O Financeiro tem `ia:utilizar` e nao tem `caso:visualizar`, e
+     * pegava o `casoId` da lista de ordens para ler o clinico pelo Copiloto.
+     */
+    if (dados.casoId && !exigirContexto().permissoes.has(PERMISSOES.CASO_VISUALIZAR)) {
+      throw new ForbiddenException('Seu perfil não pode consultar a IA sobre um caso.');
+    }
+
     const provedor = this.factory.criar();
 
     const contexto: ContextoCopiloto = {

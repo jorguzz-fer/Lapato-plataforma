@@ -717,6 +717,39 @@ export const RACAS_INICIAIS: Record<string, string[]> = {
   Equina: ['Mangalarga Marchador', 'Quarto de Milha', 'Puro Sangue Inglês', 'Crioulo', 'Árabe'],
 };
 
+/**
+ * Armazenamento de cadaveres: as camaras e as bandejas de cada uma.
+ *
+ * Quinta revisao (documento do Dr. Hugo): o desenho mostra a grade 3x3 da
+ * camara fria, de 1A a 3C, e os contadores separam "Camara fria" de "Freezer".
+ * As posicoes sao `local_fisico` filhos da camara - a tabela ja e hierarquica
+ * (freezer -> rack -> caixa -> posicao), entao a grade e DADO, e nao coluna.
+ *
+ * `capacidade: 1` em cada bandeja nao e uma tranca: desde a quinta revisao o
+ * sistema aceita mais de um corpo na mesma lacuna ("e possivel acondiciona-los
+ * juntos") e usa a capacidade so para avisar que passou da conta. O
+ * laboratorio ajusta o numero, e as proprias bandejas, na Administracao.
+ */
+const ARMAZENAMENTO_CADAVERES: Array<{
+  nome: string;
+  codigo: string;
+  condicao: string;
+  posicoes: string[];
+}> = [
+  {
+    nome: 'Câmara fria',
+    codigo: 'CF',
+    condicao: 'refrigerado',
+    posicoes: ['1A', '1B', '1C', '2A', '2B', '2C', '3A', '3B', '3C'],
+  },
+  {
+    nome: 'Freezer',
+    codigo: 'FZ',
+    condicao: 'congelado',
+    posicoes: ['1A', '1B', '1C', '2A', '2B', '2C'],
+  },
+];
+
 /** Setores criados na unidade sede, na ordem do fluxo. */
 const SETORES_PADRAO = ['recepcao', 'triagem', 'macroscopia', 'microscopia', 'histotecnica'];
 
@@ -975,6 +1008,45 @@ export async function criarBaseInstitucional(
       })),
     )
     .returning();
+
+  /**
+   * M01 + M15: o armazenamento de cadaveres, com as bandejas de cada camara.
+   *
+   * Nasce pronto porque a grade e o desenho da quinta revisao, e porque um
+   * corpo recebido sem lugar no mapa e exatamente o que o M15 existe para
+   * impedir - abrir o sistema com zero posicoes obriga a inventa-las na
+   * primeira entrada, que e a pior hora para inventar.
+   */
+  const necroterio = setores.find((x) => x.tipo === 'macroscopia') ?? setores[0];
+  for (const camara of ARMAZENAMENTO_CADAVERES) {
+    const [pai] = await tx
+      .insert(s.localFisico)
+      .values({
+        tenantId,
+        unidadeId: sede!.id,
+        setorId: necroterio?.id ?? null,
+        nome: camara.nome,
+        codigo: camara.codigo,
+        categoria: 'armazenamento_cadaver',
+        condicaoAmbiental: camara.condicao,
+        capacidade: camara.posicoes.length,
+      })
+      .returning();
+
+    await tx.insert(s.localFisico).values(
+      camara.posicoes.map((pos) => ({
+        tenantId,
+        unidadeId: sede!.id,
+        setorId: necroterio?.id ?? null,
+        paiId: pai!.id,
+        nome: `${camara.nome} ${pos}`,
+        codigo: `${camara.codigo}${pos}`,
+        categoria: 'bandeja_cadaver',
+        condicaoAmbiental: camara.condicao,
+        capacidade: 1,
+      })),
+    );
+  }
 
   // --- M01: tabelas mestres e terminologia -------------------------------
   for (const def of TABELAS_MESTRES) {

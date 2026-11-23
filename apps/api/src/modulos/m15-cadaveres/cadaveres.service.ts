@@ -38,6 +38,10 @@ export interface DadosRecebimento {
   pelagem?: string | null;
   microchip?: string | null;
   origemResponsavel?: string | null;
+  /** Quinta revisao: CPF de quem entregou o corpo. */
+  origemResponsavelDocumento?: string | null;
+  /** Quinta revisao: como o corpo foi reconhecido como sendo aquele animal. */
+  reconhecimento?: string | null;
   obitoEm?: string | null;
   conservacaoRecebimento?: ConservacaoCadaver | null;
   embalagem?: EmbalagemCadaver | null;
@@ -46,6 +50,13 @@ export interface DadosRecebimento {
   observacoesRecebimento?: string | null;
   /** Dias de guarda; vira `prazoGuardaAte` (secoes 34-35). */
   prazoGuardaDias?: number | null;
+  /**
+   * Quinta revisao: a bandeja da camara fria escolhida na propria tela de
+   * recebimento ("o tecnico pode indicar onde esta o animal dentro da camara
+   * fria"). Antes disso o corpo nascia sem posicao e alguem tinha de armazenar
+   * num segundo passo - que e o passo que se esquece.
+   */
+  localId?: string | null;
 }
 
 /**
@@ -88,7 +99,7 @@ export class CadaveresService {
     return this.db.executar(async (tx) => {
       if (dados.casoId) await this.exigirCaso(tx, dados.casoId);
 
-      const identificador = await this.numeracao.proximoCadaver(tx, new Date().getFullYear());
+      const identificador = await this.numeracao.proximoCadaver(tx);
       const agora = new Date();
 
       const [novo] = await tx
@@ -104,6 +115,8 @@ export class CadaveresService {
           pelagem: dados.pelagem ?? null,
           microchip: dados.microchip ?? null,
           origemResponsavel: dados.origemResponsavel ?? null,
+          origemResponsavelDocumento: dados.origemResponsavelDocumento?.trim() || null,
+          reconhecimento: dados.reconhecimento?.trim() || null,
           obitoEm: dados.obitoEm ? new Date(dados.obitoEm) : null,
           conservacaoRecebimento: dados.conservacaoRecebimento ?? null,
           conservacaoAtual: dados.conservacaoRecebimento ?? null,
@@ -136,6 +149,18 @@ export class CadaveresService {
           objetoTipo: 'cadaver',
           objetoId: novo!.id,
           payload: { identificador },
+        });
+      }
+
+      /**
+       * A posicao, quando o tecnico ja a escolheu na tela de recebimento. Na
+       * MESMA transacao: corpo recebido sem lugar no mapa e exatamente o que o
+       * modulo existe para impedir.
+       */
+      if (dados.localId) {
+        await this.armazenarEmTransacao(tx, novo!.id, {
+          localId: dados.localId,
+          conservacao: dados.conservacaoRecebimento ?? null,
         });
       }
 
@@ -176,15 +201,33 @@ export class CadaveresService {
   /**
    * Coloca ou transfere o cadaver numa posicao (secoes 18 e 23).
    *
-   * A secao 25 e literal: "se o usuario tentar colocar um cadaver em posicao
-   * ocupada, a movimentacao devera ser impedida ate correcao". Duas etiquetas
-   * na mesma prateleira e como a identidade se perde.
+   * A secao 25 pedia bloqueio: "se o usuario tentar colocar um cadaver em
+   * posicao ocupada, a movimentacao devera ser impedida ate correcao" - a
+   * preocupacao sendo duas etiquetas na mesma prateleira, que e como a
+   * identidade se perde.
+   *
+   * A quinta revisao corrigiu a leitura a partir da bancada: "e possivel
+   * acondiciona-los juntos", porque um passaro e um filhote de gato cabem na
+   * mesma bandeja. O risco real nao era a bandeja compartilhada - era a
+   * bandeja compartilhada SEM REGISTRO. Bloquear produzia justamente isso: o
+   * corpo pequeno ficava fora do mapa porque a posicao onde ele estava nao
+   * aceitava o registro. Agora o sistema aceita, conta, nomeia com quem o
+   * corpo divide o espaco e avisa quando passa da capacidade informada.
    */
   async armazenar(
     cadaverId: string,
     dados: { localId: string; conservacao?: ConservacaoCadaver | null; observacao?: string | null },
-  ): Promise<void> {
-    return this.db.executar(async (tx) => {
+  ): Promise<{ companheiros: string[]; excedeCapacidade: boolean; capacidade: number | null }> {
+    return this.db.executar((tx) => this.armazenarEmTransacao(tx, cadaverId, dados));
+  }
+
+  /** Variante para quem ja esta numa transacao (o recebimento com posicao). */
+  private async armazenarEmTransacao(
+    tx: Transacao,
+    cadaverId: string,
+    dados: { localId: string; conservacao?: ConservacaoCadaver | null; observacao?: string | null },
+  ): Promise<{ companheiros: string[]; excedeCapacidade: boolean; capacidade: number | null }> {
+    {
       const atual = await this.buscar(tx, cadaverId);
 
       if (atual.status === 'retirado' || atual.status === 'destinado') {
@@ -194,13 +237,22 @@ export class CadaveresService {
       }
 
       const local = await this.exigirLocal(tx, dados.localId);
-      const ocupante = await this.ocupanteDaPosicao(tx, dados.localId, cadaverId);
-      if (ocupante) {
-        throw new BadRequestException(
-          `Posição ${local.codigo} já ocupada por ${ocupante.identificador}. ` +
-            'Escolha outra posição ou corrija o registro do cadáver que está nela.',
-        );
-      }
+
+      /**
+       * Quinta revisao (documento do Dr. Hugo): "talvez fosse importante poder
+       * colocar mais de um cadaver em cada lacuna. Pois teoricamente so cabem
+       * 6, mas como podemos ter cadaveres muito pequenos, como um passaro ou um
+       * filhote de gato, e possivel acondiciona-los juntos."
+       *
+       * Antes disto a posicao ocupada era recusada, e o resultado pratico era
+       * pior do que a divisao: o corpo pequeno ficava FORA do mapa, porque a
+       * bandeja onde ele de fato estava nao aceitava o registro. Agora o
+       * sistema aceita e CONTA - `capacidade`, quando o laboratorio a informou,
+       * vira um aviso, nao uma tranca.
+       */
+      const companheiros = await this.ocupantesDaPosicao(tx, dados.localId, cadaverId);
+      const excedeCapacidade =
+        local.capacidade !== null && companheiros.length + 1 > local.capacidade;
 
       const origemId = atual.localAtualId;
       const conservacao = dados.conservacao ?? atual.conservacaoAtual;
@@ -223,9 +275,30 @@ export class CadaveresService {
         origemLocalId: origemId,
         destinoLocalId: dados.localId,
         conservacao,
-        observacao: dados.observacao ?? null,
+        // Com quem o corpo divide a lacuna fica no historico: e o que permite
+        // reconstituir depois quem estava onde, quando dois foram juntos.
+        observacao:
+          companheiros.length > 0
+            ? [
+                dados.observacao,
+                `Divide a posição com ${companheiros.map((c) => c.identificador).join(', ')}.`,
+              ]
+                .filter(Boolean)
+                .join(' ')
+            : (dados.observacao ?? null),
       });
-    });
+
+      return {
+        companheiros: companheiros.map((c) => c.identificador),
+        /**
+         * Aviso, e nao erro: a decisao de espremer mais um corpo na bandeja e
+         * de quem esta olhando para ela. O sistema registra o fato e diz que
+         * passou da conta.
+         */
+        excedeCapacidade,
+        capacidade: local.capacidade,
+      };
+    }
   }
 
   /**
@@ -571,6 +644,10 @@ export class CadaveresService {
           identificador: cadaver.identificador,
           nomeAnimal: cadaver.nomeAnimal,
           especie: cadaver.especie,
+          /** Colunas da tabela do centro de controle (quinta revisao). */
+          raca: cadaver.raca,
+          sexo: cadaver.sexo,
+          responsavel: cadaver.origemResponsavel,
           status: cadaver.status,
           casoId: cadaver.casoId,
           casoIdentificador: caso.identificador,
@@ -727,7 +804,55 @@ export class CadaveresService {
           ),
         );
 
-      return { posicoes, foraDoArmazenamento };
+      /**
+       * Uma linha por POSICAO, com a lista de quem esta nela.
+       *
+       * O join devolve uma linha por ocupante, e desde a quinta revisao a
+       * lacuna aceita mais de um corpo - entregar as linhas cruas faria a tela
+       * desenhar a bandeja 1A duas vezes. Agrupar aqui, e nao na tela, porque
+       * "quem esta na bandeja" e uma pergunta do mapa, nao de cada cliente que
+       * o consome (a etiqueta e o PDF fariam a mesma conta de novo).
+       */
+      const porPosicao = new Map<
+        string,
+        {
+          id: string;
+          codigo: string;
+          nome: string;
+          paiId: string | null;
+          categoria: string;
+          condicaoAmbiental: string | null;
+          ocupantes: Array<{
+            id: string;
+            identificador: string;
+            nome: string | null;
+            status: string;
+          }>;
+        }
+      >();
+
+      for (const linha of posicoes) {
+        const atual = porPosicao.get(linha.id) ?? {
+          id: linha.id,
+          codigo: linha.codigo,
+          nome: linha.nome,
+          paiId: linha.paiId,
+          categoria: linha.categoria,
+          condicaoAmbiental: linha.condicaoAmbiental,
+          ocupantes: [],
+        };
+        if (linha.ocupanteId) {
+          atual.ocupantes.push({
+            id: linha.ocupanteId,
+            identificador: linha.ocupanteIdentificador!,
+            nome: linha.ocupanteNome,
+            status: linha.ocupanteStatus!,
+          });
+        }
+        porPosicao.set(linha.id, atual);
+      }
+
+      return { posicoes: [...porPosicao.values()], foraDoArmazenamento };
     });
   }
 
@@ -738,6 +863,84 @@ export class CadaveresService {
    * continua ocupando posicao, liberado sem destinacao, liberado com bloqueio.
    * E trabalho pendente da operacao, e o painel mostra como tal.
    */
+  /**
+   * Contadores do centro de controle de necropsias (quinta revisao).
+   *
+   * O desenho traz sete: Camara fria, Freezer, Aguardando necropsia,
+   * Aguardando devolucao, Aguardando descarte, Aguardando chegada e Com
+   * bloqueio. Sao a pergunta da manha - quantos corpos estao sob a
+   * responsabilidade do laboratorio e o que cada grupo espera.
+   *
+   * Camara fria x Freezer sai da `condicao_ambiental` do local, e nao do nome:
+   * o laboratorio pode renomear a camara, e a condicao e o que de fato
+   * distingue refrigerado de congelado.
+   *
+   * "Aguardando devolucao" e "Aguardando descarte" sao o MESMO status
+   * (`aguardando_liberacao`) separados pela destinacao ja decidida - e a
+   * distincao que importa na porta: um sai para o tutor, o outro para o
+   * crematorio.
+   */
+  async contadoresNecropsia(): Promise<{
+    camaraFria: number;
+    freezer: number;
+    aguardandoNecropsia: number;
+    aguardandoDevolucao: number;
+    aguardandoDescarte: number;
+    aguardandoChegada: number;
+    comBloqueio: number;
+  }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const [porStatus] = await tx
+        .select({
+          camaraFria: sql<number>`(count(*) filter (
+            where ${cadaver.conservacaoAtual} = 'refrigerado'
+              and ${inArray(cadaver.status, STATUS_QUE_OCUPAM_POSICAO)}
+          ))::int`,
+          freezer: sql<number>`(count(*) filter (
+            where ${cadaver.conservacaoAtual} = 'congelado'
+              and ${inArray(cadaver.status, STATUS_QUE_OCUPAM_POSICAO)}
+          ))::int`,
+          aguardandoNecropsia: sql<number>`(count(*) filter (
+            where ${cadaver.status} in ('recebido', 'armazenado', 'aguardando_necropsia')
+          ))::int`,
+          /*
+           * Devolucao e descarte sao o mesmo momento do fluxo - o exame acabou
+           * e o corpo espera a saida -, separados pela destinacao ja decidida.
+           * `liberado` entra nos dois porque o corpo liberado ainda esta no
+           * predio ocupando camara (secao 43): some da conta so quando sai.
+           * Destinacao ainda nao decidida nao conta em nenhum dos dois: ela e o
+           * que falta decidir, e inventar um lado seria mentir no numero.
+           */
+          aguardandoDevolucao: sql<number>`(count(*) filter (
+            where ${cadaver.status} in ('aguardando_liberacao', 'liberado')
+              and ${cadaver.destinacao} = 'retirada_responsavel'
+          ))::int`,
+          aguardandoDescarte: sql<number>`(count(*) filter (
+            where ${cadaver.status} in ('aguardando_liberacao', 'liberado')
+              and ${cadaver.destinacao} in (
+                'cremacao_individual', 'cremacao_coletiva', 'destinacao_institucional', 'outra'
+              )
+          ))::int`,
+          aguardandoChegada: sql<number>`(count(*) filter (
+            where ${cadaver.status} = 'aguardando_recebimento'
+          ))::int`,
+        })
+        .from(cadaver)
+        .where(eq(cadaver.tenantId, ctx.tenantId));
+
+      const [travados] = await tx
+        .select({ total: sql<number>`count(distinct ${bloqueioCadaver.cadaverId})::int` })
+        .from(bloqueioCadaver)
+        .where(
+          and(eq(bloqueioCadaver.tenantId, ctx.tenantId), isNull(bloqueioCadaver.resolvidoEm)),
+        );
+
+      return { ...porStatus!, comBloqueio: travados?.total ?? 0 };
+    });
+  }
+
   /**
    * Numeros do M15 para o painel de chegada.
    *
@@ -831,10 +1034,17 @@ export class CadaveresService {
     });
   }
 
-  /** Quem ocupa a posicao, ignorando o proprio cadaver que esta sendo movido. */
-  private async ocupanteDaPosicao(tx: Transacao, localId: string, exceto: string) {
+  /**
+   * Quem mais esta na posicao, ignorando o proprio cadaver que esta sendo
+   * movido.
+   *
+   * Plural desde a quinta revisao: a lacuna aceita mais de um corpo, e o que a
+   * bancada precisa saber nao e "esta ocupada", e **com quem** o corpo vai
+   * dividir a bandeja.
+   */
+  private async ocupantesDaPosicao(tx: Transacao, localId: string, exceto: string) {
     const ctx = exigirContexto();
-    const [ocupante] = await tx
+    return tx
       .select({ id: cadaver.id, identificador: cadaver.identificador })
       .from(cadaver)
       .where(
@@ -845,8 +1055,7 @@ export class CadaveresService {
           sql`${cadaver.id} <> ${exceto}`,
         ),
       )
-      .limit(1);
-    return ocupante ?? null;
+      .orderBy(asc(cadaver.identificador));
   }
 
   private async bloqueiosAtivos(tx: Transacao, cadaverId: string) {

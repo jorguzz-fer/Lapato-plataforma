@@ -147,10 +147,24 @@ export function identificadorImagem(ano: number, sequencial: number): string {
  *
  * Serie propria, e nao o numero do caso, porque o corpo e rastreado mesmo antes
  * de existir caso - a entrada provisoria da secao 5 depende disso. Ele e o que
- * vai na etiqueta e no QR Code.
+ * vai na etiqueta, na pulseira de ID e no QR Code.
+ *
+ * Quinta revisao (documento do Dr. Hugo): "LN e codigo do paciente e devera ser
+ * gerado automaticamente em serie, no momento do recebimento do cadaver. Essa
+ * numeracao NAO segue a regra dos histos ou das citos." Dai as duas diferencas
+ * em relacao a todas as outras series do sistema:
+ *
+ * - **sem ano**: a serie e continua, e nao reinicia em janeiro. O corpo que
+ *   entrou em dezembro e saiu em marco teria dois numeros se o ano entrasse.
+ * - **curta**: `LN224`, nao `CAD-2026-00224`. E um numero que se escreve a mao
+ *   na etiqueta e se le em voz alta na camara fria.
+ *
+ * Identificadores ja gravados no formato antigo (`CAD-...`) continuam valendo:
+ * eles estao impressos em etiquetas que existem fisicamente, e renumerar
+ * cadaver e justamente o que a secao 88 proibe.
  */
-export function identificadorCadaver(ano: number, sequencial: number): string {
-  return `CAD-${ano}-${String(sequencial).padStart(5, '0')}`;
+export function identificadorCadaver(sequencial: number): string {
+  return `LN${String(sequencial).padStart(3, '0')}`;
 }
 
 /** Identificador da remessa, que agrupa varios casos: `REM-2026-00481` (M05). */

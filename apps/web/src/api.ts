@@ -967,10 +967,28 @@ export interface PosicaoMapa {
   paiId: string | null;
   categoria: string;
   condicaoAmbiental: string | null;
-  ocupanteId: string | null;
-  ocupanteIdentificador: string | null;
-  ocupanteNome: string | null;
-  ocupanteStatus: string | null;
+  /**
+   * Quinta revisão: a lacuna aceita mais de um corpo — "podemos ter cadáveres
+   * muito pequenos, como um pássaro ou um filhote de gato". Lista, e não um
+   * ocupante só.
+   */
+  ocupantes: Array<{
+    id: string;
+    identificador: string;
+    nome: string | null;
+    status: string;
+  }>;
+}
+
+/** Contadores do centro de controle de necropsias (quinta revisão). */
+export interface ContadoresNecropsia {
+  camaraFria: number;
+  freezer: number;
+  aguardandoNecropsia: number;
+  aguardandoDevolucao: number;
+  aguardandoDescarte: number;
+  aguardandoChegada: number;
+  comBloqueio: number;
 }
 
 export interface MapaArmazenamento {

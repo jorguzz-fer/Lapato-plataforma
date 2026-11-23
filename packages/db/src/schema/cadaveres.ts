@@ -63,6 +63,20 @@ export const cadaver = pgTable(
     microchip: text('microchip'),
     /** Quem entregou o corpo: tutor, clinica, orgao. Texto livre (secao 6). */
     origemResponsavel: text('origem_responsavel'),
+    /**
+     * Quinta revisao: o CPF de quem entregou, ao lado do nome. Nao e
+     * burocracia - corpo entregue por quem nao e o tutor (motorista, vizinho,
+     * funcionario da clinica) e rotina, e o documento de quem FEZ a entrega e o
+     * que permite voltar nessa pessoa quando a identidade nao bate.
+     */
+    origemResponsavelDocumento: text('origem_responsavel_documento'),
+    /**
+     * Quinta revisao: campo "Reconhecimento" do recebimento - como o corpo foi
+     * reconhecido como sendo aquele animal (o tutor reconheceu, veio da clinica
+     * identificado, microchip lido). Distinto de `identificacaoExterna`, que diz
+     * se VINHA etiquetado; este diz quem respondeu por ele ser quem e.
+     */
+    reconhecimento: text('reconhecimento'),
 
     // --- Recebimento (secoes 12 e 14) --------------------------------------
     recebidoEm: timestamp('recebido_em', { withTimezone: true }),

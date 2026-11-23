@@ -216,7 +216,14 @@ export interface Painel {
   };
   atencao: ItemDeAtencao[];
   /** Quarta revisão: as minhas pendências, nominais, na tela de chegada. */
-  minhasDemandas: { paraMim: DemandaMinha[]; pedi: DemandaMinha[] };
+  minhasDemandas: {
+    paraMim: DemandaMinha[];
+    pedi: DemandaMinha[];
+    /** Quinta revisão: as pendências endereçadas a mim, nominais. */
+    pendencias: PendenciaMinha[];
+  };
+  /** Quinta revisão: "a lista de casos que estão com prazo estourado". */
+  prioridades: CasoPrioritario[];
   funil: { etapa: string; rotulo: string; total: number }[];
   serie: { dia: string; entradas: number; liberacoes: number }[];
 }
@@ -240,6 +247,32 @@ export interface DemandaMinha {
   paciente: string | null;
   solicitante: string | null;
   responsavel: string | null;
+}
+
+export interface PendenciaMinha {
+  id: string;
+  tipo: string;
+  descricao: string;
+  status: string;
+  nivelBloqueio: string;
+  criadaEm: string;
+  solicitacaoId: string | null;
+  solicitacao: string | null;
+  solicitante: string | null;
+  casoId: string;
+  caso: string | null;
+  paciente: string | null;
+}
+
+export interface CasoPrioritario {
+  casoId: string;
+  identificador: string;
+  paciente: string | null;
+  cliente: string | null;
+  etapa: string;
+  responsavel: string | null;
+  previsaoLiberacao: string | null;
+  diasAtraso: number;
 }
 
 export interface EventoTimeline {
@@ -1380,8 +1413,36 @@ export interface TipoSolicitacao {
   exigeAprovacao: boolean;
   visivelPortal: boolean;
   setorPadrao: string | null;
+  /** Chaves de perfil que podem ABRIR este tipo; vazio = qualquer um. */
+  perfisPermitidos: string[];
+  /** Chaves de perfil que podem RECEBER este tipo; vazio = qualquer um. */
+  perfisDestino: string[];
   ordem: number;
-  etapas: { ordem: number; rotulo: string; setor: string | null; textoPortal: string | null }[];
+  etapas: {
+    ordem: number;
+    rotulo: string;
+    setor: string | null;
+    textoPortal: string | null;
+    /** Cumprida pelo próprio ato de solicitar — ninguém clica em "avançar". */
+    automatica: boolean;
+  }[];
+  /** Segundo nível: qual corante, qual marcador. */
+  subtipos: { id: string; nome: string; ordem: number }[];
+}
+
+export interface TipoPendencia {
+  id: string;
+  chave: string;
+  nome: string;
+  bloqueiaPadrao: string;
+  ordem: number;
+}
+
+/** Amostra do caso, para escolher o alvo do pedido (DB28901 A, B, C). */
+export interface AmostraDoCaso {
+  id: string;
+  identificador: string;
+  descricao: string | null;
 }
 
 /** Fluxo configurado do tipo + o que já aconteceu (quarta revisão). */
@@ -1401,6 +1462,8 @@ export interface MembroEquipe {
   id: string;
   nome: string;
   setor: string | null;
+  /** Chaves dos perfis — o seletor de destino filtra por elas. */
+  perfis: string[];
 }
 
 export interface SolicitacaoResumo {

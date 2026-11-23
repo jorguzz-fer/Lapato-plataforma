@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
-import { PERMISSOES, TIPO_UNIDADE } from '@lapato/shared';
+import { NIVEL_BLOQUEIO, PERMISSOES, TIPO_UNIDADE } from '@lapato/shared';
 import { ExigePermissao } from '../../core/auth/guards.js';
 import { validarCorpo } from '../../core/http/validacao.js';
 import { AdministracaoService } from './administracao.service.js';
@@ -65,6 +65,12 @@ const etapaTipoSolicitacaoSchema = z.object({
   setor: z.string().max(60).nullish(),
   /** O que o cliente lê no Portal nesta etapa. Vazio: a etapa não aparece lá. */
   textoPortal: z.string().max(160).nullish(),
+  /**
+   * Quinta revisão: a primeira etapa de um fluxo de bancada é "Solicitação",
+   * e ela é cumprida pelo ato de pedir — ninguém clica em "avançar" para
+   * dizer que pediu.
+   */
+  automatica: z.boolean().optional(),
 });
 
 const tipoSolicitacaoSchema = z.object({
@@ -78,8 +84,24 @@ const tipoSolicitacaoSchema = z.object({
   exigeAprovacao: z.boolean().optional(),
   visivelPortal: z.boolean().optional(),
   setorPadrao: z.string().max(60).nullish(),
+  /** Chaves de perfil; vazio = qualquer um (quinta revisão). */
+  perfisPermitidos: z.array(z.string().max(40)).max(30).optional(),
+  perfisDestino: z.array(z.string().max(40)).max(30).optional(),
   ordem: z.number().int().min(0).max(999).optional(),
   etapas: z.array(etapaTipoSolicitacaoSchema).max(20).optional(),
+  /** Segundo nível: os corantes da coloração, os marcadores da IHQ. */
+  subtipos: z.array(z.string().min(1).max(120)).max(60).optional(),
+});
+
+const tipoPendenciaSchema = z.object({
+  chave: z
+    .string()
+    .min(2)
+    .max(40)
+    .regex(/^[a-z0-9_]+$/, 'A chave usa letras minúsculas, números e _ (ex.: identificacao_margens).'),
+  nome: z.string().min(1, 'Informe o nome do tipo.').max(120),
+  bloqueiaPadrao: z.enum(NIVEL_BLOQUEIO).optional(),
+  ordem: z.number().int().min(0).max(999).optional(),
 });
 
 const unidadeSchema = z.object({
@@ -369,6 +391,57 @@ export class AdministracaoController {
   @ApiOperation({ summary: 'Reativa um tipo de solicitação' })
   async reativarTipoSolicitacao(@Param('id', ParseUUIDPipe) id: string) {
     await this.admin.alternarTipoSolicitacao(id, true);
+    return { ok: true };
+  }
+
+  // --- tipos de pendência (quinta revisão) ------------------------------------
+
+  @Get('tipos-pendencia')
+  @ExigePermissao(PERMISSOES.CONFIG_VISUALIZAR)
+  @ApiOperation({ summary: 'Tipos de pendência, inclusive inativos' })
+  async tiposPendencia() {
+    return this.admin.listarTiposPendencia();
+  }
+
+  @Post('tipos-pendencia')
+  @ExigePermissao(PERMISSOES.TABELA_MESTRE_GERENCIAR)
+  @ApiOperation({
+    summary: 'Cria um tipo de pendência',
+    description:
+      'Quinta revisão: a lista vem escrita no documento e, logo depois, "essas opções devem ' +
+      'ser editáveis". O bloqueio padrão é o que o tipo sugere ao formulário.',
+  })
+  async criarTipoPendencia(@Body() corpo: unknown) {
+    return this.admin.criarTipoPendencia(validarCorpo(tipoPendenciaSchema, corpo));
+  }
+
+  @Post('tipos-pendencia/:id')
+  @ExigePermissao(PERMISSOES.TABELA_MESTRE_GERENCIAR)
+  @ApiOperation({
+    summary: 'Edita um tipo de pendência',
+    description: 'A chave não muda: ela é a referência estável do tipo.',
+  })
+  async editarTipoPendencia(@Param('id', ParseUUIDPipe) id: string, @Body() corpo: unknown) {
+    await this.admin.editarTipoPendencia(
+      id,
+      validarCorpo(tipoPendenciaSchema.omit({ chave: true }).partial(), corpo),
+    );
+    return { ok: true };
+  }
+
+  @Post('tipos-pendencia/:id/inativacao')
+  @ExigePermissao(PERMISSOES.TABELA_MESTRE_GERENCIAR)
+  @ApiOperation({ summary: 'Inativa um tipo: some do formulário, as pendências abertas ficam' })
+  async inativarTipoPendencia(@Param('id', ParseUUIDPipe) id: string) {
+    await this.admin.alternarTipoPendencia(id, false);
+    return { ok: true };
+  }
+
+  @Post('tipos-pendencia/:id/reativacao')
+  @ExigePermissao(PERMISSOES.TABELA_MESTRE_GERENCIAR)
+  @ApiOperation({ summary: 'Reativa um tipo de pendência' })
+  async reativarTipoPendencia(@Param('id', ParseUUIDPipe) id: string) {
+    await this.admin.alternarTipoPendencia(id, true);
     return { ok: true };
   }
 

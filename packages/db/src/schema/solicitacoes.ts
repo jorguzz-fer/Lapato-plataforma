@@ -50,6 +50,10 @@ export const solicitacao = pgTable(
      * seguem com o `tipo` em texto e sem fluxo proprio.
      */
     tipoId: uuid('tipo_id').references(() => tipoSolicitacao.id),
+    /** Qual corante, qual marcador: o segundo nivel do catalogo. */
+    subtipoId: uuid('subtipo_id').references(() => subtipoSolicitacao.id),
+    /** Nome do subtipo congelado: renomear o catalogo nao reescreve o pedido. */
+    subtipo: text('subtipo'),
     /** Quantas etapas do fluxo do tipo ja foram registradas. 0 = nenhuma. */
     etapaAtual: integer('etapa_atual').notNull().default(0),
     categoria: text('categoria'),
@@ -121,6 +125,13 @@ export const pendencia = pgTable(
       .references(() => caso.id, { onDelete: 'cascade' }),
     solicitacaoId: uuid('solicitacao_id').references(() => solicitacao.id),
 
+    /**
+     * Tipo do catalogo (quinta revisao). O `tipo` em texto continua sendo a
+     * fonte do que se le na tela e no historico - o rotulo e congelado no
+     * momento da criacao, como o preco no item da OS. Este campo e o que
+     * permite filtrar e contar por tipo.
+     */
+    tipoId: uuid('tipo_id').references(() => tipoPendencia.id),
     tipo: text('tipo').notNull(),
     descricao: text('descricao').notNull(),
     status: statusPendenciaEnum('status').notNull().default('aberta'),
@@ -231,6 +242,16 @@ export const tipoSolicitacao = pgTable(
     visivelPortal: boolean('visivel_portal').notNull().default(false),
     /** Setor que recebe quando quem pede nao escolhe uma pessoa. */
     setorPadrao: text('setor_padrao'),
+    /**
+     * Quinta revisao (documento do Hugo): "o ideal e que possamos ajustar o que
+     * cada login - cliente, tutor, patologista, tecnico - podera solicitar, bem
+     * como quem podera ser seu destinatario".
+     *
+     * Chaves de perfil (M02). Lista vazia = sem restricao, que e o padrao: o
+     * laboratorio apertar a regra e uma decisao dele, nao um estado inicial.
+     */
+    perfisPermitidos: jsonb('perfis_permitidos').$type<string[]>().notNull().default([]),
+    perfisDestino: jsonb('perfis_destino').$type<string[]>().notNull().default([]),
     ordem: integer('ordem').notNull().default(0),
     ...colunasTempo,
     ...colunasInativacao,
@@ -261,6 +282,16 @@ export const etapaTipoSolicitacao = pgTable(
     /** Setor que executa esta etapa. Informativo na tela de quem acompanha. */
     setor: text('setor'),
     /**
+     * Etapa cumprida pelo proprio ato de criar a solicitacao.
+     *
+     * O documento do Hugo escreve os fluxos comecando por "Solicitacao":
+     * "Solicitacao -> Separacao do bloco -> Processamento -> Envio ao
+     * Patologista". A primeira nao e clicada por ninguem - ela JA aconteceu
+     * quando o pedido foi feito -, entao fica registrada na criacao, com a
+     * hora e o nome de quem pediu.
+     */
+    automatica: boolean('automatica').notNull().default(false),
+    /**
      * M10: "traducao contextual" - o cliente le "material separado para
      * envio", nao "separando o bloco". Vazio: a etapa nao aparece no Portal.
      */
@@ -271,6 +302,57 @@ export const etapaTipoSolicitacao = pgTable(
     unique('uq_etapa_tipo_ordem').on(t.tenantId, t.tipoId, t.ordem),
     index('idx_etapa_tipo').on(t.tenantId, t.tipoId),
   ],
+);
+
+/**
+ * Subtipo da solicitacao (quinta revisao).
+ *
+ * O documento pede dois niveis: a CATEGORIA, que carrega o fluxo ("Coloracao
+ * especial" passa por separacao do bloco e processamento), e o SUBTIPO, que
+ * diz qual ("PAS", "Ziehl-Neelsen", "Grocott"...). Treze corantes nao sao
+ * treze fluxos: sao treze nomes do mesmo caminho.
+ *
+ * Editavel como o resto do catalogo - "essas opcoes devem ser editaveis".
+ */
+export const subtipoSolicitacao = pgTable(
+  'subtipo_solicitacao',
+  {
+    ...colunasTenant,
+    tipoId: uuid('tipo_id')
+      .notNull()
+      .references(() => tipoSolicitacao.id, { onDelete: 'cascade' }),
+    nome: text('nome').notNull(),
+    ordem: integer('ordem').notNull().default(0),
+    ...colunasTempo,
+    ...colunasInativacao,
+  },
+  (t) => [
+    unique('uq_subtipo_solicitacao').on(t.tenantId, t.tipoId, t.nome),
+    index('idx_subtipo_tipo').on(t.tenantId, t.tipoId),
+  ],
+);
+
+/**
+ * Catalogo de tipos de PENDENCIA (quinta revisao).
+ *
+ * Mesma historia dos tipos de solicitacao: o documento lista Cadastral,
+ * Clinica, Identificacao de margens, Execucao tecnica, Autorizacao e Outra, e
+ * diz em seguida "essas opcoes devem ser editaveis". Antes disso o tipo era
+ * texto livre no formulario, o que impedia filtrar e contar.
+ */
+export const tipoPendencia = pgTable(
+  'tipo_pendencia',
+  {
+    ...colunasTenant,
+    chave: text('chave').notNull(),
+    nome: text('nome').notNull(),
+    /** Bloqueia o fluxo por padrao; quem cria ainda pode mudar. */
+    bloqueiaPadrao: nivelBloqueioEnum('bloqueia_padrao').notNull().default('nao'),
+    ordem: integer('ordem').notNull().default(0),
+    ...colunasTempo,
+    ...colunasInativacao,
+  },
+  (t) => [unique('uq_tipo_pendencia_chave').on(t.tenantId, t.chave)],
 );
 
 /**
@@ -303,6 +385,14 @@ export const andamentoSolicitacao = pgTable(
 
 export const tipoSolicitacaoRelations = relations(tipoSolicitacao, ({ many }) => ({
   etapas: many(etapaTipoSolicitacao),
+  subtipos: many(subtipoSolicitacao),
+}));
+
+export const subtipoSolicitacaoRelations = relations(subtipoSolicitacao, ({ one }) => ({
+  tipo: one(tipoSolicitacao, {
+    fields: [subtipoSolicitacao.tipoId],
+    references: [tipoSolicitacao.id],
+  }),
 }));
 
 export const etapaTipoSolicitacaoRelations = relations(etapaTipoSolicitacao, ({ one }) => ({

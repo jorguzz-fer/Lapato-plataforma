@@ -1554,6 +1554,14 @@ const novaSolicitacaoSchema = z.object({
   responsavelId: z.string().uuid().optional(),
   prazoEm: z.coerce.date().optional(),
   exigeAprovacao: z.boolean().optional(),
+  /** Segundo nível do catálogo: qual coloração, qual exame complementar. */
+  subtipoId: z.string().uuid().optional(),
+  /**
+   * Quinta revisão: "digita DB28901, aparece DB28901 A, B e C; o usuário
+   * escolhe qual - pode escolher apenas 1 dos 3 ou todos". Cada amostra vira
+   * uma solicitação própria.
+   */
+  amostraIds: z.array(z.string().uuid()).optional(),
 });
 
 const avancoEtapaSchema = z.object({
@@ -1586,14 +1594,24 @@ const cancelamentoSchema = z.object({
 const novaPendenciaSchema = z.object({
   casoId: z.string().uuid(),
   solicitacaoId: z.string().uuid().optional(),
-  tipo: z.string().min(1),
+  /**
+   * Tipo do catálogo (quinta revisão). O `tipo` em texto segue aceito para o
+   * que nasce dentro do sistema (o Guardian, a triagem do M06); com `tipoId`
+   * o nome e o bloqueio padrão vêm da configuração.
+   */
+  tipoId: z.string().uuid().optional(),
+  tipo: z.string().min(1).optional().default(''),
   descricao: z.string().min(1, 'Descreva o que falta para o caso avançar.'),
   status: z.enum(STATUS_PENDENCIA).optional(),
   nivelBloqueio: z.enum(NIVEL_BLOQUEIO).optional(),
   etapaBloqueada: z.enum(ETAPA).optional(),
   suspendePrazo: z.boolean().optional(),
   setorResponsavel: z.string().optional(),
+  /** Destino nominal — inclusive o próprio patologista que a criou. */
+  responsavelId: z.string().uuid().optional(),
   visivelPortal: z.boolean().optional(),
+  /** Uma pendência por amostra escolhida; vazio = o caso inteiro. */
+  amostraIds: z.array(z.string().uuid()).optional(),
 });
 
 const resolucaoPendenciaSchema = z.object({
@@ -1635,6 +1653,30 @@ export class SolicitacoesController {
   })
   async tipos() {
     return this.solicitacoes.listarTipos();
+  }
+
+  @Get('tipos-pendencia')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Tipos de pendência ativos',
+    description:
+      'Quinta revisão: Cadastral, Clínica, Identificação de margens, Execução técnica, ' +
+      'Autorização, Macroscopia, Outra — "essas opções devem ser editáveis" (Configurações).',
+  })
+  async tiposPendencia() {
+    return this.solicitacoes.listarTiposPendencia();
+  }
+
+  @Get('casos/:casoId/amostras')
+  @ExigePermissao(PERMISSOES.SOLICITACAO_VISUALIZAR)
+  @ApiOperation({
+    summary: 'Amostras do caso, para escolher o alvo do pedido',
+    description:
+      'Quinta revisão: "digita DB28901, aparece DB28901 A, B e C; o usuário escolhe qual — ' +
+      'pode escolher apenas 1 dos 3 ou todos".',
+  })
+  async amostrasDoCaso(@Param('casoId', ParseUUIDPipe) casoId: string) {
+    return this.solicitacoes.amostrasDoCaso(casoId);
   }
 
   @Post('pendencias')

@@ -20,9 +20,11 @@ import { primeiroNome } from '@lapato/shared';
 import {
   api,
   ErroApi,
+  type CasoPrioritario,
   type DemandaMinha,
   type Painel as DadosPainel,
   type ItemDeAtencao,
+  type PendenciaMinha,
 } from '../api';
 
 /**
@@ -271,7 +273,13 @@ function Serie({ dias: todos }: { dias: DadosPainel['serie'] }) {
  * falta - e e isso que se responde ao telefone sem abrir o caso.
  */
 function MinhasDemandas({ demandas }: { demandas: DadosPainel['minhasDemandas'] }) {
-  if (demandas.paraMim.length === 0 && demandas.pedi.length === 0) return null;
+  if (
+    demandas.paraMim.length === 0 &&
+    demandas.pedi.length === 0 &&
+    demandas.pendencias.length === 0
+  ) {
+    return null;
+  }
 
   return (
     <Stack direction="row" sx={{ gap: 2, flexWrap: 'wrap', alignItems: 'stretch' }}>
@@ -431,6 +439,165 @@ const STATUS_DEMANDA: Record<string, string> = {
   parcialmente_concluida: 'parcialmente concluída',
 };
 
+/**
+ * Prioridades: os casos com prazo estourado.
+ *
+ * Quinta revisao (documento do Dr. Hugo): "deve haver um campo de
+ * prioridades, com a lista de casos que estao com prazo estourado". A faixa
+ * "Precisa de voce agora" conta quantos sao; isto diz QUAIS sao, do mais
+ * atrasado para o menos - que e a ordem em que o dia tem de ser atacado.
+ */
+function Prioridades({ casos }: { casos: CasoPrioritario[] }) {
+  if (casos.length === 0) return null;
+
+  return (
+    <Card>
+      <Box sx={{ px: 2, pt: 2, pb: 1.5 }}>
+        <Stack direction="row" sx={{ alignItems: 'baseline', gap: 1 }}>
+          <Typography variant="h4">Prioridades</Typography>
+          <Typography sx={{ fontSize: 12.5, color: 'error.main', fontWeight: 600 }}>
+            {casos.length} {casos.length === 1 ? 'caso' : 'casos'} fora do prazo
+          </Typography>
+        </Stack>
+        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+          Do mais atrasado para o menos. O prazo conta da entrada do material.
+        </Typography>
+      </Box>
+
+      <Box sx={{ borderTop: '1px solid', borderColor: 'divider' }}>
+        {casos.map((c) => (
+          <Stack
+            key={c.casoId}
+            component={Link}
+            to={`/casos/${c.casoId}`}
+            direction="row"
+            sx={{
+              gap: 1.5,
+              alignItems: 'center',
+              px: 2,
+              py: 1.25,
+              textDecoration: 'none',
+              color: 'inherit',
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+              '&:last-of-type': { borderBottom: 'none' },
+              '&:hover': { bgcolor: 'action.hover' },
+            }}
+          >
+            <Typography
+              sx={{
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                fontSize: 13,
+                fontWeight: 600,
+                minWidth: 92,
+              }}
+            >
+              {c.identificador}
+            </Typography>
+            <Box sx={{ flex: 1, minWidth: 140 }}>
+              <Typography sx={{ fontSize: 13.5 }}>{c.paciente ?? 'Paciente sem nome'}</Typography>
+              <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                {c.cliente ?? 'Sem cliente'} · {c.etapa}
+                {c.responsavel ? ` · ${c.responsavel}` : ''}
+              </Typography>
+            </Box>
+            <Chip
+              size="small"
+              color="error"
+              variant="outlined"
+              label={`${c.diasAtraso} ${c.diasAtraso === 1 ? 'dia' : 'dias'}`}
+            />
+            <ChevronRight sx={{ fontSize: 18, color: 'text.secondary' }} />
+          </Stack>
+        ))}
+      </Box>
+    </Card>
+  );
+}
+
+/**
+ * As pendencias enderecadas a mim.
+ *
+ * Quinta revisao: "o patologista podera criar pendencias para ele proprio ou
+ * enviar para outro usuario... na tela devem aparecer o ID, a solicitacao, a
+ * data e o solicitante, e um botao para laudar". O botao e o ponto: a
+ * pendencia nao e um aviso para se ler, e o atalho para o trabalho que ela
+ * descreve.
+ */
+function MinhasPendencias({ pendencias }: { pendencias: PendenciaMinha[] }) {
+  if (pendencias.length === 0) return null;
+
+  return (
+    <Card>
+      <Box sx={{ px: 2, pt: 2, pb: 1.5 }}>
+        <Typography variant="h4">Minhas pendências</Typography>
+        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+          No seu nome — inclusive as que você mesmo anotou. Mais antigas primeiro.
+        </Typography>
+      </Box>
+
+      <Box sx={{ borderTop: '1px solid', borderColor: 'divider' }}>
+        {pendencias.map((p) => (
+          <Stack
+            key={p.id}
+            direction={{ xs: 'column', sm: 'row' }}
+            sx={{
+              gap: 1.5,
+              alignItems: { sm: 'center' },
+              px: 2,
+              py: 1.25,
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+              '&:last-of-type': { borderBottom: 'none' },
+            }}
+          >
+            <Box sx={{ flex: 1, minWidth: 160 }}>
+              <Stack direction="row" sx={{ gap: 1, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <Typography
+                  component={Link}
+                  to={`/casos/${p.casoId}`}
+                  sx={{
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: 'inherit',
+                  }}
+                >
+                  {p.caso ?? '—'}
+                </Typography>
+                <Chip size="small" variant="outlined" label={p.tipo} />
+                {p.nivelBloqueio !== 'nao' && (
+                  <Chip
+                    size="small"
+                    color="error"
+                    variant="outlined"
+                    label={p.nivelBloqueio === 'total' ? 'Bloqueia o caso' : 'Bloqueio parcial'}
+                  />
+                )}
+              </Stack>
+              <Typography sx={{ fontSize: 13.5, mt: 0.25 }}>{p.descricao}</Typography>
+              <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                {p.solicitacao ? `${p.solicitacao} · ` : ''}
+                {new Date(p.criadaEm).toLocaleDateString('pt-BR')}
+                {p.solicitante ? ` · ${p.solicitante}` : ''}
+              </Typography>
+            </Box>
+            <Button
+              size="small"
+              variant="outlined"
+              component={Link}
+              to={`/casos/${p.casoId}/laudo`}
+              sx={{ alignSelf: { xs: 'flex-start', sm: 'center' } }}
+            >
+              Laudar
+            </Button>
+          </Stack>
+        ))}
+      </Box>
+    </Card>
+  );
+}
+
 function BiparLamina() {
   const navegar = useNavigate();
   const [codigo, setCodigo] = useState('');
@@ -569,6 +736,10 @@ export function Painel({ nomeCompleto, permissoes }: { nomeCompleto: string; per
               detalhe={`Dias corridos, últimos ${dados.volumetria.diasDaMedia}`}
             />
           </Stack>
+
+          <Prioridades casos={dados.prioridades} />
+
+          <MinhasPendencias pendencias={dados.minhasDemandas.pendencias} />
 
           <MinhasDemandas demandas={dados.minhasDemandas} />
 

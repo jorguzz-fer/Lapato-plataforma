@@ -47,4 +47,18 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "-e", "const p=(process.env.API_GLOBAL_PREFIX||'api/v1').replace(/^\\/+|\\/+$/g,'');const port=process.env.API_PORT||3000;fetch(`http://localhost:${port}/${p}/health`).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
-CMD ["node", "dist/main.js"]
+# As migrations rodam AQUI, na subida do container, e nao no Pre-deployment
+# Command do Coolify (ADR 0011). O pre-deploy roda dentro do container que ja
+# esta no ar - com o codigo ANTIGO -, antes de o commit novo sequer ser
+# importado: ele nunca aplicou a migration de uma versao nova. Foi isso que
+# travou producao em 20/11/2026, com nove migrations pendentes.
+#
+# `&&` e o ponto: migration que falha impede a API de subir, o healthcheck nao
+# passa e o Coolify mantem a versao anterior no ar - coerente com o banco, ja
+# que a migration roda numa transacao e e desfeita inteira. `exec` deixa o node
+# como PID 1, para ele receber o SIGTERM do rolling update e desligar limpo.
+#
+# Precisa de `DATABASE_MIGRATION_URL` (dono do schema). Sem ela, o migrate.js
+# falha com mensagem explicita e a API nao sobe - falhar alto no deploy e
+# melhor que pular a migration em silencio.
+CMD ["sh", "-c", "node node_modules/@lapato/db/dist/cli/migrate.js && exec node dist/main.js"]

@@ -7427,3 +7427,130 @@ describe('quinta revisão (Hugo): cadastro de histo e cito', () => {
     expect(evento.payload.mensagem).toContain('troca de pote');
   });
 });
+
+describe('quinta revisão (Hugo): macroscopia com cor, fixação e quadro final', () => {
+  /**
+   * "Cor" nos cassetes, "Número de fragmentos", "Mesmo cassete", medidas "Em
+   * conjunto", "Fixação: Adequada | Parcial | Inadequada", margens Simples com
+   * cor e Identificadas com margem + cor, e o quadro final editável que salva
+   * data, horário e usuário.
+   */
+  let amostraId: string;
+  let macroscopiaId: string;
+
+  test('a bancada grava cor, fixação, medidas em conjunto e margem com cor', async () => {
+    await entrar('recepcao@lapato.local');
+    const servicos = await req('GET', '/catalogo/servicos');
+    const clientes = await req('GET', '/catalogo/clientes');
+    const caso = await req('POST', '/casos', {
+      servicoId: servicos.body.find((s: { codigo: string }) => s.codigo === 'HISTO').id,
+      clienteId: clientes.body[0]!.id,
+      paciente: { nome: `Macro cor ${Date.now().toString().slice(-5)}` },
+      // Com margem: é o cadastro que decide se a macro avalia margem.
+      amostras: [{ descricao: 'Nodulectomia', margemCirurgica: 'margem_identificada' }],
+      recipientes: [{ quantidadeDeclarada: 1 }],
+    });
+    expect(caso.status, JSON.stringify(caso.body)).toBe(201);
+    await levarAteBancada(caso.body.id);
+
+    const dossie = await req('GET', `/casos/${caso.body.id}`);
+    amostraId = dossie.body.amostras[0].id;
+
+    await entrar('patologista@lapato.local');
+    const inicio = await req('POST', `/macroscopia/amostras/${amostraId}`);
+    expect(inicio.status, JSON.stringify(inicio.body)).toBe(201);
+    macroscopiaId = inicio.body.id;
+
+    const salvar = await req('POST', `/macroscopia/${macroscopiaId}`, {
+      comprimentoCm: 2.5,
+      larguraCm: 2,
+      alturaCm: 1.2,
+      medidasEmConjunto: true,
+      fixacao: 'parcial',
+      lesoes: [{ rotulo: 'L01', tipo: 'nódulo' }],
+      margens: [
+        { nome: 'Profunda', metodoAmostragem: 'perpendicular', distanciaCm: 0.4, cor: 'preto', lesaoRotulo: 'L01' },
+        { nome: 'Lateral direita', metodoAmostragem: 'perpendicular', distanciaCm: 1.2, cor: 'verde', lesaoRotulo: 'L01' },
+      ],
+      cassetes: [
+        { tecidoOrigem: 'Pele', fragmentos: 2, cor: 'azul', lesaoRotulo: 'L01' },
+        // "Mesmo cassete": dois tecidos no mesmo corte, e quem lê precisa saber.
+        { tecidoOrigem: 'Margem profunda', fragmentos: 1, cor: 'preto', compartilhado: true, lesaoRotulo: 'L01' },
+      ],
+    });
+    expect(salvar.status, JSON.stringify(salvar.body)).toBe(201);
+
+    const ficha = await req('GET', `/macroscopia/amostras/${amostraId}`);
+    expect(ficha.body.medidasEmConjunto).toBe(true);
+    expect(ficha.body.fixacao).toBe('parcial');
+
+    // A cor é o que permite dizer QUAL margem está comprometida.
+    const profunda = ficha.body.margens.find((m: { nome: string }) => m.nome === 'Profunda');
+    expect(profunda.cor).toBe('preto');
+    expect(ficha.body.margens.find((m: { nome: string }) => m.nome === 'Lateral direita').cor).toBe('verde');
+
+    const cassetes = ficha.body.cassetes;
+    expect(cassetes).toHaveLength(2);
+    expect(cassetes.map((c: { cor: string | null }) => c.cor).sort()).toEqual(['azul', 'preto']);
+    expect(cassetes.filter((c: { compartilhado: boolean }) => c.compartilhado)).toHaveLength(1);
+  });
+
+  test('"em conjunto" e a fixação entram na frase composta', async () => {
+    await entrar('patologista@lapato.local');
+    const frase = await req('POST', `/macroscopia/${macroscopiaId}/composicao`, {
+      selecoes: { cor: ['acastanhada'] },
+    });
+    expect(frase.status, JSON.stringify(frase.body)).toBe(201);
+
+    // A frase da PEÇA: medidas em conjunto e a ressalva de fixação.
+    expect(frase.body.texto).toContain('em conjunto');
+    expect(frase.body.texto).toContain('Fixação parcial');
+
+    // A frase de uma LESÃO não repete a fixação — ela é do material, não do nódulo.
+    const daLesao = await req('POST', `/macroscopia/${macroscopiaId}/composicao`, {
+      selecoes: { cor: ['acastanhada'] },
+      lesaoRotulo: 'L01',
+    });
+    expect(daLesao.body.texto).not.toContain('Fixação');
+    expect(daLesao.body.texto).not.toContain('em conjunto');
+  });
+
+  test('o quadro final salva com data, hora e nome, e fica no rastreio', async () => {
+    await entrar('patologista@lapato.local');
+
+    const salvo = await req('POST', `/macroscopia/${macroscopiaId}/resumo`, {
+      texto: 'Fragmento acastanhado. Medem em conjunto 2,5 x 2,0 x 1,2 cm. Fixação parcial.',
+    });
+    expect(salvo.status, JSON.stringify(salvo.body)).toBe(201);
+    expect(salvo.body.salvoEm).toBeTruthy();
+
+    const ficha = await req('GET', `/macroscopia/amostras/${amostraId}`);
+    expect(ficha.body.resumoFinal).toContain('em conjunto');
+    expect(ficha.body.resumoSalvoEm).toBeTruthy();
+
+    // "Essas informações ficam salvas na aba de rastreio."
+    const dossie = await req('GET', `/casos/${ficha.body.casoId}`);
+    const evento = dossie.body.linhaDoTempo.find(
+      (e: { tipo: string }) => e.tipo === 'macroscopia.resumo_salvo',
+    );
+    expect(evento, 'o quadro salvo precisa ficar na linha do tempo').toBeTruthy();
+    expect(evento.payload.por).toBeTruthy();
+
+    /**
+     * Depois de concluída o quadro continua editável: o que a conclusão
+     * congela é a amostragem — os cassetes, que já viraram objeto físico —,
+     * não a redação.
+     */
+    const conclusao = await req('POST', `/macroscopia/${macroscopiaId}/conclusao`);
+    expect(conclusao.status, JSON.stringify(conclusao.body)).toBe(201);
+
+    const revisado = await req('POST', `/macroscopia/${macroscopiaId}/resumo`, {
+      texto: 'Texto revisado depois de concluir.',
+    });
+    expect(revisado.status).toBe(201);
+
+    // Já a ficha, não: alteração pós-conclusão tem rota e permissão próprias.
+    const tentativa = await req('POST', `/macroscopia/${macroscopiaId}`, { pesoG: 12 });
+    expect(tentativa.status).toBe(400);
+  });
+});

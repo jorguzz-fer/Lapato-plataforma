@@ -15,6 +15,8 @@ import {
   colunasTempo,
   colunasTenant,
   lateralidadeEnum,
+  corCasseteEnum,
+  fixacaoMacroscopiaEnum,
   metodoAmostragemEnum,
 } from './_comum.js';
 import { amostra, caso } from './caso.js';
@@ -56,6 +58,18 @@ export const macroscopia = pgTable(
     larguraCm: numeric('largura_cm', { precision: 8, scale: 2 }),
     alturaCm: numeric('altura_cm', { precision: 8, scale: 2 }),
     pesoG: numeric('peso_g', { precision: 10, scale: 2 }),
+    /**
+     * Quinta revisao: o botao "Em conjunto" ao lado das medidas. Varios
+     * fragmentos pequenos sao medidos como um monte, e nao um a um - a frase
+     * do laudo precisa dizer "medindo em conjunto", senao sugere uma peca
+     * unica daquele tamanho.
+     */
+    medidasEmConjunto: boolean('medidas_em_conjunto').notNull().default(false),
+    /**
+     * Quinta revisao: Adequada | Parcial | Inadequada, avaliada ao abrir o
+     * pote. Explica artefato na lamina e limita o que o laudo pode afirmar.
+     */
+    fixacao: fixacaoMacroscopiaEnum('fixacao'),
 
     /** M08: marcacoes do cirurgiao (fio longo = cranial, clipe = margem profunda). */
     orientacaoPeca: jsonb('orientacao_peca').$type<Record<string, unknown>>(),
@@ -66,6 +80,20 @@ export const macroscopia = pgTable(
       .notNull()
       .default(false),
     materialRemanescente: text('material_remanescente'),
+
+    /**
+     * Quinta revisao: "ao finalizar a macroscopia, aparece quadro com todas as
+     * informacoes da macro... Todas as informacoes sao editaveis nesse quadro.
+     * O sistema salva a data, horario e usuario que fez aquela macroscopia."
+     *
+     * E o texto final, ja com as cores, o numero de cassetes, os fragmentos e
+     * as margens dentro - revisado por quem fez, e nao montado de novo por
+     * quem le. Distinto de `descricaoTexto`, que e a composicao automatica dos
+     * bloquinhos: este e o que a pessoa conferiu e assinou.
+     */
+    resumoFinal: text('resumo_final'),
+    resumoSalvoEm: timestamp('resumo_salvo_em', { withTimezone: true }),
+    resumoSalvoPorId: uuid('resumo_salvo_por_id').references(() => usuario.id),
 
     // --- Registro de tempo (M08) ---
     iniciadaEm: timestamp('iniciada_em', { withTimezone: true }),
@@ -143,6 +171,14 @@ export const margemMacroscopica = pgTable(
     distanciaCm: numeric('distancia_cm', { precision: 8, scale: 2 }),
     /** M08: tinta usada, com cor, fabricante e metodo de fixacao. */
     tinta: jsonb('tinta').$type<Record<string, unknown>>(),
+    /**
+     * Quinta revisao: a COR da tinta, como valor proprio e nao enterrada no
+     * jsonb da tinta. E por ela que a microscopia diz QUAL margem esta
+     * comprometida - "margem comprometida" sem cor nao diz ao cirurgiao onde
+     * voltar. Nas margens simples e so a cor; nas identificadas, o par
+     * nome + cor.
+     */
+    cor: text('cor'),
     /** True quando a margem nao pode ser avaliada macroscopicamente. */
     naoAvaliavel: boolean('nao_avaliavel').notNull().default(false),
     ...colunasTempo,
@@ -190,6 +226,19 @@ export const cassete = pgTable(
      * patologista, nao no laudo.
      */
     fragmentos: integer('fragmentos'),
+    /**
+     * Quinta revisao: os seis quadradinhos ao lado da identificacao. A cor nao
+     * e enfeite - e como a bancada separa na bateria e como quem corta sabe de
+     * relance de qual amostra o bloco e, sem ler o identificador em 6pt.
+     */
+    cor: corCasseteEnum('cor'),
+    /**
+     * Quinta revisao: o botao "Mesmo cassete". Fragmentos de mais de uma lesao
+     * (ou de mais de uma amostra) dividem o mesmo cassete, o que e rotina em
+     * peca pequena. Quem le a lamina PRECISA saber: dois tecidos no mesmo
+     * corte sem aviso viram um achado que nao existe.
+     */
+    compartilhado: boolean('compartilhado').notNull().default(false),
 
     /** M09: sinaliza necessidade de descalcificacao para o processamento. */
     exigeDescalcificacao: boolean('exige_descalcificacao').notNull().default(false),

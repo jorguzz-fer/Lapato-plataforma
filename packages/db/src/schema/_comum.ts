@@ -60,6 +60,8 @@ import {
   INTENSIDADE,
   LATERALIDADE,
   MARGEM_CIRURGICA,
+  COR_CASSETE,
+  FIXACAO_MACROSCOPIA,
   METODO_AMOSTRAGEM,
   NIVEL_BLOQUEIO,
   NIVEL_IA,
@@ -107,6 +109,9 @@ export const statusSolicitacaoEnum = pgEnum('status_solicitacao', STATUS_SOLICIT
 export const statusPendenciaEnum = pgEnum('status_pendencia', STATUS_PENDENCIA);
 export const nivelBloqueioEnum = pgEnum('nivel_bloqueio', NIVEL_BLOQUEIO);
 export const metodoAmostragemEnum = pgEnum('metodo_amostragem', METODO_AMOSTRAGEM);
+/** Quinta revisao: cor do cassete e qualidade da fixacao, avaliadas na bancada. */
+export const corCasseteEnum = pgEnum('cor_cassete', COR_CASSETE);
+export const fixacaoMacroscopiaEnum = pgEnum('fixacao_macroscopia', FIXACAO_MACROSCOPIA);
 export const lateralidadeEnum = pgEnum('lateralidade', LATERALIDADE);
 export const margemCirurgicaEnum = pgEnum('margem_cirurgica', MARGEM_CIRURGICA);
 export const resultadoMargemEnum = pgEnum('resultado_margem', RESULTADO_MARGEM);

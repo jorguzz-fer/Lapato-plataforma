@@ -87,3 +87,42 @@ describe('vocabulário', () => {
     expect(representacao?.opcoes.map((o) => o.texto)).toContain(TEXTO_TODO_MATERIAL);
   });
 });
+
+/**
+ * Quinta revisao (documento do Dr. Hugo): o botao "Em conjunto" ao lado das
+ * medidas e o bloco Fixacao (Adequada | Parcial | Inadequada).
+ */
+describe('medidas em conjunto e fixação (quinta revisão)', () => {
+  it('"em conjunto" muda a afirmação sobre o material, não só o texto', () => {
+    const medidas = { comprimentoCm: 2.5, larguraCm: 2, alturaCm: 1.2 };
+
+    // Uma peça: a medida é dela.
+    expect(comporDescricaoMacro({}, medidas)).toBe('Mede 2,5 x 2,0 x 1,2 cm.');
+
+    // Vários fragmentos medidos como um monte: dizer "mede" sugeriria uma peça
+    // única desse tamanho, que é outra coisa.
+    expect(comporDescricaoMacro({}, { ...medidas, emConjunto: true })).toBe(
+      'Medem em conjunto 2,5 x 2,0 x 1,2 cm.',
+    );
+  });
+
+  it('a fixação fecha a frase, e "adequada" também é dita', () => {
+    // O silêncio não distingue "estava boa" de "ninguém olhou".
+    expect(comporDescricaoMacro({}, undefined, 'adequada')).toBe('Fixação adequada.');
+
+    expect(comporDescricaoMacro({}, undefined, 'inadequada')).toContain('artefato');
+
+    // Nula: nada é afirmado sobre a fixação.
+    expect(comporDescricaoMacro({ cor: ['Marrom'] }, undefined, null)).not.toContain('Fixação');
+  });
+
+  it('a fixação entra depois das medidas e do fecho, não no meio da peça', () => {
+    const frase = comporDescricaoMacro(
+      { cor: ['Marrom'] },
+      { comprimentoCm: 3, emConjunto: true },
+      'parcial',
+    );
+    expect(frase.indexOf('Medem em conjunto')).toBeLessThan(frase.indexOf('Fixação parcial'));
+    expect(frase.endsWith('autólise.')).toBe(true);
+  });
+});

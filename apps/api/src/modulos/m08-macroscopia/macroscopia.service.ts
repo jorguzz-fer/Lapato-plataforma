@@ -14,6 +14,9 @@ import {
   MODULOS,
   identificadorCassete,
   motivoBancadaBloqueada,
+  type CorCassete,
+  type CorMargem,
+  type FixacaoMacroscopia,
   type Lateralidade,
   type MetodoAmostragem,
   comporDescricaoMacro,
@@ -22,6 +25,7 @@ import { DbService } from '../../core/db/db.service.js';
 import { EventosService } from '../../core/eventos/eventos.service.js';
 import { GuardianService } from '../../core/guardian/guardian.service.js';
 import { CopilotoFactory } from '../../core/ia/copiloto.provider.js';
+import { AuditoriaService } from '../../core/auditoria/auditoria.service.js';
 import { SugestoesService } from '../../core/ia/sugestoes.service.js';
 import { FluxoService } from '../m07-fluxo/fluxo.service.js';
 import { OrdensService } from '../m20-ordens/ordens.service.js';
@@ -35,6 +39,10 @@ export interface DadosMacroscopia {
   larguraCm?: number;
   alturaCm?: number;
   pesoG?: number;
+  /** Quinta revisao: "Em conjunto" - varios fragmentos medidos como um monte. */
+  medidasEmConjunto?: boolean;
+  /** Quinta revisao: Adequada | Parcial | Inadequada, vista ao abrir o pote. */
+  fixacao?: FixacaoMacroscopia;
   materialTotalmenteIncluido?: boolean;
   lesoes?: Array<{
     rotulo: string;
@@ -53,6 +61,8 @@ export interface DadosMacroscopia {
     metodoAmostragem?: MetodoAmostragem;
     distanciaCm?: number;
     tinta?: Record<string, unknown>;
+    /** Quinta revisao: a cor da tinta, como valor proprio. */
+    cor?: CorMargem | null;
     naoAvaliavel?: boolean;
     /** Rotulo da lesao a que a margem pertence (L01...). */
     lesaoRotulo?: string | null;
@@ -62,6 +72,10 @@ export interface DadosMacroscopia {
     descricao?: string;
     exigeDescalcificacao?: boolean;
     fragmentos?: number;
+    /** Quinta revisao: a cor do cassete, para separar na bateria. */
+    cor?: CorCassete;
+    /** Quinta revisao: "Mesmo cassete" - divide o cassete com outra lesao. */
+    compartilhado?: boolean;
     /** Rotulo da lesao de onde o cassete saiu (L01...). */
     lesaoRotulo?: string | null;
   }>;
@@ -81,6 +95,7 @@ export class MacroscopiaService {
   constructor(
     private readonly db: DbService,
     private readonly eventos: EventosService,
+    private readonly auditoria: AuditoriaService,
     private readonly fluxo: FluxoService,
     private readonly guardian: GuardianService,
     private readonly sugestoes: SugestoesService,
@@ -169,6 +184,8 @@ export class MacroscopiaService {
           larguraCm: dados.larguraCm?.toString() ?? registro.larguraCm,
           alturaCm: dados.alturaCm?.toString() ?? registro.alturaCm,
           pesoG: dados.pesoG?.toString() ?? registro.pesoG,
+          medidasEmConjunto: dados.medidasEmConjunto ?? registro.medidasEmConjunto,
+          fixacao: dados.fixacao ?? registro.fixacao,
           materialTotalmenteIncluido:
             dados.materialTotalmenteIncluido ?? registro.materialTotalmenteIncluido,
           atualizadoEm: new Date(),
@@ -244,6 +261,7 @@ export class MacroscopiaService {
               metodoAmostragem: m.metodoAmostragem ?? null,
               distanciaCm: m.distanciaCm?.toString() ?? null,
               tinta: m.tinta ?? null,
+              cor: m.cor ?? null,
               naoAvaliavel: m.naoAvaliavel ?? false,
               lesaoId: lesaoDe(m.lesaoRotulo ?? null),
             })
@@ -253,6 +271,8 @@ export class MacroscopiaService {
                 metodoAmostragem: m.metodoAmostragem ?? null,
                 distanciaCm: m.distanciaCm?.toString() ?? null,
                 tinta: m.tinta ?? null,
+                // `undefined` mantem a cor; `null` apaga.
+                ...(m.cor !== undefined ? { cor: m.cor } : {}),
                 naoAvaliavel: m.naoAvaliavel ?? false,
                 // `undefined` mantem a lesao; `null` desliga.
                 ...(m.lesaoRotulo !== undefined ? { lesaoId: lesaoDe(m.lesaoRotulo) } : {}),
@@ -472,7 +492,11 @@ export class MacroscopiaService {
         larguraCm: ficha.larguraCm,
         alturaCm: ficha.alturaCm,
         pesoG: ficha.pesoG,
+        medidasEmConjunto: ficha.medidasEmConjunto,
+        fixacao: ficha.fixacao,
         materialTotalmenteIncluido: ficha.materialTotalmenteIncluido,
+        resumoFinal: ficha.resumoFinal,
+        resumoSalvoEm: ficha.resumoSalvoEm,
         iniciadaEm: ficha.iniciadaEm,
         concluidaEm: ficha.concluidaEm,
         lesoes: lesoes.map((l) => ({
@@ -492,6 +516,7 @@ export class MacroscopiaService {
           lesaoRotulo: lesoes.find((l) => l.id === m.lesaoId)?.rotulo ?? null,
           metodoAmostragem: m.metodoAmostragem,
           distanciaCm: m.distanciaCm,
+          cor: m.cor,
           naoAvaliavel: m.naoAvaliavel,
         })),
         cassetes: cassetes.map((c) => ({
@@ -501,9 +526,71 @@ export class MacroscopiaService {
           descricao: c.descricao,
           exigeDescalcificacao: c.exigeDescalcificacao,
           fragmentos: c.fragmentos,
+          cor: c.cor,
+          compartilhado: c.compartilhado,
           lesaoRotulo: lesoes.find((l) => l.id === c.lesaoId)?.rotulo ?? null,
         })),
       };
+    });
+  }
+
+  /**
+   * O quadro final da macroscopia, revisado e salvo.
+   *
+   * Quinta revisao: "ao finalizar a macroscopia, aparece quadro com todas as
+   * informacoes da macro, Texto, cores, no de cassetes, no de fragmentos,
+   * margens... Todas as informacoes sao editaveis nesse quadro. O sistema
+   * salva a data, horario e usuario que fez aquela macroscopia. Essas
+   * informacoes ficam salvas na aba de rastreio."
+   *
+   * Por que uma rota propria, e nao mais um campo do `salvar`: este texto e o
+   * que a pessoa CONFERIU, e o registro de quem conferiu e quando so vale se
+   * for gravado no mesmo ato. Passar junto com o rascunho tornaria "salvo por"
+   * um carimbo de qualquer digitada.
+   *
+   * Aceita depois da conclusao de proposito: a revisao do texto acontece
+   * exatamente no fim, e o que a conclusao congela e a amostragem - os
+   * cassetes, que ja viraram objeto fisico -, nao a redacao.
+   */
+  async salvarResumo(macroscopiaId: string, texto: string): Promise<{ salvoEm: string }> {
+    const ctx = exigirContexto();
+
+    return this.db.executar(async (tx) => {
+      const registro = await this.buscarMacroscopia(tx, macroscopiaId);
+      const salvoEm = new Date();
+
+      await tx
+        .update(macroscopia)
+        .set({
+          resumoFinal: texto.trim() || null,
+          resumoSalvoEm: salvoEm,
+          resumoSalvoPorId: ctx.usuarioId,
+          atualizadoEm: salvoEm,
+        })
+        .where(eq(macroscopia.id, macroscopiaId));
+
+      /**
+       * Na aba de rastreio, como o documento pede: o evento carrega quem
+       * salvou e quando, e a linha do tempo do caso ja e essa aba.
+       */
+      await this.eventos.publicar(tx, {
+        tipo: 'macroscopia.resumo_salvo',
+        casoId: registro.casoId,
+        moduloOrigem: MODULOS.M08_MACROSCOPIA,
+        objetoTipo: 'amostra',
+        objetoId: registro.amostraId,
+        payload: { por: ctx.nomeCompleto, caracteres: texto.trim().length },
+      });
+
+      await this.auditoria.registrarAlteracao(
+        tx,
+        'macroscopia',
+        macroscopiaId,
+        { resumoFinal: registro.resumoFinal },
+        { resumoFinal: texto.trim() || null },
+      );
+
+      return { salvoEm: salvoEm.toISOString() };
     });
   }
 
@@ -584,6 +671,8 @@ export class MacroscopiaService {
         descricao: c.descricao ?? null,
         exigeDescalcificacao: c.exigeDescalcificacao ?? false,
         fragmentos: c.fragmentos ?? null,
+        cor: c.cor ?? null,
+        compartilhado: c.compartilhado ?? false,
         lesaoId: c.lesaoId ?? null,
       });
     }
@@ -625,6 +714,7 @@ export class MacroscopiaService {
       larguraCm: registro.larguraCm ? Number(registro.larguraCm) : undefined,
       alturaCm: registro.alturaCm ? Number(registro.alturaCm) : undefined,
       pesoG: registro.pesoG ? Number(registro.pesoG) : undefined,
+      emConjunto: registro.medidasEmConjunto,
     };
     if (lesaoRotulo) {
       const [lesao] = await this.db.executar((tx) =>
@@ -642,10 +732,17 @@ export class MacroscopiaService {
         larguraCm: lesao.menorEixoCm ? Number(lesao.menorEixoCm) : undefined,
         alturaCm: lesao.terceiroEixoCm ? Number(lesao.terceiroEixoCm) : undefined,
         pesoG: undefined,
+        // "Em conjunto" é da peça, não do nódulo: um nódulo é um só.
+        emConjunto: false,
       };
     }
 
-    const base = comporDescricaoMacro(selecoes, medidas);
+    /**
+     * A fixação entra só na frase da PEÇA. Repeti-la em cada lesão encheria o
+     * laudo de "fixação adequada" — ela é uma ressalva sobre o material que
+     * chegou, e não sobre cada nódulo descrito.
+     */
+    const base = comporDescricaoMacro(selecoes, medidas, lesaoRotulo ? null : registro.fixacao);
     if (!base) {
       throw new BadRequestException('Marque ao menos um descritor para compor a descrição.');
     }

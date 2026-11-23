@@ -175,6 +175,91 @@ export const MARGEM_CIRURGICA_LABEL: Record<MargemCirurgica, string> = {
   margem_simples: 'Margem simples',
   margem_identificada: 'Margem identificada',
 };
+
+/**
+ * Cores de cassete (quinta revisao).
+ *
+ * O documento mostra seis quadradinhos ao lado da identificacao do cassete. A
+ * cor nao e enfeite: e como a bancada separa na bateria de processamento e
+ * como quem corta sabe, de relance, qual bloco e de qual amostra sem ler o
+ * identificador impresso em 6pt.
+ *
+ * O hex viaja junto porque a cor PRECISA ser a mesma na tela, na etiqueta e no
+ * laudo - deixar cada tela escolher o seu verde e como nao ter cor nenhuma.
+ */
+export const COR_CASSETE = [
+  'preto',
+  'verde',
+  'azul',
+  'amarelo',
+  'marrom',
+  'branco',
+] as const;
+export type CorCassete = (typeof COR_CASSETE)[number];
+
+export const COR_CASSETE_LABEL: Record<CorCassete, string> = {
+  preto: 'Preto',
+  verde: 'Verde',
+  azul: 'Azul',
+  amarelo: 'Amarelo',
+  marrom: 'Marrom',
+  branco: 'Branco',
+};
+
+export const COR_CASSETE_HEX: Record<CorCassete, string> = {
+  preto: '#1c1c1c',
+  verde: '#8bc98b',
+  azul: '#3f8ddb',
+  amarelo: '#f2b705',
+  marrom: '#8a3b16',
+  branco: '#e4e4e4',
+};
+
+/**
+ * Cores de tinta de margem (quinta revisao).
+ *
+ * "Adicionar margens - Simples: preto, verde, azul" e, nas identificadas,
+ * margem + cor. E o par cor/margem que permite ao patologista dizer, na
+ * microscopia, QUAL margem esta comprometida - sem ele, "margem comprometida"
+ * nao diz ao cirurgiao onde voltar.
+ */
+export const COR_MARGEM = ['preto', 'verde', 'azul', 'amarelo', 'vermelho', 'laranja'] as const;
+export type CorMargem = (typeof COR_MARGEM)[number];
+
+export const COR_MARGEM_LABEL: Record<CorMargem, string> = {
+  preto: 'Preto',
+  verde: 'Verde',
+  azul: 'Azul',
+  amarelo: 'Amarelo',
+  vermelho: 'Vermelho',
+  laranja: 'Laranja',
+};
+
+export const COR_MARGEM_HEX: Record<CorMargem, string> = {
+  preto: '#1c1c1c',
+  verde: '#2e9e4f',
+  azul: '#2f6fd0',
+  amarelo: '#f2b705',
+  vermelho: '#d32f2f',
+  laranja: '#ef6c00',
+};
+
+/**
+ * Qualidade da fixacao, avaliada na bancada (quinta revisao).
+ *
+ * Entra na macroscopia porque e la que se abre o pote e se ve. Fixacao parcial
+ * ou inadequada explica artefato na lamina e limita o que o laudo pode
+ * afirmar: registrada na hora, ela e uma ressalva tecnica; descoberta depois,
+ * e um diagnostico posto em duvida sem ninguem saber por que.
+ */
+export const FIXACAO_MACROSCOPIA = ['adequada', 'parcial', 'inadequada'] as const;
+export type FixacaoMacroscopia = (typeof FIXACAO_MACROSCOPIA)[number];
+
+export const FIXACAO_MACROSCOPIA_LABEL: Record<FixacaoMacroscopia, string> = {
+  adequada: 'Adequada',
+  parcial: 'Parcial',
+  inadequada: 'Inadequada',
+};
 export type Lateralidade = (typeof LATERALIDADE)[number];
 
 // --- M13 Histopatologia ----------------------------------------------------

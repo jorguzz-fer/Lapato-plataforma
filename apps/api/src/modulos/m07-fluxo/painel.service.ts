@@ -15,7 +15,10 @@ import {
 } from '@lapato/shared';
 import { DbService } from '../../core/db/db.service.js';
 import { exigirContexto } from '../../core/contexto/contexto-requisicao.js';
-import { SolicitacoesService } from '../m10-solicitacoes/solicitacoes.service.js';
+import {
+  SolicitacoesService,
+  type MinhasDemandas,
+} from '../m10-solicitacoes/solicitacoes.service.js';
 import { CadaveresService } from '../m15-cadaveres/cadaveres.service.js';
 import { BiotecaService } from '../m18-bioteca/bioteca.service.js';
 
@@ -33,50 +36,6 @@ export interface ItemDeAtencao {
   /** Rota que resolve o item. Sempre uma tela em que o usuario pode AGIR. */
   para: string;
   nivel: 'critico' | 'atencao' | 'informacao';
-}
-
-/**
- * Uma demanda minha, como ela aparece na tela de chegada.
- *
- * Quarta revisao com o Hugo: a lista diz o que e, de que caso, desde quando,
- * em que estagio e com quem esta - as mesmas colunas que ele desenhou no
- * PowerPoint que levou para a reuniao.
- */
-export interface DemandaMinha {
-  id: string;
-  identificador: string;
-  tipo: string;
-  nomeTipo: string | null;
-  descricao: string;
-  prioridade: string;
-  status: string;
-  etapaAtual: number;
-  totalEtapas: number;
-  ultimaEtapa: string | null;
-  setorResponsavel: string | null;
-  prazoEm: string | null;
-  criadaEm: string;
-  casoId: string | null;
-  caso: string | null;
-  paciente: string | null;
-  solicitante: string | null;
-  responsavel: string | null;
-}
-
-/** Pendencia enderecada a mim, com as colunas do documento da quinta revisao. */
-export interface PendenciaMinha {
-  id: string;
-  tipo: string;
-  descricao: string;
-  status: string;
-  nivelBloqueio: string;
-  criadaEm: string;
-  solicitacaoId: string | null;
-  solicitacao: string | null;
-  solicitante: string | null;
-  casoId: string;
-  caso: string | null;
-  paciente: string | null;
 }
 
 /** Caso com prazo estourado - o bloco Prioridades da tela inicial. */
@@ -108,11 +67,7 @@ export interface Painel {
    * ("12 casos fora do prazo"); isto diz o que e meu agora, com nome e
    * registro - a diferenca que a quarta revisao pediu.
    */
-  minhasDemandas: {
-    paraMim: DemandaMinha[];
-    pedi: DemandaMinha[];
-    pendencias: PendenciaMinha[];
-  };
+  minhasDemandas: MinhasDemandas;
   /**
    * Quinta revisao: "deve haver um campo de prioridades, com a lista de casos
    * que estao com prazo estourado". A faixa de atencao conta quantos sao; isto
@@ -336,10 +291,10 @@ export class PainelService {
      * coisa que aparece sao as nossas pendencias e prioridades". Quem nao ve
      * solicitacao recebe as listas vazias e a tela nem desenha os cartoes.
      */
-    let minhasDemandas: Painel['minhasDemandas'] = { paraMim: [], pedi: [], pendencias: [] };
+    let minhasDemandas: MinhasDemandas = { paraMim: [], pedi: [], pendencias: [] };
 
     if (pode(PERMISSOES.SOLICITACAO_VISUALIZAR)) {
-      minhasDemandas = (await this.solicitacoes.minhasDemandas()) as Painel['minhasDemandas'];
+      minhasDemandas = await this.solicitacoes.minhasDemandas();
       const m10 = await this.solicitacoes.resumoPainel();
       this.acrescentar(atencao, {
         chave: 'pendencias_bloqueantes',
